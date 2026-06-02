@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Match Collection — TCG Prices</title>
+  <meta name="description" content="Upload your MTG collection CSV and see what Card Kingdom is buying today." />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <nav>
+    <span class="brand">TCG Prices</span>
+    <a href="/">Search</a>
+    <a href="/match">Match collection</a>
+    <a href="/charts">Price history</a>
+  </nav>
+  <main>
+    <h1>Match your collection to Card Kingdom</h1>
+    <p class="meta">
+      Upload a CSV from Manabox, Moxfield, Archidekt, or your Stacks export.
+      Requires a <strong>Scryfall ID</strong> column. Matches are strict on finish
+      (foil vs nonfoil) — same rules as a real CK shipment.
+    </p>
+
+    <div class="card">
+      <div class="toolbar">
+        <input type="file" id="file" accept=".csv,text/csv" />
+        <button type="button" id="uploadBtn">Match against CK buylist</button>
+      </div>
+      <p id="status" class="hint"></p>
+    </div>
+
+    <div id="summary" hidden>
+      <div class="stats">
+        <div class="stat"><div class="val" id="statTotal">—</div><div class="lbl">Cards in file</div></div>
+        <div class="stat"><div class="val" id="statMatched">—</div><div class="lbl">Matched (sellable)</div></div>
+        <div class="stat"><div class="val" id="statCash">—</div><div class="lbl">Total CK cash</div></div>
+        <div class="stat"><div class="val" id="statCredit">—</div><div class="lbl">Total CK credit</div></div>
+      </div>
+      <p class="meta" id="metaLine"></p>
+    </div>
+
+    <table id="results" hidden>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Set</th>
+          <th>Finish</th>
+          <th>Qty</th>
+          <th>Status</th>
+          <th>CK cash</th>
+          <th>CK credit</th>
+          <th>Line cash</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <footer class="site-footer">
+      <p>Card Kingdom buylist tools by <a href="https://aizo.solutions" rel="noopener">Aizo Solutions</a>.
+      Not affiliated with Card Kingdom or Wizards of the Coast.</p>
+    </footer>
+  </main>
+  <script>
+    const statusEl = document.getElementById('status');
+    const uploadBtn = document.getElementById('uploadBtn');
+
+    function badge(match) {
+      if (match === 'matched') return '<span class="badge ok">Matched</span>';
+      if (match === 'wrong_finish') return '<span class="badge warn">Wrong finish</span>';
+      return '<span class="badge bad">Not buying</span>';
+    }
+
+    uploadBtn.addEventListener('click', async () => {
+      const file = document.getElementById('file').files[0];
+      if (!file) { statusEl.textContent = 'Choose a CSV file first.'; statusEl.className = 'error'; return; }
+      statusEl.textContent = 'Matching…';
+      statusEl.className = 'hint';
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch('/api/collection/match', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || res.statusText);
+        document.getElementById('summary').hidden = false;
+        document.getElementById('results').hidden = false;
+        document.getElementById('statTotal').textContent = data.total;
+        document.getElementById('statMatched').textContent = `${data.matched} (${data.match_pct}%)`;
+        document.getElementById('statCash').textContent = '$' + data.total_cash.toFixed(2);
+        document.getElementById('statCredit').textContent = '$' + data.total_credit.toFixed(2);
+        document.getElementById('metaLine').textContent =
+          `Buylist as of ${data.snapshot_date || 'unknown'} · ${data.no_scryfall_id} not on buylist · ${data.wrong_finish} wrong finish`;
+        const tbody = document.getElementById('tbody');
+        tbody.innerHTML = data.results.map(r => `
+          <tr>
+            <td>${esc(r.name || r.ck_name || '—')}</td>
+            <td>${esc(r.set_code || '')}</td>
+            <td>${esc(r.finish)}</td>
+            <td>${r.quantity}</td>
+            <td>${badge(r.ck_match)}</td>
+            <td>${fmt(r.ck_cash_price)}</td>
+            <td>${fmt(r.ck_credit_price)}</td>
+            <td>${fmt(r.line_cash_total)}</td>
+          </tr>`).join('');
+        statusEl.textContent = '';
+      } catch (e) {
+        statusEl.textContent = e.message;
+        statusEl.className = 'error';
+      }
+    });
+
+    function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function fmt(n) { return n == null ? '—' : '$' + Number(n).toFixed(2); }
+  </script>
+</body>
+</html>

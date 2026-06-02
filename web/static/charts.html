@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Price History — TCG Prices</title>
+  <meta name="description" content="Track Card Kingdom buylist cash and credit vs Scryfall TCG market prices over time." />
+  <link rel="stylesheet" href="/static/app.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <nav>
+    <span class="brand">TCG Prices</span>
+    <a href="/">Search</a>
+    <a href="/match">Match collection</a>
+    <a href="/charts">Price history</a>
+  </nav>
+  <main>
+    <h1>CK buylist vs TCG market</h1>
+    <p class="meta">
+      Track how Card Kingdom cash/credit and Scryfall TCG prices (USD) move over time.
+      Requires multiple daily snapshots from the pipeline. Search one card at a time —
+      not the whole buylist.
+    </p>
+
+    <div class="card">
+      <div class="filters">
+        <input type="search" id="q" placeholder="Search card name…" style="min-width:220px" />
+        <select id="finish">
+          <option value="normal">Normal</option>
+          <option value="foil">Foil</option>
+          <option value="etched">Etched</option>
+        </select>
+        <select id="days">
+          <option value="30">30 days</option>
+          <option value="90" selected>90 days</option>
+          <option value="180">180 days</option>
+          <option value="365">1 year</option>
+        </select>
+        <input type="number" id="minCash" placeholder="Min CK cash $" step="0.01" min="0" style="width:140px" />
+        <button type="button" id="searchBtn">Search</button>
+      </div>
+      <div id="pickList" class="hint"></div>
+    </div>
+
+    <div class="card" id="chartCard" hidden>
+      <h2 id="chartTitle"></h2>
+      <p class="meta" id="chartMeta"></p>
+      <div class="chart-wrap"><canvas id="chart"></canvas></div>
+    </div>
+    <p id="status" class="hint"></p>
+    <footer class="site-footer">
+      <p>Card Kingdom buylist tools by <a href="https://aizo.solutions" rel="noopener">Aizo Solutions</a>.
+      TCG market prices from Scryfall. Not affiliated with Card Kingdom or Wizards of the Coast.</p>
+    </footer>
+  </main>
+  <script>
+    let chart;
+    const statusEl = document.getElementById('status');
+    const pickList = document.getElementById('pickList');
+
+    document.getElementById('searchBtn').addEventListener('click', searchCards);
+    document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') searchCards(); });
+
+    async function searchCards() {
+      const q = document.getElementById('q').value.trim();
+      if (q.length < 2) { statusEl.textContent = 'Enter at least 2 characters.'; return; }
+      statusEl.textContent = 'Searching…';
+      pickList.innerHTML = '';
+      document.getElementById('chartCard').hidden = true;
+      const res = await fetch(`/api/history/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!data.results.length) {
+        statusEl.textContent = 'No cards found.';
+        return;
+      }
+      statusEl.textContent = 'Select a card:';
+      pickList.innerHTML = data.results.map(r =>
+        `<button type="button" class="secondary" style="margin:4px" data-sid="${r.scryfall_id}" data-finish="${r.finish}" data-name="${escAttr(r.name)}">
+          ${esc(r.name)} (${r.finish}) · ${r.set_code || '?'} · ${r.snapshot_days}d of data
+        </button>`
+      ).join('');
+      pickList.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => loadSeries(btn.dataset.sid, btn.dataset.finish, btn.dataset.name));
+      });
+    }
+
+    async function loadSeries(scryfallId, finish, name) {
+      const days = document.getElementById('days').value;
+      const minCash = document.getElementById('minCash').value;
+      let url = `/api/history/series?scryfall_id=${encodeURIComponent(scryfallId)}&finish=${finish}&days=${days}`;
+      if (minCash) url += `&min_cash=${minCash}`;
+      statusEl.textContent = 'Loading chart…';
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) { statusEl.textContent = data.detail || 'Error'; return; }
+      statusEl.textContent = '';
+      document.getElementById('chartCard').hidden = false;
+      document.getElementById('chartTitle').textContent = data.name || name;
+      document.getElementById('chartMeta').textContent =
+        `${data.set_name} · ${finish} · ${data.point_count} data points · Scryfall TCG USD from daily snapshots`;
+
+      const labels = data.series.map(p => p.date);
+      const datasets = [
+        { label: 'CK cash', data: data.series.map(p => p.ck_cash), borderColor: '#2c7be5', tension: 0.2 },
+        { label: 'CK credit', data: data.series.map(p => p.ck_credit), borderColor: '#6f42c1', tension: 0.2 },
+        { label: 'TCG USD (Scryfall)', data: data.series.map(p => p.tcg_usd), borderColor: '#e67e22', tension: 0.2 },
+      ];
+      if (chart) chart.destroy();
+      chart = new Chart(document.getElementById('chart'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom' } },
+          scales: { y: { beginAtZero: false, title: { display: true, text: 'USD' } } },
+        },
+      });
+    }
+
+    function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+  </script>
+</body>
+</html>

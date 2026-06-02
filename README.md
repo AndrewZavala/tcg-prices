@@ -1,0 +1,116 @@
+# CK Buylist → Postgres → Website
+
+Daily Card Kingdom buylist pipeline with Scryfall enrichment, Postgres storage, and **TCG Prices** — a public search UI at [tcgprices.aizo.solutions](https://tcgprices.aizo.solutions) (production).
+
+## Project layout
+
+```
+TCG/
+  pipeline/          scrape, merge, enrich, load, cron scripts
+  helper/            scryfall_set_lookup.csv, scryfall_cards_lookup.csv (generated)
+  data/buylist/      raw, master, enriched CSVs
+  Buylist/           legacy segment CSVs (still supported for merge)
+  migrations/        Postgres schema
+  web/               FastAPI + static UI
+  docs/PHASE2.md     inventory / sell-list extension notes
+```
+
+## Quick start (Docker on VPS)
+
+1. Copy `.env.example` to `.env` and adjust secrets.
+2. **First-time:** refresh Scryfall lookup (large download, ~10+ minutes):
+
+   ```bash
+   docker compose run --rm pipeline python3 pipeline/refresh_scryfall.py
+   ```
+
+3. Start Postgres + web + scheduler:
+
+   ```bash
+   docker compose up -d postgres web scheduler
+   ```
+
+4. Run pipeline once manually:
+
+   ```bash
+   docker compose run --rm pipeline /app/pipeline/run_daily.sh
+   ```
+
+5. Open http://localhost:8000
+
+## Production deploy (tcgprices.aizo.solutions)
+
+See **[deploy/README.md](deploy/README.md)** for full VPS setup.
+
+Quick summary:
+
+1. DNS: **A record** `tcgprices` → your VPS IP (on `aizo.solutions`).
+2. Clone repo to `/opt/tcg`, copy `deploy/.env.production.example` → `.env`.
+3. Run `bash deploy/deploy.sh` (twice — first creates secrets, second deploys).
+4. Site goes live at **https://tcgprices.aizo.solutions** (Caddy auto-HTTPS).
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d
+```
+
+## Web features
+
+| Page | URL | Description |
+|------|-----|-------------|
+| Buylist search | `/` | Browse current CK buylist |
+| **Match collection** | `/match` | Upload CSV (Manabox / Stacks / etc.) → CK buylist match ([similar to BulkCaster CK tool](https://mtgbulkcaster.com/)) |
+| **Price history** | `/charts` | Line chart: CK cash/credit vs Scryfall TCG USD over time (per card, filtered search) |
+
+Price history needs **multiple daily pipeline runs** — each run stores a dated snapshot in Postgres.
+
+## Daily pipeline
+
+`pipeline/run_daily.sh` runs:
+
+1. `scrape_ck.py` — CK public pricelist JSON (`api.cardkingdom.com`) → `data/buylist/raw/{date}/`
+2. `merge_buylist.py` — uses API CSV only when present (skips legacy `Buylist/` segments)
+3. `enrich_buylist.py` — CK set aliases + API `scryfall_id` + Scryfall USD/TCGPlayer metadata
+4. `load_postgres.py` — upsert snapshot into Postgres
+
+### Set name normalization
+
+CK edition strings are mapped to Scryfall via [`helper/ck_set_aliases.csv`](helper/ck_set_aliases.csv) and rules in [`pipeline/set_normalize.py`](pipeline/set_normalize.py) (Universes Beyond prefix, Secret Lair → Secret Lair Drop, numbered editions, commander deck names, etc.). Add rows to the alias CSV when you find new CK naming quirks.
+
+Scheduler container uses cron (`PIPELINE_CRON`, default `0 5 * * *` in `TZ`).
+
+## Local / R workflow
+
+From repo root with R installed:
+
+```r
+source("pipeline/refresh_scryfall.R")  # weekly
+source("pipeline/merge_buylist.R")     # or tcg_scraper.R
+source("pipeline/enrich_ck.R")
+```
+
+Set `TCG_ROOT` if not running from the repo directory.
+
+## Environment variables
+
+See [.env.example](.env.example). Key values:
+
+| Variable | Purpose |
+|----------|---------|
+| `TCG_ROOT` | Repo root path |
+| `DATABASE_URL` | Postgres connection |
+| `TZ` | Timezone for cron (e.g. `America/New_York`) |
+| `PIPELINE_CRON` | Daily job schedule |
+| `SCRYFALL_CRON` | Weekly Scryfall refresh |
+
+## VPS cron without Docker scheduler
+
+```cron
+0 5 * * * cd /opt/tcg && ./pipeline/run_daily.sh >> /var/log/tcg-pipeline.log 2>&1
+0 3 * * 0 cd /opt/tcg && ./pipeline/refresh_scryfall.sh >> /var/log/tcg-scryfall.log 2>&1
+```
+
+Install deps: `pip install -r requirements.txt`
+
+## Credit price note
+
+The CK API exposes `price_buy` (cash). Credit is computed as cash × 1.3, matching Card Kingdom’s standard store credit ratio used in your existing CSVs.

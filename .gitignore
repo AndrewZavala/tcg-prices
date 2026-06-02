@@ -1,0 +1,31 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+.next/
+
+# Generated / large data (rebuilt on VPS via pipeline)
+helper/scryfall_default_cards.json
+helper/scryfall_cards_lookup.csv
+/scryfall_cards_lookup.csv
+/scryfall_set_lookup.csv
+data/buylist/raw/
+data/buylist/master/
+data/buylist/enriched/
+deploy/backups/*.sql.gz
+
+# Legacy segment CSVs (optional local fallback; pipeline uses CK API)
+Buylist/*.csv
+
+# Local inventory / reports (personal)
+Stacks/
+data/stack_ck_match_report.csv
+
+# Stray binaries
+Buylist/*.exe
+
+*.log
+.DS_Store
+Thumbs.db

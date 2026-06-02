@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tcg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tcg_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-tcg_buylist}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations/001_schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tcg} -d ${POSTGRES_DB:-tcg_buylist}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    environment:
+      TCG_ROOT: /app
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tcg}:${POSTGRES_PASSWORD:-tcg_secret}@postgres:5432/${POSTGRES_DB:-tcg_buylist}
+      TZ: ${TZ:-America/New_York}
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - manual
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tcg}:${POSTGRES_PASSWORD:-tcg_secret}@postgres:5432/${POSTGRES_DB:-tcg_buylist}
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    environment:
+      TCG_ROOT: /app
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tcg}:${POSTGRES_PASSWORD:-tcg_secret}@postgres:5432/${POSTGRES_DB:-tcg_buylist}
+      TZ: ${TZ:-America/New_York}
+      PIPELINE_CRON: ${PIPELINE_CRON:-0 5 * * *}
+      SCRYFALL_CRON: ${SCRYFALL_CRON:-0 3 * * 0}
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["/app/pipeline/cron_entry.sh"]
+
+volumes:
+  pgdata:

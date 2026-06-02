@@ -1,0 +1,837 @@
+---
+title: "Master_rmd"
+output: html_document
+date: "2026-03-12"
+editor_options: 
+  chunk_output_type: console
+---
+
+## Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(readxl)
+library(readr)
+library(dplyr)
+library(stringr)
+library(plotly)
+library(purrr)
+source(file.path(getwd(), "pipeline", "config.R"))
+```
+
+## Import data sources
+
+```{r import_data}
+# Scryfall set-name -> set-code lookup
+sets_lookup <- read_csv(
+  scryfall_set_lookup,
+  show_col_types = FALSE
+)
+
+# Scryfall card lookup table built from bulk data
+scryfall_cards <- read_csv(
+  scryfall_cards_lookup,
+  show_col_types = FALSE
+) %>%
+  mutate(
+    set_code = tolower(set_code),
+    collector_number = as.character(collector_number)
+  )
+
+# Card Kingdom buylist sheet
+today <- Sys.Date()
+
+today_file <- file.path(
+  buylist_master_dir,
+  paste0("cardkingdom_buylist_master_", today, ".csv")
+)
+
+if (!file.exists(today_file)) {
+  message("No CK file for today found. Running merge...")
+  source(file.path(tcg_root, "pipeline", "merge_buylist.R"))
+} else {
+  message("Today's CK file already exists. Skipping merge.")
+}
+
+ck_files <- list.files(
+  buylist_master_dir,
+  pattern = "^cardkingdom_buylist_master_\\d{4}-\\d{2}-\\d{2}\\.(csv|xlsx)$",
+  full.names = TRUE
+)
+
+latest_ck_file <- ck_files[which.max(file.info(ck_files)$mtime)]
+
+if (grepl("\\.csv$", latest_ck_file, ignore.case = TRUE)) {
+  ck_buylist <- read_csv(latest_ck_file, show_col_types = FALSE)
+} else if (grepl("\\.xlsx$", latest_ck_file, ignore.case = TRUE)) {
+  ck_buylist <- read_xlsx(latest_ck_file, sheet = 1)
+}
+ck_buylist <- ck_buylist %>%
+  select(
+    name,
+    set,
+    collector_number,
+    finish,
+    cash_price,
+    credit_price,
+    max_qty
+  )
+```
+
+```{r Batch Inventory}
+if (file.exists(tcg_path("master", "inventory.csv"))) {
+  inventory <- read_csv(
+    tcg_path("master", "inventory.csv"),
+    show_col_types = FALSE,
+    col_types = cols(
+      `Collector number` = col_character(),
+      `Scan Order` = col_character(),
+      Quantity = col_double(),
+      `Scryfall ID` = col_character(),
+      `Set code` = col_character(),
+      Finish = col_character(),
+      Name = col_character(),
+      batch_file = col_character(),
+      status = col_character()
+    )
+  )
+} else {
+  inventory <- tibble()
+}
+
+processed_files <- read_csv(
+  tcg_path("master", "processed_stack_files.csv"),
+  show_col_types = FALSE
+)
+
+stack_files <- list.files(
+  "Stacks",
+  pattern = "\\.csv$",
+  full.names = FALSE
+)
+
+new_stack_files <- setdiff(stack_files, processed_files$file_name)
+
+new_stacks <- lapply(
+  new_stack_files,
+  function(file) {
+    read_csv(
+      file.path("Stacks", file),
+      show_col_types = FALSE,
+      col_types = cols(
+        `Collector number` = col_character(),
+        `Scan Order` = col_character(),
+        Quantity = col_double(),
+        `Scryfall ID` = col_character(),
+        `Set code` = col_character(),
+        Finish = col_character(),
+        Name = col_character()
+      )
+    ) %>%
+      filter(!is.na(`Scryfall ID`)) %>%
+      mutate(
+        batch_file = file,
+        `Collector number` = as.character(`Collector number`),
+        `Scan Order` = as.character(`Scan Order`),
+        `Scryfall ID` = as.character(`Scryfall ID`),
+        `Set code` = as.character(`Set code`),
+        Finish = as.character(Finish),
+        Name = as.character(Name)
+      )
+  }
+)
+
+
+if (length(new_stacks) > 0) {
+  inventory <- bind_rows(
+    inventory,
+    bind_rows(new_stacks)
+  )
+
+  processed_files <- bind_rows(
+    processed_files,
+    tibble(file_name = new_stack_files)
+  ) %>%
+    distinct(file_name)
+
+  write_csv(processed_files, tcg_path("master", "processed_stack_files.csv"))
+}
+
+inventory <- inventory %>%
+  mutate(
+    Quantity = coalesce(as.numeric(Quantity), 1)
+  )
+
+if (!"status" %in% names(inventory)) {
+  inventory$status <- "active"
+}
+
+inventory <- inventory %>%
+  mutate(
+    status = if_else(is.na(status), "active", status)
+  )
+
+sold_file <- tcg_path("master", "sold_cards.csv")
+
+if (file.exists(sold_file)) {
+
+  sold_updates <- read_csv(
+    sold_file,
+    show_col_types = FALSE,
+    col_types = cols(
+      batch_file = col_character(),
+      `Scan Order` = col_character()
+  )
+) %>%
+  mutate(
+    `Scan Order` = as.character(`Scan Order`),
+    sold_flag = TRUE
+  )
+
+  inventory <- inventory %>%
+    left_join(
+      sold_updates %>%
+        select(batch_file, `Scan Order`, sold_flag),
+      by = c("batch_file", "Scan Order")
+    ) %>%
+    mutate(
+      status = if_else(!is.na(sold_flag), "sold", status)
+    ) %>%
+    select(-sold_flag)
+
+  write_csv(inventory, tcg_path("master", "inventory.csv"))
+  file.remove(sold_file)
+}
+
+inventory <- inventory %>%
+  mutate(
+    scan_order_num = suppressWarnings(as.numeric(`Scan Order`))
+  ) %>%
+  arrange(batch_file, scan_order_num, `Scan Order`, desc(status == "sold")) %>%
+  distinct(batch_file, `Scan Order`, .keep_all = TRUE) %>%
+  select(-scan_order_num)
+
+write_csv(inventory, tcg_path("master", "inventory.csv"))
+```
+
+## Clean CK data
+
+```{r clean_ck_data}
+ck_buylist <- ck_buylist %>%
+  mutate(finish = case_when(
+  str_detect(name, regex("Foil Etched", ignore_case = TRUE)) ~ "etched",
+  str_detect(set, "\\bFOIL\\b") ~ "foil",
+  TRUE ~ "normal"
+),
+    collector_number = as.character(collector_number),
+    clean_set = set,
+    clean_set = str_replace(clean_set, " FOIL$", ""),
+    clean_set = str_replace(clean_set, " \\([A-Z]+\\)$", ""),
+    clean_set = str_replace(clean_set, " JPN Planeswalkers$", ""),
+    clean_set = str_replace(clean_set, " Variants$", ""),
+    clean_set = str_replace(clean_set, " Commander Decks$", " Commander"),
+    clean_set = str_replace(clean_set, "^Mystery Booster/The List$", "The List"),
+    clean_set = str_squish(clean_set)
+  )
+```
+
+## Attach Scryfall set codes
+
+```{r attach_set_codes}
+ck_buylist <- ck_buylist %>%
+  left_join(
+    sets_lookup %>%
+      transmute(
+        clean_set_lookup = name,
+        set_code = tolower(code)
+      ),
+    by = c("clean_set" = "clean_set_lookup")
+  )
+```
+
+## Handle The List suffix cases
+
+```{r handle_the_list}
+ck_buylist <- ck_buylist %>%
+  mutate(
+    suffix_hint = if_else(
+      set_code == "plst",
+      str_match(name, "\\(([^()]*)\\)$")[, 2],
+      NA_character_
+    )
+  )
+
+ck_buylist <- ck_buylist %>%
+  left_join(
+    sets_lookup %>%
+      transmute(
+        suffix_hint = name,
+        suffix_set_code = tolower(code)
+      ),
+    by = "suffix_hint"
+  )
+
+ck_buylist <- ck_buylist %>%
+  mutate(
+    scryfall_collector_number = if_else(
+      set_code == "plst" & !is.na(suffix_set_code),
+      paste0(str_to_upper(suffix_set_code), "-", collector_number),
+      collector_number
+    ),
+    scryfall_collector_number = as.character(scryfall_collector_number)
+  )
+```
+
+## Attach Scryfall IDs from local bulk-derived lookup
+
+```{r attach_scryfall_ids}
+ck_buylist <- ck_buylist %>%
+  left_join(
+    scryfall_cards %>%
+      select(
+        scryfall_id,
+        set_code,
+        collector_number,
+        tcgplayer_id,
+        tcgplayer_etched_id,
+        usd,
+        usd_foil,
+        usd_etched
+      ),
+    by = c(
+      "set_code" = "set_code",
+      "scryfall_collector_number" = "collector_number"
+    )
+  )
+```
+
+```{r export_full_ck_buylist}
+dir.create(buylist_enriched_dir, recursive = TRUE, showWarnings = FALSE)
+write_csv(
+  ck_buylist,
+  file.path(buylist_enriched_dir, paste0("full_ck_buylist_export_", Sys.Date(), ".csv"))
+)
+```
+
+## Join sample stack to CK by Scryfall ID
+
+```{r join_stack_to_ck}
+stack_with_ck <- inventory %>%
+  left_join(
+    ck_buylist %>%
+      mutate(
+        ck_finish_match = case_when(
+  str_detect(name, regex("Foil Etched", ignore_case = TRUE)) ~ "etched",
+  str_detect(set, "\\bFOIL\\b") ~ "foil",
+  TRUE ~ "normal"
+)      ) %>%
+      select(
+        scryfall_id,
+        ck_finish_match,
+        cash_price,
+        credit_price,
+        name,
+        set,
+        ck_name = name
+      ),
+    by = c(
+      "Scryfall ID" = "scryfall_id",
+      "Finish" = "ck_finish_match"
+    )
+  )
+
+stack_with_ck <- stack_with_ck %>%
+  left_join(
+    scryfall_cards %>%
+      select(
+        scryfall_id,
+        usd,
+        usd_foil,
+        usd_etched
+      ),
+    by = c("Scryfall ID" = "scryfall_id")
+  )
+
+stack_with_ck <- stack_with_ck %>%
+  mutate(
+    tcg_price = case_when(
+      Finish == "foil" ~ as.numeric(usd_foil),
+      Finish == "etched" ~ as.numeric(usd_etched),
+      TRUE ~ as.numeric(usd)
+    )
+  )
+```
+
+## Quick check
+
+```{r quick_check}
+stack_with_ck %>%
+  select(
+    Name,
+    `Set code`,
+    `Collector number`,
+    Finish,
+    `Scryfall ID`,
+    cash_price,
+    credit_price,
+    set
+  )
+
+sell_list <- stack_with_ck %>%
+  filter(status == "active") %>%
+  filter(!is.na(credit_price)) %>%
+  select(
+    Name,
+    `Scryfall ID`,
+    set,
+    batch_file,
+    Quantity,
+    Finish,
+    `Scan Order`,
+    Colors,
+    cash_price,
+    credit_price,
+    tcg_price,
+    ck_name
+  )
+```
+
+```{r export}
+library(htmltools)
+
+get_row_color <- function(colors) {
+  colors <- str_squish(as.character(colors))
+
+  if (is.na(colors) || colors == "") {
+    return("#d9d9d9")   # gray
+  }
+
+  color_parts <- unlist(strsplit(colors, ","))
+  color_parts <- str_squish(color_parts)
+  color_parts <- color_parts[color_parts != ""]
+
+  if (length(color_parts) > 1) {
+    return("#ffe59d")   # yellow for multicolor
+  }
+
+  if (colors == "W") return("#fffde3")
+  if (colors == "U") return("#cfe8ff")
+  if (colors == "B") return("#d9d2e9")
+  if (colors == "R") return("#f8caca")
+  if (colors == "G") return("#cfeccf")
+
+  return("#d9d9d9")     # fallback gray
+}
+
+ck_upload <- sell_list %>%
+  mutate(
+    Title = Name,
+    Edition = str_replace(set, " \\([A-Z]+\\)$", ""),
+    Foil = if_else(Finish == "foil", "TRUE", "FALSE"),
+    Quantity = Quantity
+  ) %>%
+  select(
+    Title,
+    Edition,
+    Foil,
+    Quantity
+  )
+
+
+
+batch_levels <- sell_list %>%
+  distinct(batch_file) %>%
+  mutate(batch_num = as.numeric(str_extract(batch_file, "\\d+"))) %>%
+  arrange(batch_num, batch_file) %>%
+  pull(batch_file)
+
+sell_list$batch_file <- factor(sell_list$batch_file, levels = batch_levels)
+
+batch_pages <- lapply(split(sell_list, sell_list$batch_file), function(df) {
+  tagList(
+    tags$h2(unique(df$batch_file)),
+    tags$div(
+  style = "margin-bottom: 10px;",
+  tags$button(
+    "Check All",
+    onclick = sprintf("setBatchCheckboxes('%s', true)", unique(df$batch_file)),
+    type = "button",
+    style = "margin-right: 8px;"
+  ),
+  tags$button(
+    "Uncheck All",
+    onclick = sprintf("setBatchCheckboxes('%s', false)", unique(df$batch_file)),
+    type = "button"
+  )
+),
+    tags$p(
+  paste0(
+    "Batch totals — Cash: $", round(sum(df$cash_price, na.rm = TRUE), 2),
+    " | Credit: $", round(sum(df$credit_price, na.rm = TRUE), 2),
+    " | TCG: $", round(sum(df$tcg_price, na.rm = TRUE), 2)
+  ),
+  style = "font-weight: bold; margin-bottom: 12px;"
+),
+    tags$table(
+      border = 1,
+      tags$tr(
+        tags$th("Select"),
+        tags$th("Name"),
+        tags$th("CK Name"),
+        tags$th("Quantity"),
+        tags$th("Finish"),
+        tags$th("Scan Order"),
+        tags$th("Colors"),
+        tags$th("CK Cash"),
+        tags$th("CK Credit"),
+        tags$th("TCG Price"),
+        tags$th("% of TCG")),
+      lapply(seq_len(nrow(df)), function(i) {
+        tags$tr(
+  style = paste0("background-color: ", get_row_color(df$Colors[i]), ";"),
+          tags$td(
+           tags$input(
+  type = "checkbox",
+  class = "sell-check",
+  checked = TRUE,
+  `data-batchgroup` = as.character(df$batch_file[i]),
+  `data-scryfall` = df$`Scryfall ID`[i],
+  `data-batch` = df$batch_file[i],
+  `data-scanorder` = df$`Scan Order`[i],
+  `data-title` = df$ck_name[i],
+  `data-edition` = str_replace(
+   str_replace(df$set[i], " FOIL$", ""),
+   " \\([A-Z]+\\)$",
+    ""
+   ),
+  `data-foil` = ifelse(df$Finish[i] == "foil", "TRUE", "FALSE"),
+  `data-quantity` = df$Quantity[i])
+          ),
+          tags$td(df$Name[i]),
+          tags$td(df$ck_name[i]),
+          tags$td(df$Quantity[i]),
+          tags$td(df$Finish[i]),
+          tags$td(df$`Scan Order`[i]),
+          tags$td(df$Colors[i]),
+          tags$td(df$cash_price[i]),
+          tags$td(df$credit_price[i]),
+          tags$td(df$tcg_price[i]),
+          tags$td(
+            paste0(
+               round((df$credit_price[i] / (df$tcg_price[i])) * 100, 1),
+               "%"
+  )
+)
+        )
+      })
+    )
+  )
+})
+
+# ---- historical CK graph data for cards in sell_list ----
+
+ck_files_hist <- list.files(
+  buylist_master_dir,
+  pattern = "^cardkingdom_buylist_master_\\d{4}-\\d{2}-\\d{2}\\.csv$",
+  full.names = TRUE
+)
+
+get_snapshot_date <- function(x) {
+  as.Date(str_extract(basename(x), "\\d{4}-\\d{2}-\\d{2}"))
+}
+
+cards_to_plot <- sell_list %>%
+  distinct(
+    `Scryfall ID`,
+    Finish,
+    Name
+  ) %>%
+  transmute(
+    scryfall_id = `Scryfall ID`,
+    finish_match = Finish,
+    Name
+  )
+
+build_hist_snapshot <- function(file_path) {
+  snapshot_date <- get_snapshot_date(file_path)
+
+  read_csv(file_path, show_col_types = FALSE) %>%
+    select(
+      name,
+      set,
+      collector_number,
+      finish,
+      cash_price,
+      credit_price
+    ) %>%
+    mutate(
+      finish = case_when(
+        str_detect(name, regex("Foil Etched", ignore_case = TRUE)) ~ "etched",
+        str_detect(set, "\\bFOIL\\b") ~ "foil",
+        TRUE ~ "normal"
+      ),
+      collector_number = as.character(collector_number),
+      clean_set = set,
+      clean_set = str_replace(clean_set, " FOIL$", ""),
+      clean_set = str_replace(clean_set, " \\([A-Z]+\\)$", ""),
+      clean_set = str_replace(clean_set, " JPN Planeswalkers$", ""),
+      clean_set = str_replace(clean_set, " Variants$", ""),
+      clean_set = str_replace(clean_set, " Commander Decks$", " Commander"),
+      clean_set = str_replace(clean_set, "^Mystery Booster/The List$", "The List"),
+      clean_set = str_squish(clean_set)
+    ) %>%
+    left_join(
+      sets_lookup %>%
+        transmute(
+          clean_set_lookup = name,
+          set_code = tolower(code)
+        ),
+      by = c("clean_set" = "clean_set_lookup")
+    ) %>%
+    mutate(
+      suffix_hint = if_else(
+        set_code == "plst",
+        str_match(name, "\\(([^()]*)\\)$")[, 2],
+        NA_character_
+      )
+    ) %>%
+    left_join(
+      sets_lookup %>%
+        transmute(
+          suffix_hint = name,
+          suffix_set_code = tolower(code)
+        ),
+      by = "suffix_hint"
+    ) %>%
+    mutate(
+      scryfall_collector_number = if_else(
+        set_code == "plst" & !is.na(suffix_set_code),
+        paste0(str_to_upper(suffix_set_code), "-", collector_number),
+        collector_number
+      ),
+      scryfall_collector_number = as.character(scryfall_collector_number)
+    ) %>%
+    left_join(
+      scryfall_cards %>%
+        select(scryfall_id, set_code, collector_number),
+      by = c(
+        "set_code" = "set_code",
+        "scryfall_collector_number" = "collector_number"
+      )
+    ) %>%
+    transmute(
+      snapshot_date = snapshot_date,
+      scryfall_id,
+      finish_match = finish,
+      cash_price = as.numeric(cash_price),
+      credit_price = as.numeric(credit_price)
+    )
+}
+
+ck_hist <- map_dfr(ck_files_hist, build_hist_snapshot)
+
+plot_history <- cards_to_plot %>%
+  left_join(
+    ck_hist,
+    by = c("scryfall_id", "finish_match")
+  ) %>%
+  filter(!is.na(snapshot_date)) %>%
+  mutate(card_label = paste0(Name, " | ", finish_match))
+
+p_history <- plot_ly(
+  data = plot_history,
+  y = ~credit_price,
+  color = ~card_label,
+  type = "scatter",
+  mode = "lines+markers",
+  text = ~paste0(
+    "Card: ", Name,
+    "<br>Finish: ", finish_match,
+    "<br>Date: ", snapshot_date,
+    "<br>CK Credit: $", round(credit_price, 2),
+    "<br>CK Cash: $", round(cash_price, 2)
+  ),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = "CK Buylist Price History for Current Sell List",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "CK Credit Price")
+  )
+
+total_cash <- round(sum(sell_list$cash_price, na.rm = TRUE), 2)
+total_credit <- round(sum(sell_list$credit_price, na.rm = TRUE), 2)
+total_tcg <- round(sum(sell_list$tcg_price * 0.85, na.rm = TRUE), 2)
+
+html_page <- tagList(
+  tags$h1("Card Kingdom Sell List"),
+  tags$style(HTML("
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  background-color: #f5f7fa;
+  margin: 40px;
+  color: #333;
+}
+
+h1 {
+  font-size: 28px;
+  margin-bottom: 10px;
+}
+
+h2 {
+  margin-top: 40px;
+  color: #2c3e50;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 30px;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+}
+
+th {
+  background-color: #2c3e50;
+  color: white;
+  text-align: left;
+  padding: 10px;
+  font-size: 14px;
+}
+
+td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eee;
+}
+
+tr:hover {
+  background-color: #f1f6ff;
+}
+
+button {
+  background-color: #2c7be5;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-right: 10px;
+}
+
+button:hover {
+  background-color: #1a68d1;
+}
+
+input.sell-check {
+  transform: scale(1.8);
+  cursor: pointer;
+}
+
+td:first-child, th:first-child {
+  text-align: center;
+}
+")),
+tags$p(
+  paste0(
+    "Total shipment value — Cash: $", total_cash,
+    " | Credit: $", total_credit,
+    " | TCG: $", total_tcg
+  ),
+  style = "font-weight: bold; font-size: 18px; margin-bottom: 20px;"
+),
+tags$div(
+  style = "margin-bottom: 30px;",
+  browsable(p_history)
+),
+  tags$button(
+    "Export",
+    onclick = "exportCheckedRows()",
+    style = "margin-bottom: 20px; padding: 8px 16px; font-size: 16px;"
+  ),
+  tags$button(
+  "Export Sold",
+  onclick = "exportSoldRows()",
+  style = "margin-bottom: 20px; margin-left: 10px; padding: 8px 16px; font-size: 16px;"
+  ),
+  batch_pages,
+  tags$script(HTML("
+  function exportCheckedRows() {
+    const checks = document.querySelectorAll('.sell-check:checked');
+    let rows = [];
+
+    checks.forEach(function(box) {
+      rows.push([
+        box.dataset.title,
+        box.dataset.edition,
+        box.dataset.foil,
+        box.dataset.quantity
+      ]);
+    });
+
+    if (rows.length === 0) {
+      alert('No rows selected.');
+      return;
+    }
+
+    const csv = rows
+      .map(row => row.map(value => `\"${String(value).replace(/\"/g, '\"\"')}\"`).join(','))
+      .join('\\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'ck_upload_selected.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+  
+  function setBatchCheckboxes(batchName, isChecked) {
+    const boxes = document.querySelectorAll('.sell-check');
+    boxes.forEach(function(box) {
+      if (box.dataset.batchgroup === batchName) {
+        box.checked = isChecked;
+      }
+    });
+  }
+  
+ function exportSoldRows() {
+  const checks = document.querySelectorAll('.sell-check:checked');
+  let rows = [];
+
+  checks.forEach(function(box) {
+    rows.push([
+      box.dataset.batch,
+      box.dataset.scanorder,
+      box.dataset.title
+    ]);
+  });
+
+  if (rows.length === 0) {
+    alert('No rows selected.');
+    return;
+  }
+
+  const csv =
+    'batch_file,Scan Order,Name\\n' +
+    rows.map(row => row.join(',')).join('\\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'sold_cards.csv';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+"))
+)
+
+save_html(html_page, tcg_path("master", "sell_list.html"))
+browseURL(tcg_path("master", "sell_list.html"))
+```
+
+
+

@@ -1,0 +1,15 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY pipeline/config.py ./pipeline/config.py
+COPY migrations/002_history_indexes.sql ./migrations/002_history_indexes.sql
+COPY web ./web
+
+ENV PYTHONPATH=/app/pipeline:/app
+WORKDIR /app/web
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

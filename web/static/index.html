@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TCG Prices — Card Kingdom Buylist Search</title>
+  <meta name="description" content="Search Card Kingdom's MTG buylist with cash and store credit prices. Updated daily." />
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    :root { --bg: #f5f7fa; --card: #fff; --accent: #2c7be5; --text: #333; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 2rem; }
+    h1 { margin-top: 0; }
+    .meta { color: #666; margin-bottom: 1.5rem; }
+    .filters { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
+    input, select, button { padding: 0.5rem 0.75rem; font-size: 1rem; border-radius: 6px; border: 1px solid #ccc; }
+    button { background: var(--accent); color: #fff; border: none; cursor: pointer; }
+    button:hover { filter: brightness(0.95); }
+    table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    th { background: #2c3e50; color: #fff; text-align: left; padding: 0.6rem; }
+    td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #eee; }
+    tr:hover { background: #f1f6ff; }
+    a { color: var(--accent); }
+    .pager { margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; }
+    .error { color: #c0392b; }
+  </style>
+</head>
+<body>
+  <nav>
+    <span class="brand">TCG Prices</span>
+    <a href="/">Search</a>
+    <a href="/match">Match collection</a>
+    <a href="/charts">Price history</a>
+  </nav>
+  <main>
+  <h1>Card Kingdom buylist</h1>
+  <p class="meta" id="meta">Loading snapshot info…</p>
+
+  <div class="filters">
+    <input type="search" id="q" placeholder="Search card name…" />
+    <input type="text" id="set_code" placeholder="Set code (e.g. mh2)" />
+    <select id="finish">
+      <option value="">Any finish</option>
+      <option value="normal">Normal</option>
+      <option value="foil">Foil</option>
+      <option value="etched">Etched</option>
+    </select>
+    <input type="number" id="min_cash" placeholder="Min cash $" step="0.01" min="0" />
+    <button type="button" id="searchBtn">Search</button>
+  </div>
+
+  <p id="status"></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Set</th>
+        <th>Finish</th>
+        <th>Cash</th>
+        <th>Credit</th>
+        <th>Max qty</th>
+        <th>Scryfall</th>
+      </tr>
+    </thead>
+    <tbody id="results"></tbody>
+  </table>
+  <div class="pager">
+    <button type="button" id="prevBtn">Previous</button>
+    <span id="pageInfo"></span>
+    <button type="button" id="nextBtn">Next</button>
+  </div>
+
+  <script>
+    const limit = 50;
+    let offset = 0;
+    let lastTotal = 0;
+
+    async function loadMeta() {
+      const res = await fetch('/api/meta');
+      const data = await res.json();
+      const el = document.getElementById('meta');
+      if (!data.snapshot_date) {
+        el.textContent = 'No buylist data loaded yet. Run the daily pipeline.';
+        return;
+      }
+      el.textContent = `Prices as of ${data.snapshot_date} · ${data.row_count?.toLocaleString() ?? '?'} cards · source: ${data.source ?? 'api'}`;
+    }
+
+    async function search() {
+      const params = new URLSearchParams({ limit, offset });
+      const q = document.getElementById('q').value.trim();
+      const setCode = document.getElementById('set_code').value.trim();
+      const finish = document.getElementById('finish').value;
+      const minCash = document.getElementById('min_cash').value;
+      if (q) params.set('q', q);
+      if (setCode) params.set('set_code', setCode);
+      if (finish) params.set('finish', finish);
+      if (minCash) params.set('min_cash', minCash);
+
+      const status = document.getElementById('status');
+      status.textContent = 'Loading…';
+      status.className = '';
+
+      try {
+        const res = await fetch(`/api/search?${params}`);
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        lastTotal = data.total;
+        const tbody = document.getElementById('results');
+        tbody.innerHTML = data.results.map(row => `
+          <tr>
+            <td>${escapeHtml(row.name)}</td>
+            <td>${escapeHtml(row.set_name)} <small>(${escapeHtml(row.set_code || '')})</small></td>
+            <td>${escapeHtml(row.finish || '')}</td>
+            <td>$${fmt(row.cash_price)}</td>
+            <td>$${fmt(row.credit_price)}</td>
+            <td>${row.max_qty ?? ''}</td>
+            <td>${row.scryfall_id ? `<a href="https://scryfall.com/card/${row.scryfall_id}" target="_blank" rel="noopener">View</a>` : '—'}</td>
+          </tr>
+        `).join('');
+        document.getElementById('pageInfo').textContent =
+          `${offset + 1}–${Math.min(offset + limit, lastTotal)} of ${lastTotal}`;
+        status.textContent = '';
+      } catch (e) {
+        status.textContent = e.message;
+        status.className = 'error';
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function fmt(n) {
+      return n == null ? '—' : Number(n).toFixed(2);
+    }
+
+    document.getElementById('searchBtn').addEventListener('click', () => { offset = 0; search(); });
+    document.getElementById('prevBtn').addEventListener('click', () => {
+      offset = Math.max(0, offset - limit);
+      search();
+    });
+    document.getElementById('nextBtn').addEventListener('click', () => {
+      if (offset + limit < lastTotal) { offset += limit; search(); }
+    });
+    document.getElementById('q').addEventListener('keydown', e => {
+      if (e.key === 'Enter') { offset = 0; search(); }
+    });
+
+    loadMeta();
+    search();
+  </script>
+  <footer class="site-footer">
+    <p>Card Kingdom buylist tools by <a href="https://aizo.solutions" rel="noopener">Aizo Solutions</a>.
+    Not affiliated with Card Kingdom or Wizards of the Coast. Prices update daily from public data.</p>
+  </footer>
+  </main>
+</body>
+</html>
