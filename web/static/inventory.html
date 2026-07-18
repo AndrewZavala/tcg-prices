@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inventory — Manifest Bread</title>
+  <meta name="description" content="On-hand TCG stock and CK fulfillments." />
+  <link rel="stylesheet" href="/static/app.css?v=2026071313" />
+  <script src="/static/theme-init.js"></script>
+</head>
+<body class="opp-page inv-page">
+  <nav>
+    <a href="/" class="brand-block">
+      <img src="/static/bread.jpg" alt="" class="brand-logo" width="32" height="32" />
+      <span class="brand-text">
+        <span class="brand">Manifest Bread</span>
+        <span class="tagline">Turn bulk into bread.</span>
+      </span>
+    </a>
+    <a href="/">Search</a>
+    <a href="/opportunities">Opportunities</a>
+    <a href="/inventory">Inventory</a>
+    <a href="/returns">CK returns</a>
+    <a href="/match">Match collection</a>
+    <a href="/charts">Price history</a>
+    <a href="/data">Data</a>
+    <a href="/architecture">Overview</a>
+  </nav>
+  <main>
+    <header class="opp-hero">
+      <div class="opp-hero-text">
+        <h1>Inventory</h1>
+        <p class="opp-sub" id="meta">On-hand stock from TCG buys — fulfill to CK in batches</p>
+      </div>
+      <dl class="opp-kpis" id="linkKpis" hidden>
+        <div>
+          <dt id="kpi1Label">Inbound</dt>
+          <dd id="kpi1">—</dd>
+        </div>
+        <div>
+          <dt id="kpi2Label">Need to sell</dt>
+          <dd id="kpi2">—</dd>
+        </div>
+        <div>
+          <dt id="kpi3Label">Awaiting pay</dt>
+          <dd id="kpi3">—</dd>
+        </div>
+        <div>
+          <dt id="kpi4Label">Paid profit</dt>
+          <dd id="kpi4">—</dd>
+        </div>
+      </dl>
+    </header>
+
+    <nav class="opp-tabs" role="tablist" aria-label="Inventory lifecycle">
+      <button type="button" class="opp-tab is-active" id="tabAll" role="tab" aria-selected="true" data-tab="all" data-label="Inventory">Inventory</button>
+      <button type="button" class="opp-tab" id="tabInbound" role="tab" aria-selected="false" data-tab="inbound" data-label="Inbound">Inbound</button>
+      <button type="button" class="opp-tab" id="tabNeedSell" role="tab" aria-selected="false" data-tab="need_to_sell" data-label="Need to Sell">Need to Sell</button>
+      <button type="button" class="opp-tab" id="tabToPack" role="tab" aria-selected="false" data-tab="to_pack" data-label="Need to Pack">Need to Pack</button>
+      <button type="button" class="opp-tab" id="tabToShip" role="tab" aria-selected="false" data-tab="to_ship" data-label="Need to Ship">Need to Ship</button>
+      <button type="button" class="opp-tab" id="tabAwaiting" role="tab" aria-selected="false" data-tab="awaiting_payment" data-label="Awaiting payment">Awaiting payment</button>
+      <button type="button" class="opp-tab" id="tabPaid" role="tab" aria-selected="false" data-tab="paid" data-label="Paid">Paid</button>
+    </nav>
+    <p class="inv-tab-note" id="tabNote" hidden>All inventory lots — use filters or switch to a lifecycle tab.</p>
+
+    <section class="opp-toolbar" aria-label="Inventory filters">
+      <div class="opp-toolbar-primary">
+        <label class="opp-search">
+          <span class="sr-only">Search card name</span>
+          <input type="search" id="q" placeholder="Search cards…" autocomplete="off" />
+        </label>
+        <select id="status" class="opp-sort inv-advanced-filter" aria-label="Filter by status">
+          <option value="">All statuses</option>
+          <option value="ordered">Ordered</option>
+          <option value="inbound">Inbound</option>
+          <option value="on_hand">On hand</option>
+          <option value="depleted">Depleted</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <input type="text" id="seller" placeholder="Seller" />
+        <select id="tcgOrderFilter" class="opp-sort" aria-label="Filter by TCG order">
+          <option value="">All TCG orders</option>
+        </select>
+        <select id="batchFilter" class="opp-sort" aria-label="Filter by CK batch">
+          <option value="">All CK batches</option>
+        </select>
+        <label class="pur-filter-check inv-advanced-filter">
+          <input type="checkbox" id="hasRemaining" checked />
+          Has stock left
+        </label>
+        <label class="pur-filter-check inv-advanced-filter">
+          <input type="checkbox" id="unlinkedOnly" />
+          No TCG order yet
+        </label>
+        <button type="button" id="manualToggle" class="secondary opp-btn-ghost" aria-expanded="false" aria-controls="manualPanel">
+          Manual entry
+        </button>
+        <button type="button" id="massFulfillToggle" class="secondary opp-btn-ghost">
+          Mass fulfill
+        </button>
+      </div>
+      <div class="pur-manual-panel" id="manualPanel" hidden>
+        <p class="pur-manual-intro">Record a TCG buy that wasn't in Opportunities. Card name, seller, price, and qty are required. Include the <strong>TCGplayer URL</strong> so CK prices can sync on daily buylist updates.</p>
+        <form id="manualForm" class="pur-manual-form">
+          <label>
+            <span>Card name</span>
+            <input type="text" id="mName" required placeholder="Sheltering Word" />
+          </label>
+          <label>
+            <span>Set</span>
+            <input type="text" id="mSet" placeholder="Modern Masters 2017" />
+          </label>
+          <label>
+            <span>Seller</span>
+            <input type="text" id="mSeller" required placeholder="MTG Sick Deals" />
+          </label>
+          <label>
+            <span>Buy $</span>
+            <input type="number" id="mSellerPrice" required step="0.01" min="0.01" placeholder="1.42" />
+          </label>
+          <label>
+            <span>Qty</span>
+            <input type="number" id="mQty" required step="1" min="1" value="1" />
+          </label>
+          <label>
+            <span>CK max</span>
+            <input type="number" id="mCkMax" step="1" min="1" placeholder="optional" />
+          </label>
+          <label>
+            <span>Condition</span>
+            <select id="mCondition">
+              <option value="Near Mint">Near Mint</option>
+              <option value="Lightly Played">Lightly Played</option>
+              <option value="Moderately Played">Moderately Played</option>
+              <option value="Heavily Played">Heavily Played</option>
+              <option value="Damaged">Damaged</option>
+            </select>
+          </label>
+          <label>
+            <span>Finish</span>
+            <select id="mFinish">
+              <option value="normal">Normal</option>
+              <option value="foil">Foil</option>
+              <option value="etched">Etched</option>
+            </select>
+          </label>
+          <label>
+            <span>Shipping $</span>
+            <input type="number" id="mShipping" step="0.01" min="0" placeholder="0" />
+          </label>
+          <label>
+            <span>CK cash $</span>
+            <input type="number" id="mCkCash" step="0.01" min="0" placeholder="optional" />
+          </label>
+          <label>
+            <span>TCG order #</span>
+            <input type="text" id="mTcgOrder" placeholder="if already ordered" />
+          </label>
+          <label>
+            <span>Order date</span>
+            <input type="date" id="mOrderedAt" />
+          </label>
+          <label>
+            <span>TCG URL</span>
+            <input type="url" id="mTcgUrl" placeholder="https://www.tcgplayer.com/product/…" />
+            <span class="hint">Used to match CK buylist prices</span>
+          </label>
+          <label class="pur-manual-wide">
+            <span>Notes</span>
+            <input type="text" id="mNotes" placeholder="optional" />
+          </label>
+          <div class="pur-manual-actions">
+            <button type="submit" id="manualSubmit" class="secondary">Add to inventory</button>
+            <button type="button" id="manualClear" class="secondary opp-btn-ghost">Clear form</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="pur-link-bar" id="linkBar" hidden aria-label="Bulk actions">
+      <span id="selectedCount" class="pur-selected-count">0 selected</span>
+      <label class="pur-link-field">
+        <span>TCG order</span>
+        <input type="text" id="bulkTcgOrder" placeholder="Seller order # from TCG history" />
+      </label>
+      <button type="button" id="applyLinkBtn" class="secondary">Apply TCG order</button>
+      <button type="button" id="massFulfillSelectedBtn" class="secondary">Fulfill selected to CK…</button>
+      <button type="button" id="removeSelectedBtn" class="secondary pur-btn-danger">Remove selected</button>
+      <button type="button" id="clearSelectBtn" class="secondary opp-btn-ghost">Clear</button>
+    </section>
+
+    <section class="opp-results" aria-live="polite">
+      <div class="opp-results-bar">
+        <span id="resultSummary" class="opp-results-summary">—</span>
+      </div>
+      <p id="statusMsg" class="opp-status"></p>
+      <p id="linkToast" class="opp-toast" role="status" hidden></p>
+
+      <div class="opp-table-wrap" id="tableWrap">
+        <table class="opp-table pur-table inv-table" id="lotsTable">
+          <thead id="lotsHead">
+            <tr>
+              <th class="opp-check-col">
+                <input type="checkbox" id="selectAll" title="Select all on page" aria-label="Select all on page" />
+              </th>
+              <th>Card</th>
+              <th class="num">On hand</th>
+              <th>Ordered</th>
+              <th class="num">Buy</th>
+              <th class="num inv-ck-buy-col" title="CK cash when you bought (from opportunity)">CK @ buy</th>
+              <th class="num price-cash" title="Current CK NM buy price (refreshed from latest buylist)">CK</th>
+              <th class="num" title="Current CK cash minus CK cash at buy">Δ CK</th>
+              <th class="num">Expected</th>
+              <th class="num">Realized</th>
+              <th>Status</th>
+              <th>TCG order</th>
+              <th class="inv-actions-col">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="results"></tbody>
+        </table>
+        <table class="opp-table pur-table inv-table" id="fulfillTable" hidden>
+          <thead>
+            <tr>
+              <th>Card</th>
+              <th class="num">Qty</th>
+              <th>CK batch</th>
+              <th>CK ref</th>
+              <th class="num">Revenue</th>
+              <th class="num">Cost</th>
+              <th class="num">Profit</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th>TCG order</th>
+              <th><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="fulfillResults"></tbody>
+        </table>
+      </div>
+
+      <div class="opp-empty" id="emptyState" hidden>
+        <p id="emptyMessage">No inventory in this stage yet. Buy from <a href="/opportunities">Opportunities</a> or use <strong>Manual entry</strong>.</p>
+      </div>
+    </section>
+
+    <footer class="site-footer site-footer-compact">
+      <p>
+        Track TCG buys: inbound → need to sell → need to pack → need to ship → awaiting payment → paid.
+        Mass fulfill as <strong>Need to pack</strong> reserves free stock (leaves on-hand / need-to-sell), then mark <strong>Packed</strong> and <strong>Sent</strong>.
+      </p>
+    </footer>
+  </main>
+
+  <dialog id="editModal" class="pur-edit-dialog">
+    <form id="editForm" method="dialog" class="pur-edit-form">
+      <header class="pur-edit-header">
+        <h2>Edit lot</h2>
+        <button type="button" id="editClose" class="pur-edit-close" aria-label="Close">×</button>
+      </header>
+      <div class="pur-edit-grid">
+        <label>
+          <span>Card name</span>
+          <input type="text" id="eName" required />
+        </label>
+        <label>
+          <span>Set</span>
+          <input type="text" id="eSet" />
+        </label>
+        <label>
+          <span>Seller</span>
+          <input type="text" id="eSeller" required />
+        </label>
+        <label>
+          <span>Buy price $</span>
+          <input type="number" id="eSellerPrice" required step="0.01" min="0.01" />
+        </label>
+        <label>
+          <span>Bought qty</span>
+          <input type="number" id="eQtyOriginal" step="1" min="1" title="Actual copies you bought — edit if the opportunity qty was wrong" />
+        </label>
+        <label>
+          <span>On hand</span>
+          <input type="number" id="eQtyOnHand" step="1" min="0" />
+        </label>
+        <label>
+          <span>Expected CK qty</span>
+          <input type="number" id="eExpectedCkQty" step="1" min="1" />
+        </label>
+        <label>
+          <span>CK max</span>
+          <input type="number" id="eCkMax" step="1" min="1" placeholder="optional" />
+        </label>
+        <label>
+          <span>Condition</span>
+          <select id="eCondition">
+            <option value="Near Mint">Near Mint</option>
+            <option value="Lightly Played">Lightly Played</option>
+            <option value="Moderately Played">Moderately Played</option>
+            <option value="Heavily Played">Heavily Played</option>
+            <option value="Damaged">Damaged</option>
+          </select>
+        </label>
+        <label>
+          <span>Finish</span>
+          <select id="eFinish">
+            <option value="normal">Normal</option>
+            <option value="foil">Foil</option>
+            <option value="etched">Etched</option>
+          </select>
+        </label>
+        <label>
+          <span>Shipping $</span>
+          <input type="number" id="eShipping" step="0.01" min="0" />
+        </label>
+        <label>
+          <span>CK cash $ (current)</span>
+          <input type="number" id="eCkCash" step="0.01" min="0" />
+        </label>
+        <label>
+          <span>CK cash @ buy $</span>
+          <input type="number" id="eCkCashExpected" step="0.01" min="0" title="Frozen estimate from when you bought" />
+        </label>
+        <label>
+          <span>Status</span>
+          <select id="eStatus"></select>
+        </label>
+        <label>
+          <span>TCG order #</span>
+          <input type="text" id="eTcgOrder" />
+        </label>
+        <label>
+          <span>Order date</span>
+          <input type="date" id="eOrderedAt" />
+        </label>
+        <label>
+          <span>TCG URL</span>
+          <input type="url" id="eTcgUrl" />
+        </label>
+        <label>
+          <span>CK URL</span>
+          <input type="url" id="eCkUrl" />
+        </label>
+        <label class="pur-edit-wide">
+          <span>Notes</span>
+          <input type="text" id="eNotes" />
+        </label>
+      </div>
+      <footer class="pur-edit-actions">
+        <button type="button" id="editCancel" class="secondary opp-btn-ghost">Cancel</button>
+        <button type="submit" id="editSave" class="secondary">Save changes</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="fulfillModal" class="pur-edit-dialog">
+    <form id="fulfillForm" method="dialog" class="pur-edit-form">
+      <header class="pur-edit-header">
+        <h2 id="fulfillTitle">CK fulfillment</h2>
+        <button type="button" id="fulfillClose" class="pur-edit-close" aria-label="Close">×</button>
+      </header>
+      <p id="fulfillSubtitle" class="inv-fulfill-sub"></p>
+      <div class="pur-edit-grid">
+        <label>
+          <span>Qty to send</span>
+          <input type="number" id="fQty" required step="1" min="1" />
+        </label>
+        <label>
+          <span>CK batch</span>
+          <input type="text" id="fCkBatch" placeholder="CK-2026-07-02-A" />
+        </label>
+        <label>
+          <span>CK $ / copy</span>
+          <input type="number" id="fCkAdj" step="0.01" min="0" />
+        </label>
+        <label>
+          <span>CK ref</span>
+          <input type="text" id="fCkRef" placeholder="CK order / ref #" />
+        </label>
+        <label>
+          <span>Status</span>
+          <select id="fStatus">
+            <option value="planned" selected>Need to pack</option>
+            <option value="packed">Need to ship (packed)</option>
+            <option value="sent">Sent / awaiting pay</option>
+            <option value="paid">Paid</option>
+          </select>
+        </label>
+        <label>
+          <span>Paid amount $</span>
+          <input type="number" id="fPaidAmount" step="0.01" min="0" placeholder="optional" />
+        </label>
+        <label class="pur-edit-wide">
+          <span>Notes</span>
+          <input type="text" id="fNotes" />
+        </label>
+      </div>
+      <div id="fulfillList" class="inv-fulfill-list" hidden></div>
+      <footer class="pur-edit-actions">
+        <button type="button" id="fulfillCancel" class="secondary opp-btn-ghost">Cancel</button>
+        <button type="submit" id="fulfillSave" class="secondary">Save fulfillment</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="massFulfillModal" class="pur-edit-dialog inv-mass-fulfill-dialog">
+    <form id="massFulfillForm" method="dialog" class="pur-edit-form">
+      <header class="pur-edit-header">
+        <h2>Mass CK fulfillment</h2>
+        <button type="button" id="massFulfillClose" class="pur-edit-close" aria-label="Close">×</button>
+      </header>
+      <p class="inv-fulfill-sub">Shows all lots with stock on hand. Enter the CK order number once, then pick which lots went in that order and the qty / CK $ per copy for each.</p>
+      <div class="pur-edit-grid">
+        <label>
+          <span>CK order #</span>
+          <input type="text" id="mfCkRef" placeholder="CK buylist order / ref #" />
+        </label>
+        <label>
+          <span>Batch label</span>
+          <input type="text" id="mfCkBatch" placeholder="optional" />
+        </label>
+        <label>
+          <span>Status</span>
+          <select id="mfStatus">
+            <option value="planned" selected>Need to pack</option>
+            <option value="packed">Need to ship (packed)</option>
+            <option value="sent">Sent / awaiting pay</option>
+            <option value="paid">Paid</option>
+          </select>
+        </label>
+        <label class="pur-edit-wide">
+          <span>Notes</span>
+          <input type="text" id="mfNotes" placeholder="optional — applied to all lines" />
+        </label>
+      </div>
+      <label class="inv-mass-search">
+        <span class="sr-only">Filter lots</span>
+        <input type="search" id="mfFilter" placeholder="Filter cards in this list…" autocomplete="off" />
+      </label>
+      <div class="inv-mass-table-wrap">
+        <table class="opp-table pur-table inv-mass-table">
+          <thead>
+            <tr>
+              <th class="opp-check-col">
+                <input type="checkbox" id="mfSelectAll" title="Select all shown" aria-label="Select all shown" />
+              </th>
+              <th>Card</th>
+              <th class="num">On hand</th>
+              <th class="num">Qty</th>
+              <th class="num">CK $ / copy</th>
+              <th class="num">Line $</th>
+            </tr>
+          </thead>
+          <tbody id="mfResults"></tbody>
+        </table>
+      </div>
+      <p id="mfSummary" class="inv-mass-summary">0 cards selected</p>
+      <footer class="pur-edit-actions">
+        <button type="button" id="massFulfillCancel" class="secondary opp-btn-ghost">Cancel</button>
+        <button type="submit" id="massFulfillSave" class="secondary">Create fulfillments</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js?v=2026071001"></script>
+  <script src="/static/inventory.js?v=2026071316"></script>
+</body>
+</html>

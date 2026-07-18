@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CK Returns — Manifest Bread</title>
+  <meta name="description" content="Cost, expected CK revenue, and profit for Card Kingdom returns and open inventory." />
+  <link rel="stylesheet" href="/static/app.css?v=2026071424" />
+  <script src="/static/theme-init.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body class="opp-page returns-page">
+  <nav>
+    <a href="/" class="brand-block">
+      <img src="/static/bread.jpg" alt="" class="brand-logo" width="32" height="32" />
+      <span class="brand-text">
+        <span class="brand">Manifest Bread</span>
+        <span class="tagline">Turn bulk into bread.</span>
+      </span>
+    </a>
+    <a href="/">Search</a>
+    <a href="/opportunities">Opportunities</a>
+    <a href="/inventory">Inventory</a>
+    <a href="/returns" aria-current="page">CK returns</a>
+    <a href="/match">Match collection</a>
+    <a href="/charts">Price history</a>
+    <a href="/data">Data</a>
+    <a href="/architecture">Overview</a>
+  </nav>
+  <main>
+    <header class="opp-hero">
+      <div class="opp-hero-text">
+        <h1>CK returns</h1>
+        <p class="opp-sub" id="meta">Cost in vs expected CK pay out</p>
+      </div>
+      <dl class="opp-kpis" id="kpis">
+        <div>
+          <dt>Spent</dt>
+          <dd id="kpiCost">—</dd>
+        </div>
+        <div>
+          <dt>Expected CK</dt>
+          <dd id="kpiRevenue">—</dd>
+        </div>
+        <div>
+          <dt>Expected profit</dt>
+          <dd id="kpiProfit">—</dd>
+        </div>
+        <div>
+          <dt>ROI</dt>
+          <dd id="kpiRoi">—</dd>
+        </div>
+      </dl>
+    </header>
+
+    <nav class="opp-tabs" role="tablist" aria-label="CK returns views">
+      <button type="button" class="opp-tab is-active" id="tabCommitted" role="tab" aria-selected="true" aria-controls="panelCommitted" data-tab="committed">Committed</button>
+      <button type="button" class="opp-tab" id="tabOpen" role="tab" aria-selected="false" aria-controls="panelOpen" data-tab="open">Open book</button>
+    </nav>
+
+    <div id="panelCommitted" class="opp-tab-panel" role="tabpanel" aria-labelledby="tabCommitted">
+      <section class="opp-toolbar returns-toolbar" aria-label="Committed filters">
+        <label>
+          <span class="sr-only">Month</span>
+          <select id="monthFilter" aria-label="Filter by month">
+            <option value="">All months</option>
+          </select>
+        </label>
+        <label class="returns-status-filters" title="Committed toward CK — includes Need to pack">
+          <span class="returns-filter-label">Include</span>
+          <label class="returns-check"><input type="checkbox" id="stPlanned" checked /> Need to pack</label>
+          <label class="returns-check"><input type="checkbox" id="stPacked" checked /> Packed</label>
+          <label class="returns-check"><input type="checkbox" id="stSent" checked /> Sent</label>
+          <label class="returns-check"><input type="checkbox" id="stPaid" checked /> Paid</label>
+        </label>
+        <span id="resultSummary" class="opp-results-summary">—</span>
+      </section>
+      <p id="statusMsg" class="opp-status"></p>
+
+      <section class="returns-charts" aria-label="Committed charts">
+        <div class="returns-chart-card">
+          <h2>Monthly spend vs expected CK pay</h2>
+          <div class="returns-chart-wrap"><canvas id="chartMoney"></canvas></div>
+        </div>
+        <div class="returns-chart-card">
+          <h2>Copies by status</h2>
+          <div class="returns-chart-wrap returns-chart-wrap-sm"><canvas id="chartStatus"></canvas></div>
+        </div>
+      </section>
+
+      <section class="opp-results" aria-live="polite">
+        <div class="opp-results-bar">
+          <span class="opp-results-summary">Top cards by expected profit</span>
+        </div>
+        <div class="opp-table-wrap">
+          <table class="opp-table">
+            <thead>
+              <tr>
+                <th>Card</th>
+                <th class="num">Qty</th>
+                <th class="num">Cost</th>
+                <th class="num">Expected CK</th>
+                <th class="num">Profit</th>
+              </tr>
+            </thead>
+            <tbody id="topCards"></tbody>
+          </table>
+        </div>
+        <div class="opp-empty" id="emptyState" hidden>
+          <p>No CK return lines yet. Mass fulfill from Inventory (Need to pack) to start tracking expected returns.</p>
+        </div>
+      </section>
+    </div>
+
+    <div id="panelOpen" class="opp-tab-panel" role="tabpanel" aria-labelledby="tabOpen" hidden>
+      <section class="opp-toolbar returns-toolbar" aria-label="Open book filters">
+        <label>
+          <span class="sr-only">Month</span>
+          <select id="openMonthFilter" aria-label="Filter open book by buy month">
+            <option value="">All months</option>
+          </select>
+        </label>
+        <span id="openResultSummary" class="opp-results-summary">—</span>
+      </section>
+      <p id="openStatusMsg" class="opp-status"></p>
+
+      <section class="returns-charts" aria-label="Open book charts">
+        <div class="returns-chart-card">
+          <h2>Open cost vs expected profit by buy month</h2>
+          <div class="returns-chart-wrap"><canvas id="chartOpenMoney"></canvas></div>
+        </div>
+        <div class="returns-chart-card">
+          <h2>Open copies by stage</h2>
+          <div class="returns-chart-wrap returns-chart-wrap-sm"><canvas id="chartOpenStage"></canvas></div>
+        </div>
+      </section>
+
+      <section class="opp-results" aria-live="polite">
+        <div class="opp-results-bar">
+          <span class="opp-results-summary">Top open positions by expected profit</span>
+        </div>
+        <div class="opp-table-wrap">
+          <table class="opp-table">
+            <thead>
+              <tr>
+                <th>Card</th>
+                <th class="num">Qty</th>
+                <th class="num">Cost</th>
+                <th class="num">Expected CK</th>
+                <th class="num">Profit</th>
+              </tr>
+            </thead>
+            <tbody id="openTopCards"></tbody>
+          </table>
+        </div>
+        <div class="opp-empty" id="openEmptyState" hidden>
+          <p>No open (unpaid) inventory. Everything is paid or empty.</p>
+        </div>
+      </section>
+    </div>
+
+    <footer class="site-footer site-footer-compact">
+      <p id="footerNote">
+        <strong>Committed</strong> = Need to pack through Paid.
+        <strong>Open book</strong> = free stock plus unpaid pack/ship/sent — excludes Paid. Month on open book is buy month.
+      </p>
+    </footer>
+  </main>
+  <script src="/static/app.js"></script>
+  <script src="/static/returns.js?v=2026071424"></script>
+</body>
+</html>

@@ -24,6 +24,10 @@ services:
       TCG_ROOT: /app
       DATABASE_URL: postgresql://${POSTGRES_USER:-tcg}:${POSTGRES_PASSWORD:-tcg_secret}@postgres:5432/${POSTGRES_DB:-tcg_buylist}
       TZ: ${TZ:-America/New_York}
+      TCG_LISTINGS_MAX_PRODUCTS: ${TCG_LISTINGS_MAX_PRODUCTS:-5000}
+      TCG_LISTINGS_MAX_CASH_PRICE: ${TCG_LISTINGS_MAX_CASH_PRICE:-0}
+      TCG_LISTINGS_DELAY_SEC: ${TCG_LISTINGS_DELAY_SEC:-0}
+      TCG_BROWSER_CDP_URL: ${TCG_BROWSER_CDP_URL:-}
     volumes:
       - .:/app
     depends_on:
@@ -36,6 +40,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
+    volumes:
+      - ./web:/app/web
+      - ./migrations:/app/migrations
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-tcg}:${POSTGRES_PASSWORD:-tcg_secret}@postgres:5432/${POSTGRES_DB:-tcg_buylist}
       API_HOST: 0.0.0.0
@@ -57,6 +64,10 @@ services:
       TZ: ${TZ:-America/New_York}
       PIPELINE_CRON: ${PIPELINE_CRON:-0 5 * * *}
       SCRYFALL_CRON: ${SCRYFALL_CRON:-0 3 * * 0}
+      TCG_LISTINGS_MAX_PRODUCTS: ${TCG_LISTINGS_MAX_PRODUCTS:-5000}
+      TCG_LISTINGS_MAX_CASH_PRICE: ${TCG_LISTINGS_MAX_CASH_PRICE:-0}
+      TCG_LISTINGS_DELAY_SEC: ${TCG_LISTINGS_DELAY_SEC:-0}
+      TCG_BROWSER_CDP_URL: ${TCG_BROWSER_CDP_URL:-}
     volumes:
       - .:/app
     depends_on:

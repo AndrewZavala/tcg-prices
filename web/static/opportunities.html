@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Opportunities — Manifest Bread</title>
+  <meta name="description" content="CK buylist arbitrage opportunities — buy on TCGplayer, sell to Card Kingdom." />
+  <link rel="stylesheet" href="/static/app.css?v=2026070902" />
+  <script src="/static/theme-init.js?v=2026070902"></script>
+</head>
+<body class="opp-page">
+  <nav>
+    <a href="/" class="brand-block">
+      <img src="/static/bread.jpg" alt="" class="brand-logo" width="32" height="32" />
+      <span class="brand-text">
+        <span class="brand">Manifest Bread</span>
+        <span class="tagline">Turn bulk into bread.</span>
+      </span>
+    </a>
+    <a href="/">Search</a>
+    <a href="/opportunities">Opportunities</a>
+    <a href="/inventory">Inventory</a>
+    <a href="/returns">CK returns</a>
+    <a href="/match">Match collection</a>
+    <a href="/charts">Price history</a>
+    <a href="/data">Data</a>
+    <a href="/architecture">Overview</a>
+  </nav>
+  <main>
+    <header class="opp-hero">
+      <div class="opp-hero-text">
+        <h1>Opportunities</h1>
+        <p class="opp-sub" id="meta">Loading snapshot…</p>
+      </div>
+      <dl class="opp-kpis" id="kpis" hidden>
+        <div>
+          <dt>Best profit</dt>
+          <dd id="kpiProfit">—</dd>
+        </div>
+        <div>
+          <dt>Best ROI</dt>
+          <dd id="kpiRoi">—</dd>
+        </div>
+        <div>
+          <dt>Showing</dt>
+          <dd id="kpiCount">—</dd>
+        </div>
+      </dl>
+    </header>
+
+    <nav class="opp-tabs" role="tablist" aria-label="Opportunity views">
+      <button type="button" class="opp-tab is-active" id="tabCards" role="tab" aria-selected="true" aria-controls="panelCards" data-tab="cards">Cards</button>
+      <button type="button" class="opp-tab" id="tabSellers" role="tab" aria-selected="false" aria-controls="panelSellers" data-tab="sellers">Seller batches</button>
+    </nav>
+
+    <p id="purchaseToast" class="opp-toast opp-toast-global" role="status" hidden></p>
+
+    <div id="panelCards" class="opp-tab-panel" role="tabpanel" aria-labelledby="tabCards">
+    <section class="opp-toolbar" aria-label="Search and filters">
+      <div class="opp-toolbar-primary">
+        <label class="opp-search">
+          <span class="sr-only">Search card name</span>
+          <input type="search" id="q" placeholder="Search cards…" autocomplete="off" />
+        </label>
+        <select id="sort" class="opp-sort" title="Sort order" aria-label="Sort order">
+          <option value="profit_desc">Profit ↓</option>
+          <option value="profit_asc">Profit ↑</option>
+          <option value="roi_desc">ROI ↓</option>
+          <option value="roi_asc">ROI ↑</option>
+          <option value="ck_desc">CK price ↓</option>
+          <option value="name">Name A–Z</option>
+        </select>
+        <button type="button" id="filtersToggle" class="secondary opp-btn-ghost" aria-expanded="false" aria-controls="advancedFilters">
+          Filters
+        </button>
+        <button type="button" id="chartToggle" class="secondary opp-btn-ghost" aria-expanded="false" aria-controls="chartPanel">
+          Top deals
+        </button>
+      </div>
+      <div class="opp-toolbar-advanced" id="advancedFilters" hidden>
+        <input type="text" id="seller" placeholder="Seller" />
+        <input type="number" id="min_profit" placeholder="Min profit $" step="0.01" min="0" />
+        <input type="number" id="min_roi" placeholder="Min ROI %" step="0.1" />
+        <button type="button" id="resetBtn" class="secondary opp-btn-ghost">Clear</button>
+      </div>
+      <div class="opp-chips" id="activeChips" hidden></div>
+    </section>
+
+    <section class="opp-chart-panel" id="chartPanel" hidden>
+      <div id="profitChart" class="opp-chart"></div>
+    </section>
+
+    <section class="opp-results" aria-live="polite">
+      <div class="opp-results-bar">
+        <span id="resultSummary" class="opp-results-summary">—</span>
+        <button type="button" id="addSelectedBtn" class="secondary opp-btn-ghost" disabled>
+          Add to inventory
+        </button>
+        <div class="opp-pager">
+          <button type="button" id="prevBtn" class="secondary opp-btn-ghost" aria-label="Previous page">←</button>
+          <span id="pageInfo" class="opp-page-info">—</span>
+          <button type="button" id="nextBtn" class="secondary opp-btn-ghost" aria-label="Next page">→</button>
+        </div>
+      </div>
+
+      <p id="status" class="opp-status"></p>
+
+      <div class="opp-table-wrap" id="tableWrap">
+        <table class="opp-table">
+          <thead>
+            <tr>
+              <th class="opp-check-col"><input type="checkbox" id="selectAll" title="Select all on page" aria-label="Select all on page" /></th>
+              <th>Card</th>
+              <th class="num">CK</th>
+              <th class="num" title="Per-copy buy cost (listing + share of shipping)">Landed</th>
+              <th class="num">Qty</th>
+              <th class="num opp-sortable sort-desc" data-col="4" data-type="num" data-sort-col="profit" data-sort-dir="desc" scope="col" tabindex="0" aria-sort="descending">Profit</th>
+              <th class="num opp-sortable" data-col="5" data-type="num" data-sort-col="roi" data-sort-dir="desc" scope="col" tabindex="0" aria-sort="none">ROI</th>
+              <th><span class="sr-only">Links</span></th>
+            </tr>
+          </thead>
+          <tbody id="results"></tbody>
+        </table>
+      </div>
+
+      <div class="opp-empty" id="emptyState" hidden>
+        <p>No opportunities match your filters.</p>
+        <button type="button" id="emptyReset" class="secondary">Clear filters</button>
+      </div>
+    </section>
+    </div>
+
+    <div id="panelSellers" class="opp-tab-panel" role="tabpanel" aria-labelledby="tabSellers" hidden>
+      <h2 class="opp-seller-title">Seller report — top 50 by max order profit</h2>
+      <p class="opp-seller-note">
+        Groups positive opportunity rows by TCGplayer seller. TCG links in buy lists include seller, condition, and printing filters.
+        Max profit assumes buying each listed opportunity from that seller with shipping charged once.
+      </p>
+      <section class="opp-toolbar opp-seller-toolbar" aria-label="Seller search">
+        <label class="opp-search">
+          <span class="sr-only">Search seller or card</span>
+          <input type="search" id="sellerQ" placeholder="Search seller or card…" autocomplete="off" />
+        </label>
+      </section>
+      <section class="opp-results" aria-live="polite">
+        <div class="opp-results-bar">
+          <span id="sellerSummary" class="opp-results-summary">—</span>
+          <button type="button" id="sellerAddSelectedBtn" class="secondary opp-btn-ghost" disabled>
+            Add to inventory
+          </button>
+        </div>
+        <p id="sellerStatus" class="opp-status"></p>
+        <div class="opp-table-wrap" id="sellerTableWrap">
+          <table class="opp-table opp-seller-table">
+            <thead>
+              <tr>
+                <th class="opp-sortable" data-col="0" data-type="text" data-sort-dir="desc" scope="col" tabindex="0">Seller</th>
+                <th class="num opp-sortable" data-col="1" data-type="num" data-sort-dir="desc" scope="col" tabindex="0">Rows</th>
+                <th class="num opp-sortable" data-col="2" data-type="num" data-sort-dir="desc" scope="col" tabindex="0">Total qty</th>
+                <th class="num opp-sortable" data-col="3" data-type="num" data-sort-dir="desc" scope="col" tabindex="0">Ship once</th>
+                <th class="num opp-sortable" data-col="4" data-type="num" data-sort-dir="desc" scope="col" tabindex="0">Total cost</th>
+                <th class="num opp-sortable sort-desc" data-col="5" data-type="num" data-sort-dir="desc" scope="col" tabindex="0">Max profit</th>
+                <th class="num opp-sortable" data-col="6" data-type="num" data-sort-dir="desc" scope="col" tabindex="0">Order ROI</th>
+                <th scope="col">Buy list</th>
+              </tr>
+            </thead>
+            <tbody id="sellerResults"></tbody>
+          </table>
+        </div>
+        <div class="opp-empty" id="sellerEmpty" hidden>
+          <p>No seller batches match your search.</p>
+        </div>
+      </section>
+    </div>
+
+    <footer class="site-footer site-footer-compact">
+      <p>Updated daily from CK buylist + live TCG listings. <kbd>/</kbd> focuses search.</p>
+    </footer>
+  </main>
+  <script src="/static/app.js?v=2026070902"></script>
+  <script src="/static/opportunities.js?v=2026070902"></script>
+</body>
+</html>

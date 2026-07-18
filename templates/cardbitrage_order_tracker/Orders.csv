@@ -1,0 +1,2 @@
+tcg_order_id,seller,status,ordered_on,shipped_on,delivered_on,tracking,buy_total,shipping,checkout_key,simplified_lot,ck_batch_id,last_email_at,last_email_subject,notes
+2D8EFC37-FBA269-02EAE,Gamer's Empyrean,Ordered,2026-07-02,,,,45.48,,2026-07-02:165.79,gamers-empyrean|relentless-assault,,2026-07-02,Your TCGplayer.com order ... has processed.,Example row — delete after import

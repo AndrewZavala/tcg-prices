@@ -1,2 +1,3 @@
-# SQL dumps from deploy/backup.sh — not committed
 *.sql.gz
+*.sql
+

@@ -12,7 +12,9 @@ echo "[$(date -Iseconds)] Starting daily CK buylist pipeline"
 
 python3 "$SCRIPT_DIR/scrape_ck.py"
 python3 "$SCRIPT_DIR/merge_buylist.py"
+"$SCRIPT_DIR/fetch_tcg_listings.sh"
 python3 "$SCRIPT_DIR/enrich_buylist.py"
 python3 "$SCRIPT_DIR/load_postgres.py"
+python3 "$SCRIPT_DIR/refresh_inventory_ck.py"
 
 echo "[$(date -Iseconds)] Pipeline completed successfully"

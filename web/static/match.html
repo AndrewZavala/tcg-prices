@@ -3,63 +3,81 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Match Collection — TCG Prices</title>
-  <meta name="description" content="Upload your MTG collection CSV and see what Card Kingdom is buying today." />
+  <title>Match Collection — Manifest Bread</title>
+  <meta name="description" content="Upload your MTG collection CSV and see what Card Kingdom is buying today — manifest your sell pile." />
   <link rel="stylesheet" href="/static/app.css" />
+  <script src="/static/theme-init.js"></script>
 </head>
 <body>
   <nav>
-    <span class="brand">TCG Prices</span>
+    <a href="/" class="brand-block">
+      <img src="/static/bread.jpg" alt="" class="brand-logo" width="32" height="32" />
+      <span class="brand-text">
+        <span class="brand">Manifest Bread</span>
+        <span class="tagline">Turn bulk into bread.</span>
+      </span>
+    </a>
     <a href="/">Search</a>
+    <a href="/opportunities">Opportunities</a>
+    <a href="/inventory">Inventory</a>
+    <a href="/returns">CK returns</a>
     <a href="/match">Match collection</a>
     <a href="/charts">Price history</a>
+    <a href="/data">Data</a>
+    <a href="/architecture">Overview</a>
   </nav>
   <main>
-    <h1>Match your collection to Card Kingdom</h1>
-    <p class="meta">
-      Upload a CSV from Manabox, Moxfield, Archidekt, or your Stacks export.
-      Requires a <strong>Scryfall ID</strong> column. Matches are strict on finish
-      (foil vs nonfoil) — same rules as a real CK shipment.
-    </p>
+    <header class="hero">
+      <h1><span class="hero-icon" aria-hidden="true">📋</span> Match your collection</h1>
+      <p class="meta">
+        Upload a CSV from Manabox, Moxfield, Archidekt, or Stacks. Needs a <strong>Scryfall ID</strong> column.
+        Finish must match (foil vs nonfoil) — same rules as shipping to CK.
+      </p>
+    </header>
 
-    <div class="card">
+    <section class="panel">
+      <p class="panel-title">Drop your export</p>
       <div class="toolbar">
         <input type="file" id="file" accept=".csv,text/csv" />
-        <button type="button" id="uploadBtn">Match against CK buylist</button>
+        <button type="button" id="uploadBtn">Manifest my matches</button>
       </div>
       <p id="status" class="hint"></p>
-    </div>
+    </section>
 
     <div id="summary" hidden>
       <div class="stats">
         <div class="stat"><div class="val" id="statTotal">—</div><div class="lbl">Cards in file</div></div>
-        <div class="stat"><div class="val" id="statMatched">—</div><div class="lbl">Matched (sellable)</div></div>
-        <div class="stat"><div class="val" id="statCash">—</div><div class="lbl">Total CK cash</div></div>
-        <div class="stat"><div class="val" id="statCredit">—</div><div class="lbl">Total CK credit</div></div>
+        <div class="stat"><div class="val" id="statMatched">—</div><div class="lbl">Matched</div></div>
+        <div class="stat"><div class="val money" id="statCash">—</div><div class="lbl">Total CK cash</div></div>
+        <div class="stat"><div class="val money" id="statCredit">—</div><div class="lbl">Total CK credit</div></div>
       </div>
       <p class="meta" id="metaLine"></p>
     </div>
 
-    <table id="results" hidden>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Set</th>
-          <th>Finish</th>
-          <th>Qty</th>
-          <th>Status</th>
-          <th>CK cash</th>
-          <th>CK credit</th>
-          <th>Line cash</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
+    <div class="table-wrap" id="resultsWrap" hidden>
+      <table id="results">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Set</th>
+            <th>Finish</th>
+            <th>Qty</th>
+            <th>Status</th>
+            <th>CK cash</th>
+            <th>CK credit</th>
+            <th>Line cash</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
     <footer class="site-footer">
-      <p>Card Kingdom buylist tools by <a href="https://aizo.solutions" rel="noopener">Aizo Solutions</a>.
+      <p><strong>Manifest Bread</strong> by <a href="https://aizo.solutions" rel="noopener">Aizo Solutions</a>.
       Not affiliated with Card Kingdom or Wizards of the Coast.</p>
     </footer>
   </main>
+  <script src="/static/app.js"></script>
   <script>
     const statusEl = document.getElementById('status');
     const uploadBtn = document.getElementById('uploadBtn');
@@ -72,9 +90,13 @@
 
     uploadBtn.addEventListener('click', async () => {
       const file = document.getElementById('file').files[0];
-      if (!file) { statusEl.textContent = 'Choose a CSV file first.'; statusEl.className = 'error'; return; }
-      statusEl.textContent = 'Matching…';
-      statusEl.className = 'hint';
+      if (!file) {
+        statusEl.textContent = 'Pick a CSV file first.';
+        statusEl.className = 'error';
+        return;
+      }
+      setStatusLoading(statusEl, true, 'Matching your stack…');
+      setButtonLoading(uploadBtn, true);
       const fd = new FormData();
       fd.append('file', file);
       try {
@@ -82,7 +104,7 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || res.statusText);
         document.getElementById('summary').hidden = false;
-        document.getElementById('results').hidden = false;
+        document.getElementById('resultsWrap').hidden = false;
         document.getElementById('statTotal').textContent = data.total;
         document.getElementById('statMatched').textContent = `${data.matched} (${data.match_pct}%)`;
         document.getElementById('statCash').textContent = '$' + data.total_cash.toFixed(2);
@@ -90,21 +112,31 @@
         document.getElementById('metaLine').textContent =
           `Buylist as of ${data.snapshot_date || 'unknown'} · ${data.no_scryfall_id} not on buylist · ${data.wrong_finish} wrong finish`;
         const tbody = document.getElementById('tbody');
-        tbody.innerHTML = data.results.map(r => `
+        tbody.innerHTML = data.results.map(r => {
+          const displayName = r.name || r.ck_name || '—';
+          const ckLink = ckBuylistUrl(displayName === '—' ? '' : displayName);
+          const ckCash = fmt(r.ck_cash_price);
+          return `
           <tr>
-            <td>${esc(r.name || r.ck_name || '—')}</td>
+            <td>${esc(displayName)}</td>
             <td>${esc(r.set_code || '')}</td>
             <td>${esc(r.finish)}</td>
             <td>${r.quantity}</td>
             <td>${badge(r.ck_match)}</td>
-            <td>${fmt(r.ck_cash_price)}</td>
-            <td>${fmt(r.ck_credit_price)}</td>
-            <td>${fmt(r.line_cash_total)}</td>
-          </tr>`).join('');
-        statusEl.textContent = '';
+            <td class="price-cash">${ckLink
+              ? `<a href="${ckLink}" target="_blank" rel="noopener">${ckCash}</a>`
+              : ckCash}</td>
+            <td class="price-credit">${fmt(r.ck_credit_price)}</td>
+            <td class="price-cash">${fmt(r.line_cash_total)}</td>
+          </tr>`;
+        }).join('');
+        animateTableRows(tbody);
+        setStatusLoading(statusEl, false);
       } catch (e) {
         statusEl.textContent = e.message;
         statusEl.className = 'error';
+      } finally {
+        setButtonLoading(uploadBtn, false);
       }
     });
 

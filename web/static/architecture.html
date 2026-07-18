@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Data platform architecture — reference model</title>
+  <link rel="stylesheet" href="/static/app.css?v=20260716" />
+  <script src="/static/theme-init.js"></script>
+  <style>
+    .arch-page { max-width: 960px; margin: 0 auto; padding-bottom: 2.5rem; }
+    .arch-hero h1 { margin-bottom: 0.4rem; font-size: 1.65rem; }
+    .arch-lead {
+      color: var(--muted);
+      font-size: 1rem;
+      max-width: 44rem;
+      line-height: 1.55;
+      margin: 0;
+    }
+    .arch-meta {
+      margin-top: 0.85rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .arch-subnav {
+      display: flex;
+      gap: 0.5rem;
+      margin: 1.25rem 0 0;
+      flex-wrap: wrap;
+    }
+    .arch-subnav a {
+      padding: 0.4rem 0.85rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      text-decoration: none;
+      color: inherit;
+      font-size: 0.85rem;
+      background: var(--panel);
+    }
+    .arch-subnav a:hover { border-color: var(--crust); }
+    .arch-subnav a.is-active {
+      background: var(--crust);
+      color: #fff;
+      border-color: var(--crust);
+    }
+    .arch-section { margin: 2rem 0; }
+    .arch-section h2 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin: 0 0 0.85rem;
+      font-weight: 600;
+    }
+
+    /* Layered reference architecture */
+    .arch-stack {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      background: var(--panel);
+      box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 80%, transparent);
+    }
+    .arch-layer {
+      display: grid;
+      grid-template-columns: 7.5rem 1fr;
+      border-bottom: 1px solid var(--border);
+      min-height: 5rem;
+    }
+    .arch-layer:last-child { border-bottom: none; }
+    .arch-layer-tag {
+      padding: 0.85rem 0.65rem;
+      font-size: 0.62rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      line-height: 1.35;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .arch-layer-num {
+      font-size: 1.35rem;
+      font-weight: 800;
+      opacity: 0.35;
+      line-height: 1;
+      margin-bottom: 0.2rem;
+    }
+    .arch-layer-body {
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      align-content: center;
+    }
+    .arch-layer.l-sources .arch-layer-tag { background: color-mix(in srgb, #4a7fd4 14%, var(--panel)); color: #2d5a9e; }
+    .arch-layer.l-ingest .arch-layer-tag { background: color-mix(in srgb, #5a8f7b 14%, var(--panel)); color: #2d6b55; }
+    .arch-layer.l-process .arch-layer-tag { background: color-mix(in srgb, var(--crust) 18%, var(--panel)); color: var(--crust); }
+    .arch-layer.l-platform .arch-layer-tag { background: color-mix(in srgb, #3d9a6a 14%, var(--panel)); color: #1f6b47; }
+    .arch-layer.l-apps .arch-layer-tag { background: color-mix(in srgb, #c97b2e 14%, var(--panel)); color: #8f5318; }
+    .arch-layer.l-consume .arch-layer-tag { background: color-mix(in srgb, #8b6bb8 14%, var(--panel)); color: #5c4080; }
+
+    .arch-node {
+      flex: 1 1 10rem;
+      min-width: 8.5rem;
+      max-width: 14rem;
+      padding: 0.65rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .arch-node-title { font-weight: 700; font-size: 0.82rem; line-height: 1.25; }
+    .arch-node-desc { font-size: 0.72rem; color: var(--muted); margin-top: 0.2rem; line-height: 1.35; }
+
+    .arch-host {
+      margin-top: 0.65rem;
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--muted);
+      padding: 0.5rem 1rem;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--crust) 5%, var(--bg));
+    }
+
+    .arch-flow-arrows {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin: 1rem 0 0.5rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      flex-wrap: wrap;
+    }
+    .arch-flow-arrows span::before { content: "↓ "; opacity: 0.5; }
+
+    .arch-principles {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.65rem;
+    }
+    .arch-principle {
+      padding: 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .arch-principle strong { display: block; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.3rem; color: var(--muted); }
+
+    .arch-mapping {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 0.82rem;
+    }
+    .arch-mapping table { width: 100%; border-collapse: collapse; }
+    .arch-mapping th,
+    .arch-mapping td {
+      padding: 0.55rem 0.85rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .arch-mapping th {
+      background: var(--crust);
+      color: #fff;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .arch-mapping tr:last-child td { border-bottom: none; }
+    .arch-mapping td:first-child { font-weight: 600; width: 38%; }
+    .arch-mapping td:last-child { color: var(--muted); }
+
+    .arch-footnote {
+      margin-top: 1.25rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    @media (max-width: 700px) {
+      .arch-layer { grid-template-columns: 1fr; }
+      .arch-layer-tag {
+        flex-direction: row;
+        align-items: center;
+        gap: 0.5rem;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      .arch-layer-num { margin: 0; font-size: 1rem; }
+      .arch-principles { grid-template-columns: 1fr; }
+    }
+    @media print {
+      nav, .arch-print-hide { display: none !important; }
+      .arch-page { max-width: none; }
+      .arch-stack { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body class="opp-page">
+  <nav class="arch-print-hide">
+    <a href="/" class="brand-block">
+      <img src="/static/bread.jpg" alt="" class="brand-logo" width="32" height="32" />
+      <span class="brand-text">
+        <span class="brand">Manifest Bread</span>
+        <span class="tagline">Turn bulk into bread.</span>
+      </span>
+    </a>
+    <a href="/">Search</a>
+    <a href="/opportunities">Opportunities</a>
+    <a href="/inventory">Inventory</a>
+    <a href="/returns">CK returns</a>
+    <a href="/data">Data</a>
+    <a href="/architecture">Overview</a>
+  </nav>
+
+  <main class="arch-page">
+    <header class="arch-hero opp-hero">
+      <h1>Data platform architecture</h1>
+      <p class="arch-lead">
+        Reference model for a buy-low / sell-high operation: ingest market prices,
+        score opportunities, persist inventory and fulfillment, and expose data to
+        applications and BI. Domain-agnostic — lumber, collectibles, or any two-sided supply chain.
+      </p>
+      <p class="arch-meta">Implementation: containerized stack · PostgreSQL · scheduled ETL · REST API · web application</p>
+      <nav class="arch-subnav arch-print-hide" aria-label="Architecture diagrams">
+        <a href="/architecture" class="is-active">Platform layers</a>
+        <a href="/architecture/model">Data model &amp; lifecycle</a>
+      </nav>
+    </header>
+
+    <section class="arch-section">
+      <h2>Layered architecture</h2>
+      <div class="arch-stack">
+
+        <div class="arch-layer l-sources">
+          <div class="arch-layer-tag">
+            <span class="arch-layer-num">1</span>
+            Sources
+          </div>
+          <div class="arch-layer-body">
+            <div class="arch-node">
+              <div class="arch-node-title">Procurement pricing</div>
+              <div class="arch-node-desc">What it costs to acquire (supplier listings, quotes, APIs)</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Market / buyer pricing</div>
+              <div class="arch-node-desc">What you can sell for (buylist, bids, index prices)</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Reference catalog</div>
+              <div class="arch-node-desc">SKU / product master, attributes, conditions</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arch-layer l-ingest">
+          <div class="arch-layer-tag">
+            <span class="arch-layer-num">2</span>
+            Ingestion
+          </div>
+          <div class="arch-layer-body">
+            <div class="arch-node">
+              <div class="arch-node-title">API connectors</div>
+              <div class="arch-node-desc">Pull external feeds on a schedule</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Batch orchestration</div>
+              <div class="arch-node-desc">Daily (or hourly) job runner, retries, logging</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Landing / staging</div>
+              <div class="arch-node-desc">Raw extracts before transformation</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arch-layer l-process">
+          <div class="arch-layer-tag">
+            <span class="arch-layer-num">3</span>
+            Processing
+          </div>
+          <div class="arch-layer-body">
+            <div class="arch-node">
+              <div class="arch-node-title">Transform &amp; enrich</div>
+              <div class="arch-node-desc">Normalize schemas, join sources, apply business rules</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Opportunity scoring</div>
+              <div class="arch-node-desc">Margin, ROI, rank and filter actionable deals</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Snapshot versioning</div>
+              <div class="arch-node-desc">Point-in-time loads for trend and audit</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arch-layer l-platform">
+          <div class="arch-layer-tag">
+            <span class="arch-layer-num">4</span>
+            Data platform
+          </div>
+          <div class="arch-layer-body">
+            <div class="arch-node">
+              <div class="arch-node-title">Analytical datasets</div>
+              <div class="arch-node-desc">Ranked opportunities, price history</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Operational store</div>
+              <div class="arch-node-desc">Inventory, orders, fulfillment transactions</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Curated SQL views</div>
+              <div class="arch-node-desc">Reporting-ready joins, KPI definitions</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arch-layer l-apps">
+          <div class="arch-layer-tag">
+            <span class="arch-layer-num">5</span>
+            Applications
+          </div>
+          <div class="arch-layer-body">
+            <div class="arch-node">
+              <div class="arch-node-title">REST API</div>
+              <div class="arch-node-desc">Read analytics; write operational records</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Operational web app</div>
+              <div class="arch-node-desc">Search, act on opportunities, manage inventory</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Self-serve data access</div>
+              <div class="arch-node-desc">Table browser, CSV export, JSON endpoints</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arch-layer l-consume">
+          <div class="arch-layer-tag">
+            <span class="arch-layer-num">6</span>
+            Consumption
+          </div>
+          <div class="arch-layer-body">
+            <div class="arch-node">
+              <div class="arch-node-title">BI dashboards</div>
+              <div class="arch-node-desc">Tableau / Looker — funnel, margin, YoY</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Ad hoc analysis</div>
+              <div class="arch-node-desc">SQL against curated views</div>
+            </div>
+            <div class="arch-node">
+              <div class="arch-node-title">Downstream integrations</div>
+              <div class="arch-node-desc">Email parsers, alerts, future automation</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <p class="arch-host">Hosted on container platform (Docker) · single VPS or cloud VM · PostgreSQL as system of record</p>
+
+      <div class="arch-flow-arrows">
+        <span>Sources feed ingestion</span>
+        <span>Processing loads the data platform</span>
+        <span>Applications read &amp; write operational data</span>
+        <span>Consumption layers on SQL views</span>
+      </div>
+    </section>
+
+    <section class="arch-section">
+      <h2>Design principles</h2>
+      <div class="arch-principles">
+        <div class="arch-principle">
+          <strong>Single source of truth</strong>
+          One database for analytics and operations; snapshots preserve history.
+        </div>
+        <div class="arch-principle">
+          <strong>Separate read vs write paths</strong>
+          Daily batch for market data; real-time API for inventory and fulfillment.
+        </div>
+        <div class="arch-principle">
+          <strong>Measure planned vs actual</strong>
+          Expected margin at decision time; realized margin after fulfillment closes.
+        </div>
+      </div>
+    </section>
+
+    <section class="arch-section arch-print-hide">
+      <h2>Domain mapping (this implementation)</h2>
+      <div class="arch-mapping">
+        <table>
+          <thead>
+            <tr>
+              <th>Architecture layer</th>
+              <th>Collectibles trading instance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Procurement pricing</td>
+              <td>TCGplayer seller listings API</td>
+            </tr>
+            <tr>
+              <td>Market / buyer pricing</td>
+              <td>Card Kingdom buylist (daily scrape)</td>
+            </tr>
+            <tr>
+              <td>Opportunity scoring</td>
+              <td>Buy + shipping vs sell price → profit &amp; ROI ranking</td>
+            </tr>
+            <tr>
+              <td>Operational store</td>
+              <td>Inventory lots, shipment records, qty on hand</td>
+            </tr>
+            <tr>
+              <td>Operational web app</td>
+              <td>Opportunities, Inventory, Data explorer pages</td>
+            </tr>
+            <tr>
+              <td>BI dashboards</td>
+              <td>Tableau on <code>inventory_summary</code> views (planned)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="arch-footnote">
+        Use the top diagram for executives and interviews; use this table only if asked
+        “what does that look like in your project?”
+      </p>
+    </section>
+
+    <footer class="site-footer site-footer-compact arch-print-hide">
+      <p>Screen share: <strong>/architecture</strong> · Live data: <a href="/data">/data</a></p>
+    </footer>
+  </main>
+
+  <script src="/static/app.js?v=20260716"></script>
+</body>
+</html>

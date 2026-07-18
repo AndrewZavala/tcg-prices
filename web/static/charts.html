@@ -3,27 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Price History — TCG Prices</title>
+  <title>Price History — Manifest Bread</title>
   <meta name="description" content="Track Card Kingdom buylist cash and credit vs Scryfall TCG market prices over time." />
   <link rel="stylesheet" href="/static/app.css" />
+  <script src="/static/theme-init.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <nav>
-    <span class="brand">TCG Prices</span>
+    <a href="/" class="brand-block">
+      <img src="/static/bread.jpg" alt="" class="brand-logo" width="32" height="32" />
+      <span class="brand-text">
+        <span class="brand">Manifest Bread</span>
+        <span class="tagline">Turn bulk into bread.</span>
+      </span>
+    </a>
     <a href="/">Search</a>
+    <a href="/opportunities">Opportunities</a>
+    <a href="/inventory">Inventory</a>
+    <a href="/returns">CK returns</a>
     <a href="/match">Match collection</a>
     <a href="/charts">Price history</a>
+    <a href="/data">Data</a>
+    <a href="/architecture">Overview</a>
   </nav>
   <main>
-    <h1>CK buylist vs TCG market</h1>
-    <p class="meta">
-      Track how Card Kingdom cash/credit and Scryfall TCG prices (USD) move over time.
-      Requires multiple daily snapshots from the pipeline. Search one card at a time —
-      not the whole buylist.
-    </p>
+    <header class="hero">
+      <h1><span class="hero-icon" aria-hidden="true">📈</span> Price history</h1>
+      <p class="meta">
+        Watch CK cash/credit vs TCG buy price (condition-adjusted) over time. Needs multiple daily snapshots — pick one card at a time.
+      </p>
+    </header>
 
-    <div class="card">
+    <section class="panel">
+      <p class="panel-title">Pick a card to chart</p>
       <div class="filters">
         <input type="search" id="q" placeholder="Search card name…" style="min-width:220px" />
         <select id="finish">
@@ -40,49 +53,71 @@
         <input type="number" id="minCash" placeholder="Min CK cash $" step="0.01" min="0" style="width:140px" />
         <button type="button" id="searchBtn">Search</button>
       </div>
-      <div id="pickList" class="hint"></div>
-    </div>
+      <div id="pickList" class="chip-list"></div>
+    </section>
 
-    <div class="card" id="chartCard" hidden>
-      <h2 id="chartTitle"></h2>
+    <section class="card" id="chartCard" hidden>
+      <h2 id="chartTitle" style="font-family:var(--font-sans);color:var(--crust);margin-top:0;font-weight:600;letter-spacing:-0.03em"></h2>
       <p class="meta" id="chartMeta"></p>
       <div class="chart-wrap"><canvas id="chart"></canvas></div>
-    </div>
+    </section>
+
     <p id="status" class="hint"></p>
+
     <footer class="site-footer">
-      <p>Card Kingdom buylist tools by <a href="https://aizo.solutions" rel="noopener">Aizo Solutions</a>.
-      TCG market prices from Scryfall. Not affiliated with Card Kingdom or Wizards of the Coast.</p>
+      <p><strong>Manifest Bread</strong> by <a href="https://aizo.solutions" rel="noopener">Aizo Solutions</a>.
+      Not affiliated with Card Kingdom or Wizards of the Coast.</p>
     </footer>
   </main>
+  <script src="/static/app.js"></script>
   <script>
+    const CHART_COLORS = {
+      cash: '#c9852c',
+      credit: '#6b4a3a',
+      tcg: '#c45c26',
+    };
+
     let chart;
     const statusEl = document.getElementById('status');
     const pickList = document.getElementById('pickList');
+    const searchBtn = document.getElementById('searchBtn');
 
-    document.getElementById('searchBtn').addEventListener('click', searchCards);
+    searchBtn.addEventListener('click', searchCards);
     document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') searchCards(); });
 
     async function searchCards() {
       const q = document.getElementById('q').value.trim();
-      if (q.length < 2) { statusEl.textContent = 'Enter at least 2 characters.'; return; }
-      statusEl.textContent = 'Searching…';
+      if (q.length < 2) { statusEl.textContent = 'Enter at least 2 characters.'; statusEl.className = 'error'; return; }
+      setStatusLoading(statusEl, true, 'Searching…');
+      setButtonLoading(searchBtn, true);
       pickList.innerHTML = '';
       document.getElementById('chartCard').hidden = true;
-      const res = await fetch(`/api/history/search?q=${encodeURIComponent(q)}`);
-      const data = await res.json();
-      if (!data.results.length) {
-        statusEl.textContent = 'No cards found.';
-        return;
+      try {
+        const res = await fetch(`/api/history/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (!data.results.length) {
+          statusEl.textContent = 'No cards found.';
+          statusEl.className = 'hint';
+          return;
+        }
+        setStatusLoading(statusEl, false);
+        statusEl.textContent = 'Click a card to see its chart:';
+        statusEl.className = 'hint';
+        pickList.innerHTML = data.results.map(r =>
+          `<button type="button" class="secondary chip" data-sid="${r.scryfall_id}" data-finish="${r.finish}" data-name="${escAttr(r.name)}">
+            ${esc(r.name)} · ${r.finish} · ${r.set_code || '?'}
+          </button>`
+        ).join('');
+        pickList.querySelectorAll('button').forEach(btn => {
+          btn.addEventListener('click', () => {
+            pickList.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadSeries(btn.dataset.sid, btn.dataset.finish, btn.dataset.name);
+          });
+        });
+      } finally {
+        setButtonLoading(searchBtn, false);
       }
-      statusEl.textContent = 'Select a card:';
-      pickList.innerHTML = data.results.map(r =>
-        `<button type="button" class="secondary" style="margin:4px" data-sid="${r.scryfall_id}" data-finish="${r.finish}" data-name="${escAttr(r.name)}">
-          ${esc(r.name)} (${r.finish}) · ${r.set_code || '?'} · ${r.snapshot_days}d of data
-        </button>`
-      ).join('');
-      pickList.querySelectorAll('button').forEach(btn => {
-        btn.addEventListener('click', () => loadSeries(btn.dataset.sid, btn.dataset.finish, btn.dataset.name));
-      });
     }
 
     async function loadSeries(scryfallId, finish, name) {
@@ -90,21 +125,34 @@
       const minCash = document.getElementById('minCash').value;
       let url = `/api/history/series?scryfall_id=${encodeURIComponent(scryfallId)}&finish=${finish}&days=${days}`;
       if (minCash) url += `&min_cash=${minCash}`;
-      statusEl.textContent = 'Loading chart…';
+      setStatusLoading(statusEl, true, 'Rising dough…');
       const res = await fetch(url);
       const data = await res.json();
-      if (!res.ok) { statusEl.textContent = data.detail || 'Error'; return; }
+      if (!res.ok) {
+        statusEl.textContent = data.detail || 'Error';
+        statusEl.className = 'error';
+        return;
+      }
+      setStatusLoading(statusEl, false);
       statusEl.textContent = '';
-      document.getElementById('chartCard').hidden = false;
+      const chartCard = document.getElementById('chartCard');
+      chartCard.hidden = false;
+      chartCard.style.animation = 'none';
+      void chartCard.offsetWidth;
+      chartCard.style.animation = 'riseIn 0.45s ease-out';
+
       document.getElementById('chartTitle').textContent = data.name || name;
       document.getElementById('chartMeta').textContent =
-        `${data.set_name} · ${finish} · ${data.point_count} data points · Scryfall TCG USD from daily snapshots`;
+        `${data.set_name} · ${finish} · ${data.point_count} snapshots · condition-adjusted spread`;
 
       const labels = data.series.map(p => p.date);
       const datasets = [
-        { label: 'CK cash', data: data.series.map(p => p.ck_cash), borderColor: '#2c7be5', tension: 0.2 },
-        { label: 'CK credit', data: data.series.map(p => p.ck_credit), borderColor: '#6f42c1', tension: 0.2 },
-        { label: 'TCG USD (Scryfall)', data: data.series.map(p => p.tcg_usd), borderColor: '#e67e22', tension: 0.2 },
+        { label: 'CK cash (listed)', data: data.series.map(p => p.ck_cash), borderColor: CHART_COLORS.cash, backgroundColor: 'rgba(201,133,44,0.08)', tension: 0.3 },
+        { label: 'CK adj', data: data.series.map(p => p.ck_cash_adjusted), borderColor: '#8b5a2b', tension: 0.3 },
+        { label: 'CK credit', data: data.series.map(p => p.ck_credit), borderColor: CHART_COLORS.credit, tension: 0.3, borderDash: [6, 4] },
+        { label: 'TCG buy', data: data.series.map(p => p.tcg_buy_price), borderColor: CHART_COLORS.tcg, tension: 0.3 },
+        { label: 'TCG low (tcgcsv)', data: data.series.map(p => p.tcg_low), borderColor: '#8b6914', borderDash: [4, 4], tension: 0.3 },
+        { label: 'TCG market', data: data.series.map(p => p.tcg_market), borderColor: '#a0522d', borderDash: [2, 2], tension: 0.3 },
       ];
       if (chart) chart.destroy();
       chart = new Chart(document.getElementById('chart'), {
@@ -113,8 +161,14 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom' } },
-          scales: { y: { beginAtZero: false, title: { display: true, text: 'USD' } } },
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { position: 'bottom', labels: { font: { family: 'DM Sans', weight: '600' }, padding: 16 } },
+          },
+          scales: {
+            y: { beginAtZero: false, title: { display: true, text: 'USD', font: { family: 'DM Sans' } } },
+            x: { ticks: { maxRotation: 45, minRotation: 0 } },
+          },
         },
       });
     }

@@ -1,8 +1,30 @@
-# Deploy TCG Prices to production
+# Deploy Manifest Bread to production
 
-Public site: **https://tcgprices.aizo.solutions**
+Public site: **https://manifestbread.aizo.solutions**
 
 Stack: Docker Compose (Postgres + FastAPI + Caddy HTTPS + daily cron).
+
+**Local vs cloud:** Your laptop (`http://localhost:8000`) and the VPS are **separate** databases. Deploying to aizo does **not** remove or break local. Keep taking local backups so you can recover if the VPS dies (or the other way around).
+
+## 0. Local backup (laptop — before / during cloud use)
+
+From the repo root on Windows, with local Docker Postgres running:
+
+```powershell
+powershell -File deploy/backup-local.ps1
+```
+
+Dumps land in `deploy/backups/tcg_buylist_YYYYMMDD_HHMMSS.sql.gz` (last 14 kept; not committed to git).
+
+Restore only if you need that snapshot back (replaces local DB):
+
+```powershell
+powershell -File deploy/restore-local.ps1 -BackupFile deploy\backups\tcg_buylist_YYYYMMDD_HHMMSS.sql.gz
+```
+
+Copy a dump off-machine (OneDrive, USB, etc.) if you want protection against laptop disk failure too.
+
+VPS backups use `deploy/backup.sh` (see §6 below).
 
 ## 1. DNS (aizo.solutions)
 
@@ -10,14 +32,14 @@ At your DNS provider (Cloudflare, registrar, etc.) add:
 
 | Type | Name | Value |
 |------|------|-------|
-| **A** | `tcgprices` | Your VPS public IPv4 |
+| **A** | `manifestbread` | Your VPS public IPv4 |
 
 Optional: if you use Cloudflare proxy (orange cloud), SSL mode should be **Full** — Caddy still obtains its own cert on the VPS.
 
 Verify before deploy:
 
 ```bash
-dig +short tcgprices.aizo.solutions
+dig +short manifestbread.aizo.solutions
 # should return your VPS IP
 ```
 
@@ -37,7 +59,7 @@ Clone the repo:
 ```bash
 sudo mkdir -p /opt/tcg
 sudo chown "$USER:$USER" /opt/tcg
-git clone YOUR_REPO_URL /opt/tcg
+git clone https://github.com/AndrewZavala/tcg-prices.git /opt/tcg
 cd /opt/tcg
 ```
 
@@ -54,6 +76,23 @@ Or run the bootstrap script (generates a password on first run):
 bash deploy/deploy.sh   # first run creates .env — edit it, run again
 bash deploy/deploy.sh   # second run deploys
 ```
+
+## 3b. Site password (Caddy basic auth)
+
+Inventory must not be public. On the VPS, generate a bcrypt hash:
+
+```bash
+docker run --rm caddy:2-alpine caddy hash-password --plaintext 'YOUR_SITE_PASSWORD'
+```
+
+Put the hash in `.env`:
+
+```bash
+BASIC_AUTH_USER=andre
+BASIC_AUTH_HASH='$2a$14$....'   # paste hash from above; keep single quotes
+```
+
+See `deploy/Caddyfile` — Caddy prompts for this user/password before serving the GUI.
 
 ## 4. Start production stack
 
@@ -86,7 +125,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml build web
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d
 ```
 
-## 6. Backups
+## 6. Backups (VPS)
 
 Nightly dump (add to root crontab on VPS):
 
@@ -94,7 +133,7 @@ Nightly dump (add to root crontab on VPS):
 0 4 * * * cd /opt/tcg && bash deploy/backup.sh >> /var/log/tcg-backup.log 2>&1
 ```
 
-Backups land in `deploy/backups/`.
+Backups land in `deploy/backups/`. Periodically `scp` a dump to your laptop or object storage so a VPS wipe is recoverable.
 
 ## 7. Logs
 
@@ -105,7 +144,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml exec sche
 
 ## Subdomain / branding
 
-Default subdomain is `tcgprices.aizo.solutions`. To change it, update in `.env`:
+Default subdomain is `manifestbread.aizo.solutions`. To change it, update in `.env`:
 
 - `SITE_DOMAIN`
 - `CORS_ORIGINS`

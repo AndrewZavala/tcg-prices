@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Data explorer — Manifest Bread</title>
+  <meta name="description" content="Browse Postgres tables and views behind the arbitrage pipeline." />
+  <link rel="stylesheet" href="/static/app.css?v=20260715" />
+  <script src="/static/theme-init.js"></script>
+</head>
+<body class="opp-page data-page">
+  <nav>
+    <a href="/" class="brand-block">
+      <img src="/static/bread.jpg" alt="" class="brand-logo" width="32" height="32" />
+      <span class="brand-text">
+        <span class="brand">Manifest Bread</span>
+        <span class="tagline">Turn bulk into bread.</span>
+      </span>
+    </a>
+    <a href="/">Search</a>
+    <a href="/opportunities">Opportunities</a>
+    <a href="/inventory">Inventory</a>
+    <a href="/returns">CK returns</a>
+    <a href="/match">Match collection</a>
+    <a href="/charts">Price history</a>
+    <a href="/data">Data</a>
+    <a href="/architecture">Overview</a>
+  </nav>
+  <main class="data-main">
+    <header class="opp-hero">
+      <div class="opp-hero-text">
+        <h1>Data explorer</h1>
+        <p class="opp-sub">Read-only view of Postgres — same data powering Opportunities, Inventory, and reporting.</p>
+      </div>
+      <dl class="opp-kpis" id="dataKpis" hidden>
+        <div>
+          <dt>Dataset</dt>
+          <dd id="kpiDataset">—</dd>
+        </div>
+        <div>
+          <dt>Rows</dt>
+          <dd id="kpiRows">—</dd>
+        </div>
+        <div>
+          <dt>Stage</dt>
+          <dd id="kpiStage">—</dd>
+        </div>
+      </dl>
+    </header>
+
+    <section class="data-layout">
+      <aside class="data-sidebar" aria-label="Datasets">
+        <h2 class="data-sidebar-title">Tables &amp; views</h2>
+        <p class="data-sidebar-hint">Click a dataset to preview rows. Share the API link for raw JSON.</p>
+        <ul id="catalog" class="data-catalog"></ul>
+      </aside>
+
+      <div class="data-panel">
+        <section class="data-flow" aria-label="Pipeline overview">
+          <p class="data-flow-label">Pipeline flow</p>
+          <div class="data-flow-track">
+            <span class="data-flow-step">CK buylist</span>
+            <span class="data-flow-arrow" aria-hidden="true">→</span>
+            <span class="data-flow-step">TCG listings</span>
+            <span class="data-flow-arrow" aria-hidden="true">→</span>
+            <span class="data-flow-step">Opportunities</span>
+            <span class="data-flow-arrow" aria-hidden="true">→</span>
+            <span class="data-flow-step">Inventory</span>
+            <span class="data-flow-arrow" aria-hidden="true">→</span>
+            <span class="data-flow-step">CK fulfillments</span>
+          </div>
+        </section>
+
+        <section class="data-toolbar" id="toolbar" hidden>
+          <p id="datasetDesc" class="data-desc"></p>
+          <div class="data-toolbar-row">
+            <label class="opp-search data-search">
+              <span class="sr-only">Search rows</span>
+              <input type="search" id="q" placeholder="Search this dataset…" autocomplete="off" />
+            </label>
+            <a id="apiLink" class="data-api-link" href="#" target="_blank" rel="noopener">API JSON</a>
+            <a id="csvLink" class="data-api-link secondary" href="#" download>Download CSV</a>
+            <a href="/docs" class="data-api-link secondary" target="_blank" rel="noopener">OpenAPI</a>
+          </div>
+          <p id="resultSummary" class="opp-results-summary">—</p>
+        </section>
+
+        <p id="statusMsg" class="opp-status"></p>
+
+        <div class="opp-table-wrap data-table-wrap" id="tableWrap" hidden>
+          <table class="opp-table data-table">
+            <thead id="tableHead"></thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+
+        <nav class="data-pager" id="pager" hidden aria-label="Pagination">
+          <button type="button" id="prevBtn" class="secondary opp-btn-ghost">Previous</button>
+          <span id="pageInfo">Page 1</span>
+          <button type="button" id="nextBtn" class="secondary opp-btn-ghost">Next</button>
+        </nav>
+
+        <div class="opp-empty" id="emptyPick">
+          <p>Select a dataset on the left to preview Postgres rows.</p>
+          <p class="data-empty-tip">For interviews: start with <strong>Opportunities (latest)</strong>, then <strong>Inventory + realized profit</strong>.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="site-footer site-footer-compact">
+      <p>All endpoints are read-only. JSON: <code>/api/data/{dataset}</code> · CSV: <code>/api/data/{dataset}/export.csv</code></p>
+    </footer>
+  </main>
+
+  <script src="/static/app.js?v=20260715"></script>
+  <script src="/static/data.js?v=20260715"></script>
+</body>
+</html>

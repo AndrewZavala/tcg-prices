@@ -18,12 +18,17 @@ BUYLIST_RAW_DIR = TCG_ROOT / os.environ.get("BUYLIST_RAW_DIR", "data/buylist/raw
 BUYLIST_LEGACY_DIR = TCG_ROOT / "Buylist"
 BUYLIST_MASTER_DIR = TCG_ROOT / "data" / "buylist" / "master"
 BUYLIST_ENRICHED_DIR = TCG_ROOT / "data" / "buylist" / "enriched"
+OPPORTUNITIES_DIR = TCG_ROOT / "data" / "buylist" / "opportunities"
 MIGRATIONS_DIR = TCG_ROOT / "migrations"
 
 SCRYFALL_SET_LOOKUP = HELPER_DIR / "scryfall_set_lookup.csv"
 CK_SET_ALIASES = HELPER_DIR / "ck_set_aliases.csv"
 SCRYFALL_CARDS_LOOKUP = HELPER_DIR / "scryfall_cards_lookup.csv"
 SCRYFALL_BULK_JSON = HELPER_DIR / "scryfall_default_cards.json"
+TCGCSV_PRICES_LOOKUP = HELPER_DIR / "tcgcsv_prices_lookup.csv"
+TCG_LISTINGS_LOOKUP = HELPER_DIR / os.environ.get(
+    "TCG_LISTINGS_LOOKUP_FILE", "tcg_listings_lookup.csv"
+)
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -44,5 +49,6 @@ def ensure_dirs() -> None:
         BUYLIST_RAW_DIR,
         BUYLIST_MASTER_DIR,
         BUYLIST_ENRICHED_DIR,
+        OPPORTUNITIES_DIR,
     ):
         d.mkdir(parents=True, exist_ok=True)

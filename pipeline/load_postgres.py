@@ -22,7 +22,14 @@ def apply_migrations(engine) -> None:
     raw = engine.raw_connection()
     try:
         cur = raw.cursor()
-        for name in ("001_schema.sql", "002_history_indexes.sql"):
+        for name in (
+            "001_schema.sql",
+            "002_history_indexes.sql",
+            "003_tcgcsv_prices.sql",
+            "004_condition_prices.sql",
+            "005_refresh_buylist_current_view.sql",
+            "006_opportunities.sql",
+        ):
             migration = MIGRATIONS_DIR / name
             if migration.exists():
                 cur.execute(migration.read_text(encoding="utf-8"))
@@ -68,6 +75,13 @@ def load_csv(path: Path, engine, source: str = "api") -> int:
         "usd",
         "usd_foil",
         "usd_etched",
+        "tcg_market",
+        "tcg_low",
+        "tcg_mid",
+        "tcg_buy_price",
+        "tcg_listing_condition",
+        "ck_cash_adjusted",
+        "condition_multiplier",
         "sku",
         "variation",
     ]

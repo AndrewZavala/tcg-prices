@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 import pandas as pd
@@ -12,17 +13,24 @@ import requests
 from config import HELPER_DIR, SCRYFALL_BULK_JSON, SCRYFALL_CARDS_LOOKUP, ensure_dirs
 
 BULK_META_URL = "https://api.scryfall.com/bulk-data"
+SCRYFALL_HEADERS = {
+    "User-Agent": os.environ.get(
+        "SCRYFALL_USER_AGENT",
+        "TCGCardbitrage/1.0 (https://github.com/andre/tcg-buylist)",
+    ),
+    "Accept": "application/json",
+}
 
 
 def main() -> int:
     ensure_dirs()
     print("Fetching Scryfall bulk metadata...")
-    meta = requests.get(BULK_META_URL, timeout=60).json()
+    meta = requests.get(BULK_META_URL, headers=SCRYFALL_HEADERS, timeout=60).json()
     default = next(x for x in meta["data"] if x["type"] == "default_cards")
     download_uri = default["download_uri"]
     print(f"Downloading {download_uri} (this may take several minutes)...")
 
-    resp = requests.get(download_uri, timeout=600, stream=True)
+    resp = requests.get(download_uri, headers=SCRYFALL_HEADERS, timeout=600, stream=True)
     resp.raise_for_status()
     with open(SCRYFALL_BULK_JSON, "wb") as f:
         for chunk in resp.iter_content(chunk_size=1024 * 1024):

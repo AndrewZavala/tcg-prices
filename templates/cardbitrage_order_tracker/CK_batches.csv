@@ -1,0 +1,2 @@
+ck_batch_id,label,sent_on,ck_ref,expected_ck_usd,status,notes
+CK-2026-07-02-A,Tarkan July lot,,,199.34,Draft,Example row — delete after import

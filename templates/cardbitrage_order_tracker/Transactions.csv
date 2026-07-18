@@ -1,0 +1,2 @@
+transaction_id,email_date,email_type,source,reference,amount_usd,raw_subject,message_id,notes
+2026-07-02:165.79:processed,2026-07-02,tcg_processed,tcgplayer,2026-07-02:165.79,165.79,Your TCGplayer.com order of Relentless Assault...,,"Example row — delete after import"

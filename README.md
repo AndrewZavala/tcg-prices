@@ -1,6 +1,8 @@
-# CK Buylist → Postgres → Website
+# Manifest Bread
 
-Daily Card Kingdom buylist pipeline with Scryfall enrichment, Postgres storage, and **TCG Prices** — a public search UI at [tcgprices.aizo.solutions](https://tcgprices.aizo.solutions) (production).
+**Turn bulk into bread.** Daily Card Kingdom buylist pipeline with Scryfall enrichment, Postgres storage, and a public UI — production at [manifestbread.aizo.solutions](https://manifestbread.aizo.solutions).
+
+GitHub: [AndrewZavala/tcg-prices](https://github.com/AndrewZavala/tcg-prices)
 
 ## Project layout
 
@@ -38,16 +40,16 @@ TCG/
 
 5. Open http://localhost:8000
 
-## Production deploy (tcgprices.aizo.solutions)
+## Production deploy (manifestbread.aizo.solutions)
 
 See **[deploy/README.md](deploy/README.md)** for full VPS setup.
 
 Quick summary:
 
-1. DNS: **A record** `tcgprices` → your VPS IP (on `aizo.solutions`).
+1. DNS: **A record** `manifestbread` → your VPS IP (on `aizo.solutions`).
 2. Clone repo to `/opt/tcg`, copy `deploy/.env.production.example` → `.env`.
 3. Run `bash deploy/deploy.sh` (twice — first creates secrets, second deploys).
-4. Site goes live at **https://tcgprices.aizo.solutions** (Caddy auto-HTTPS).
+4. Site goes live at **https://manifestbread.aizo.solutions** (Caddy auto-HTTPS).
 
 ```bash
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d
@@ -59,7 +61,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d
 |------|-----|-------------|
 | Buylist search | `/` | Browse current CK buylist |
 | **Match collection** | `/match` | Upload CSV (Manabox / Stacks / etc.) → CK buylist match ([similar to BulkCaster CK tool](https://mtgbulkcaster.com/)) |
-| **Price history** | `/charts` | Line chart: CK cash/credit vs Scryfall TCG USD over time (per card, filtered search) |
+| **Price history** | `/charts` | Line chart: CK cash/credit vs TCGplayer market/low/mid (tcgcsv) over time |
 
 Price history needs **multiple daily pipeline runs** — each run stores a dated snapshot in Postgres.
 
@@ -69,8 +71,38 @@ Price history needs **multiple daily pipeline runs** — each run stores a dated
 
 1. `scrape_ck.py` — CK public pricelist JSON (`api.cardkingdom.com`) → `data/buylist/raw/{date}/`
 2. `merge_buylist.py` — uses API CSV only when present (skips legacy `Buylist/` segments)
-3. `enrich_buylist.py` — CK set aliases + API `scryfall_id` + Scryfall USD/TCGPlayer metadata
-4. `load_postgres.py` — upsert snapshot into Postgres
+3. `fetch_tcg_listings.sh` / `browser_tcg_listings.py` — live TCGplayer mp-search API listings → `helper/tcg_listings_lookup.csv`
+4. `enrich_buylist.py` — Scryfall IDs + live listing prices + condition-adjusted CK/TCG spread
+5. `load_postgres.py` — upsert snapshot into Postgres
+
+### Browser-backed TCGplayer listings
+
+If Docker/server requests to `mp-search-api.tcgplayer.com` are blocked, run the browser-backed API fetcher on your Windows host. It opens a real Edge/Chrome session, calls the same JSON listing API from inside the TCGplayer page context, and writes `helper/tcg_listings_lookup.csv` for the normal enrich/load steps.
+
+```powershell
+pip install -r requirements.txt
+python -m playwright install chromium
+python pipeline/browser_tcg_listings.py
+```
+
+Useful env vars:
+
+- `TCG_LISTINGS_MAX_PRODUCTS` — limit product/finish pairs, prioritized by CK cash; default `5000`.
+- `TCG_BROWSER_CHANNEL` — browser channel, default `msedge`.
+- `TCG_BROWSER_HEADLESS` — keep `0` for a visible real browser.
+- `TCG_BROWSER_LISTING_PAGE_SIZE` — listing rows per API call, default `10` to match TCGplayer's page request.
+- `TCG_BROWSER_PROFILE_DIR` — persistent browser profile/cookie directory.
+
+If Python is only available inside Docker, start Edge on Windows with remote debugging and connect from the pipeline container via CDP:
+
+```powershell
+Start-Process "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" `
+  -ArgumentList "--remote-debugging-port=9222", "--remote-debugging-address=0.0.0.0", "https://www.tcgplayer.com"
+
+$ip = docker compose run --rm pipeline python3 -c "import socket; print(socket.gethostbyname('host.docker.internal'))" | Select-Object -Last 1
+$ws = (curl.exe -sS "http://127.0.0.1:9222/json/version" | ConvertFrom-Json).webSocketDebuggerUrl -replace 'ws://(127\.0\.0\.1|localhost):9222', "ws://$ip`:9222"
+docker compose run --rm -e TCG_BROWSER_CDP_URL=$ws pipeline sh -lc "python3 -m pip install -q playwright && python3 /app/pipeline/browser_tcg_listings.py"
+```
 
 ### Set name normalization
 

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Data model &amp; lifecycle — reference</title>
+  <link rel="stylesheet" href="/static/app.css?v=20260716" />
+  <script src="/static/theme-init.js"></script>
+  <style>
+    .arch-page { max-width: 1000px; margin: 0 auto; padding-bottom: 2.5rem; }
+    .arch-hero h1 { margin-bottom: 0.4rem; font-size: 1.65rem; }
+    .arch-lead { color: var(--muted); font-size: 1rem; max-width: 46rem; line-height: 1.55; margin: 0; }
+    .arch-subnav {
+      display: flex;
+      gap: 0.5rem;
+      margin: 1.25rem 0 0;
+      flex-wrap: wrap;
+    }
+    .arch-subnav a {
+      padding: 0.4rem 0.85rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      text-decoration: none;
+      color: inherit;
+      font-size: 0.85rem;
+      background: var(--panel);
+    }
+    .arch-subnav a:hover { border-color: var(--crust); }
+    .arch-subnav a.is-active {
+      background: var(--crust);
+      color: #fff;
+      border-color: var(--crust);
+    }
+    .arch-section { margin: 2rem 0; }
+    .arch-section h2 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin: 0 0 0.85rem;
+      font-weight: 600;
+    }
+    .arch-section-intro {
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin: -0.35rem 0 1rem;
+      line-height: 1.45;
+      max-width: 40rem;
+    }
+
+    /* Lifecycle pipeline */
+    .life-track {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      overflow-x: auto;
+      padding-bottom: 0.5rem;
+    }
+    .life-stage {
+      flex: 1 1 9rem;
+      min-width: 8.5rem;
+      position: relative;
+      padding: 0 0.35rem;
+    }
+    .life-stage:first-child { padding-left: 0; }
+    .life-stage:last-child { padding-right: 0; }
+    .life-card {
+      height: 100%;
+      border-radius: 12px;
+      border: 2px solid var(--border);
+      background: var(--panel);
+      padding: 0.85rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .life-stage.is-analytics .life-card { border-color: #5b8def; }
+    .life-stage.is-decision .life-card { border-color: #c97b2e; }
+    .life-stage.is-ops .life-card { border-color: #3d9a6a; }
+    .life-stage.is-outcome .life-card { border-color: #8b6bb8; }
+    .life-num {
+      font-size: 0.62rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    .life-title { font-weight: 700; font-size: 0.88rem; line-height: 1.25; margin-bottom: 0.35rem; }
+    .life-desc { font-size: 0.72rem; color: var(--muted); line-height: 1.4; flex: 1; }
+    .life-meta {
+      margin-top: 0.5rem;
+      font-size: 0.65rem;
+      padding: 0.25rem 0.4rem;
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+    }
+    .life-arrow {
+      flex: 0 0 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 1.1rem;
+      font-weight: 700;
+      align-self: center;
+    }
+    .life-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-top: 1rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .life-legend span { display: flex; align-items: center; gap: 0.35rem; }
+    .life-legend i {
+      width: 0.65rem;
+      height: 0.65rem;
+      border-radius: 2px;
+      display: inline-block;
+    }
+
+    /* ER diagram */
+    .er-wrap {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--panel);
+      padding: 1.25rem;
+      overflow-x: auto;
+    }
+    .er-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem 1.5rem;
+      min-width: 36rem;
+    }
+    .er-entity {
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+      overflow: hidden;
+    }
+    .er-entity.is-snapshot { border-color: #5b8def; }
+    .er-entity.is-analytics { border-color: var(--crust); }
+    .er-entity.is-ops { border-color: #3d9a6a; }
+    .er-entity.is-event { border-color: #8b6bb8; }
+    .er-head {
+      padding: 0.5rem 0.65rem;
+      font-weight: 700;
+      font-size: 0.82rem;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--border) 30%, var(--bg));
+    }
+    .er-fields {
+      margin: 0;
+      padding: 0.4rem 0;
+      list-style: none;
+      font-size: 0.72rem;
+      font-family: ui-monospace, monospace;
+    }
+    .er-fields li {
+      padding: 0.15rem 0.65rem;
+      color: var(--muted);
+    }
+    .er-fields li.pk { color: var(--text); font-weight: 600; }
+    .er-fields li.fk { color: #3d9a6a; }
+    .er-relations {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.5rem 1.25rem;
+      padding-top: 0.5rem;
+      border-top: 1px dashed var(--border);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .er-relations code {
+      font-size: 0.72rem;
+      background: var(--bg);
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+    }
+
+    /* Planned vs actual callout */
+    .metric-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    .metric-box {
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .metric-box strong {
+      display: block;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 0.3rem;
+    }
+
+    @media (max-width: 800px) {
+      .life-track { flex-direction: column; }
+      .life-arrow { transform: rotate(90deg); padding: 0.25rem 0; }
+      .er-grid { grid-template-columns: 1fr; min-width: 0; }
+      .metric-split { grid-template-columns: 1fr; }
+    }
+    @media print {
+      nav, .arch-print-hide { display: none !important; }
+      .life-track { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body class="opp-page">
+  <nav class="arch-print-hide">
+    <a href="/" class="brand-block">
+      <img src="/static/bread.jpg" alt="" class="brand-logo" width="32" height="32" />
+      <span class="brand-text">
+        <span class="brand">Manifest Bread</span>
+        <span class="tagline">Turn bulk into bread.</span>
+      </span>
+    </a>
+    <a href="/">Search</a>
+    <a href="/opportunities">Opportunities</a>
+    <a href="/inventory">Inventory</a>
+    <a href="/returns">CK returns</a>
+    <a href="/data">Data</a>
+    <a href="/architecture">Overview</a>
+  </nav>
+
+  <main class="arch-page">
+    <header class="arch-hero opp-hero">
+      <h1>Data model &amp; record lifecycle</h1>
+      <p class="arch-lead">
+        How information moves from market feeds to scored opportunities, into operational
+        inventory, through fulfillment events, and into outcome metrics — independent of industry.
+      </p>
+      <nav class="arch-subnav arch-print-hide" aria-label="Architecture diagrams">
+        <a href="/architecture">Platform layers</a>
+        <a href="/architecture/model" class="is-active">Data model &amp; lifecycle</a>
+      </nav>
+    </header>
+
+    <section class="arch-section">
+      <h2>Record lifecycle</h2>
+      <p class="arch-section-intro">
+        One product line moves through analytical → operational → outcome states.
+        Batch data is read-only; operational tables capture decisions and events.
+      </p>
+      <div class="life-track">
+        <div class="life-stage is-analytics">
+          <div class="life-card">
+            <div class="life-num">Stage 1</div>
+            <div class="life-title">Price snapshots</div>
+            <div class="life-desc">Point-in-time procurement &amp; market prices loaded daily</div>
+            <div class="life-meta">read-only · versioned</div>
+          </div>
+        </div>
+        <div class="life-arrow" aria-hidden="true">→</div>
+        <div class="life-stage is-analytics">
+          <div class="life-card">
+            <div class="life-num">Stage 2</div>
+            <div class="life-title">Scored opportunity</div>
+            <div class="life-desc">Margin &amp; ROI computed; ranked for action</div>
+            <div class="life-meta">read-only · refreshed</div>
+          </div>
+        </div>
+        <div class="life-arrow" aria-hidden="true">→</div>
+        <div class="life-stage is-decision">
+          <div class="life-card">
+            <div class="life-num">Stage 3</div>
+            <div class="life-title">Inventory position</div>
+            <div class="life-desc">Commit to acquire; freeze expected economics at purchase</div>
+            <div class="life-meta">read-write · operational</div>
+          </div>
+        </div>
+        <div class="life-arrow" aria-hidden="true">→</div>
+        <div class="life-stage is-ops">
+          <div class="life-card">
+            <div class="life-num">Stage 4</div>
+            <div class="life-title">Fulfillment event</div>
+            <div class="life-desc">Outbound shipment; decrement on-hand quantity</div>
+            <div class="life-meta">read-write · transactional</div>
+          </div>
+        </div>
+        <div class="life-arrow" aria-hidden="true">→</div>
+        <div class="life-stage is-outcome">
+          <div class="life-card">
+            <div class="life-num">Stage 5</div>
+            <div class="life-title">Attributed outcome</div>
+            <div class="life-desc">Realized margin when fulfillment closes (paid / delivered)</div>
+            <div class="life-meta">derived · reporting view</div>
+          </div>
+        </div>
+      </div>
+      <div class="life-legend">
+        <span><i style="background:#5b8def"></i> Analytical (pipeline-owned)</span>
+        <span><i style="background:#c97b2e"></i> Decision commit</span>
+        <span><i style="background:#3d9a6a"></i> Operational events</span>
+        <span><i style="background:#8b6bb8"></i> Outcome / BI layer</span>
+      </div>
+      <div class="metric-split">
+        <div class="metric-box">
+          <strong>Expected (at commit)</strong>
+          Margin frozen when inventory position is created — baseline for planning and forecast.
+        </div>
+        <div class="metric-box">
+          <strong>Realized (at close)</strong>
+          Actual payout minus cost, rolled up from fulfillment events — true performance.
+        </div>
+      </div>
+    </section>
+
+    <section class="arch-section">
+      <h2>Entity relationship model</h2>
+      <p class="arch-section-intro">
+        Core tables and relationships. One inventory position can have many fulfillment events
+        (partial shipments, batch splits).
+      </p>
+      <div class="er-wrap">
+        <div class="er-grid">
+          <div class="er-entity is-snapshot">
+            <div class="er-head">price_snapshot</div>
+            <ul class="er-fields">
+              <li class="pk">snapshot_date</li>
+              <li>source_system</li>
+              <li>row_count</li>
+            </ul>
+          </div>
+          <div class="er-entity is-snapshot">
+            <div class="er-head">catalog_price</div>
+            <ul class="er-fields">
+              <li class="pk">snapshot_date, product_id</li>
+              <li>procurement_price</li>
+              <li>market_price</li>
+              <li>attributes…</li>
+            </ul>
+          </div>
+          <div class="er-entity is-analytics">
+            <div class="er-head">opportunity</div>
+            <ul class="er-fields">
+              <li class="pk">id</li>
+              <li class="fk">snapshot_date</li>
+              <li class="fk">product_id</li>
+              <li>expected_margin</li>
+              <li>expected_roi</li>
+              <li>supplier_ref</li>
+            </ul>
+          </div>
+          <div class="er-entity is-ops">
+            <div class="er-head">inventory_position</div>
+            <ul class="er-fields">
+              <li class="pk">id</li>
+              <li class="fk">opportunity_id (optional)</li>
+              <li>qty_original, qty_on_hand</li>
+              <li>expected_margin</li>
+              <li>procurement_order_ref</li>
+              <li>status</li>
+            </ul>
+          </div>
+          <div class="er-entity is-event">
+            <div class="er-head">fulfillment_event</div>
+            <ul class="er-fields">
+              <li class="pk">id</li>
+              <li class="fk">inventory_position_id</li>
+              <li>qty, batch_ref</li>
+              <li>status</li>
+              <li>paid_amount</li>
+            </ul>
+          </div>
+          <div class="er-entity is-outcome">
+            <div class="er-head">position_with_outcomes (view)</div>
+            <ul class="er-fields">
+              <li>all position fields</li>
+              <li>qty_fulfilled</li>
+              <li>realized_margin</li>
+              <li>at_risk_cost</li>
+            </ul>
+          </div>
+          <div class="er-relations">
+            <span><code>price_snapshot</code> 1 → N <code>catalog_price</code></span>
+            <span><code>opportunity</code> 1 → 0..N <code>inventory_position</code></span>
+            <span><code>inventory_position</code> 1 → N <code>fulfillment_event</code></span>
+            <span><code>position_with_outcomes</code> joins position + events</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="arch-section arch-print-hide">
+      <h2>Domain mapping (this implementation)</h2>
+      <div class="er-wrap" style="font-size:0.82rem;line-height:1.6;color:var(--muted)">
+        <p style="margin:0 0 0.5rem"><strong style="color:var(--text)">Lumber:</strong>
+          mill quote + lumber index → scored SKU margin → yard receipt → outbound load → realized margin per load.</p>
+        <p style="margin:0 0 0.5rem"><strong style="color:var(--text)">Insurance leads:</strong>
+          publisher cost + carrier bid → ranked lead → sold lead record → policy bind event → attributed revenue.</p>
+        <p style="margin:0"><strong style="color:var(--text)">This build:</strong>
+          <code>buylist_snapshots</code> / <code>opportunities</code> → <code>inventory_lots</code> → <code>ck_fulfillments</code> → <code>inventory_with_realized</code>.</p>
+      </div>
+    </section>
+
+    <footer class="site-footer site-footer-compact arch-print-hide">
+      <p><a href="/architecture">← Platform layers</a> · <a href="/data">Live data</a></p>
+    </footer>
+  </main>
+
+  <script src="/static/app.js?v=20260716"></script>
+</body>
+</html>

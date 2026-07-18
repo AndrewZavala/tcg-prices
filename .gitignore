@@ -9,12 +9,22 @@ node_modules/
 # Generated / large data (rebuilt on VPS via pipeline)
 helper/scryfall_default_cards.json
 helper/scryfall_cards_lookup.csv
+helper/tcgcsv_prices_lookup.csv
+helper/tcg_listings_lookup.csv
 /scryfall_cards_lookup.csv
 /scryfall_set_lookup.csv
 data/buylist/raw/
 data/buylist/master/
 data/buylist/enriched/
 deploy/backups/*.sql.gz
+deploy/backups/*.sql
+
+# Local pipeline outputs / scratch (not for git)
+data/
+helper/*_new.csv
+helper/*_test.csv
+/bread.jpg
+
 
 # Legacy segment CSVs (optional local fallback; pipeline uses CK API)
 Buylist/*.csv

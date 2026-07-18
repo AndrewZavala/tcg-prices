@@ -1,0 +1,3 @@
+tcg_order_id,checkout_key,card_name,set_name,finish,condition,buy_qty,unit_buy_usd,line_total_usd,ck_adj_usd,notes
+2D8EFC37-FBA269-02EAE,2026-07-02:165.79,Relentless Assault,7th Edition,foil,MP,1,45.48,45.48,,Example row — delete after import
+,2026-07-02:165.79,Blasphemous Act (Extended Art),Commander Legends,foil,NM,8,,,,Unassigned until shipped email

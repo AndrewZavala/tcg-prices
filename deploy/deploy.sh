@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap TCG Prices on a fresh Ubuntu VPS with Docker installed.
+# Bootstrap Manifest Bread on a fresh Ubuntu VPS with Docker installed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,7 +8,7 @@ cd "$TCG_ROOT"
 
 COMPOSE="docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml"
 
-echo "==> TCG Prices deploy (root: $TCG_ROOT)"
+echo "==> Manifest Bread deploy (root: $TCG_ROOT)"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker not found. Install first: curl -fsSL https://get.docker.com | sh"
@@ -58,14 +58,14 @@ fi
 echo "==> Running daily pipeline (first load)"
 $COMPOSE run --rm pipeline bash /app/pipeline/run_daily.sh
 
-DOMAIN="${SITE_DOMAIN:-tcgprices.aizo.solutions}"
+DOMAIN="${SITE_DOMAIN:-manifestbread.aizo.solutions}"
 echo ""
 echo "============================================"
 echo " Deploy complete."
 echo ""
 echo " DNS (at your aizo.solutions registrar / Cloudflare):"
 echo "   Type: A"
-echo "   Name: tcgprices"
+echo "   Name: manifestbread"
 echo "   Value: YOUR_VPS_PUBLIC_IP"
 echo ""
 echo " Site (after DNS propagates):"

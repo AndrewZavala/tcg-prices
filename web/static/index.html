@@ -3,87 +3,112 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TCG Prices — Card Kingdom Buylist Search</title>
-  <meta name="description" content="Search Card Kingdom's MTG buylist with cash and store credit prices. Updated daily." />
+  <title>Manifest Bread — Card Kingdom Buylist Search</title>
+  <meta name="description" content="Manifest your buylist. Search Card Kingdom cash and store credit prices — updated daily." />
   <link rel="stylesheet" href="/static/app.css" />
-  <style>
-    :root { --bg: #f5f7fa; --card: #fff; --accent: #2c7be5; --text: #333; }
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 2rem; }
-    h1 { margin-top: 0; }
-    .meta { color: #666; margin-bottom: 1.5rem; }
-    .filters { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
-    input, select, button { padding: 0.5rem 0.75rem; font-size: 1rem; border-radius: 6px; border: 1px solid #ccc; }
-    button { background: var(--accent); color: #fff; border: none; cursor: pointer; }
-    button:hover { filter: brightness(0.95); }
-    table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
-    th { background: #2c3e50; color: #fff; text-align: left; padding: 0.6rem; }
-    td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #eee; }
-    tr:hover { background: #f1f6ff; }
-    a { color: var(--accent); }
-    .pager { margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; }
-    .error { color: #c0392b; }
-  </style>
+  <script src="/static/theme-init.js"></script>
 </head>
 <body>
   <nav>
-    <span class="brand">TCG Prices</span>
+    <a href="/" class="brand-block">
+      <img src="/static/bread.jpg" alt="" class="brand-logo" width="32" height="32" />
+      <span class="brand-text">
+        <span class="brand">Manifest Bread</span>
+        <span class="tagline">Turn bulk into bread.</span>
+      </span>
+    </a>
     <a href="/">Search</a>
+    <a href="/opportunities">Opportunities</a>
+    <a href="/inventory">Inventory</a>
+    <a href="/returns">CK returns</a>
     <a href="/match">Match collection</a>
     <a href="/charts">Price history</a>
+    <a href="/data">Data</a>
+    <a href="/architecture">Overview</a>
   </nav>
   <main>
-  <h1>Card Kingdom buylist</h1>
-  <p class="meta" id="meta">Loading snapshot info…</p>
+    <header class="hero">
+      <h1><span class="hero-icon" aria-hidden="true">🍞</span> Card Kingdom buylist</h1>
+      <p class="meta" id="meta">Loading snapshot info…</p>
+    </header>
 
-  <div class="filters">
-    <input type="search" id="q" placeholder="Search card name…" />
-    <input type="text" id="set_code" placeholder="Set code (e.g. mh2)" />
-    <select id="finish">
-      <option value="">Any finish</option>
-      <option value="normal">Normal</option>
-      <option value="foil">Foil</option>
-      <option value="etched">Etched</option>
-    </select>
-    <input type="number" id="min_cash" placeholder="Min cash $" step="0.01" min="0" />
-    <button type="button" id="searchBtn">Search</button>
-  </div>
+    <section class="panel">
+      <p class="panel-title">CK cash vs TCG buy price (condition-aware)</p>
+      <div class="filters">
+        <input type="search" id="q" placeholder="Search card name…" />
+        <input type="text" id="set_code" placeholder="Set code (e.g. mh2)" />
+        <select id="finish">
+          <option value="">Any finish</option>
+          <option value="normal">Normal</option>
+          <option value="foil">Foil</option>
+          <option value="etched">Etched</option>
+        </select>
+        <input type="number" id="min_cash" placeholder="Min CK cash $" step="0.01" min="0" />
+        <select id="sort" title="Sort order">
+          <option value="pct_diff_desc" selected>% diff — CK pays most vs TCG</option>
+          <option value="pct_diff_asc">% diff — CK pays least vs TCG</option>
+          <option value="cash_desc">CK cash — highest first</option>
+          <option value="name">Name A–Z</option>
+        </select>
+        <button type="button" id="searchBtn">Search buylist</button>
+      </div>
+      <p class="hint">Diff uses <strong>CK adj</strong> minus <strong>TCG buy</strong> from live mp-search API listings only.
+      Rows without listing data show no TCG buy price.</p>
+    </section>
 
-  <p id="status"></p>
-  <table>
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Set</th>
-        <th>Finish</th>
-        <th>Cash</th>
-        <th>Credit</th>
-        <th>Max qty</th>
-        <th>Scryfall</th>
-      </tr>
-    </thead>
-    <tbody id="results"></tbody>
-  </table>
-  <div class="pager">
-    <button type="button" id="prevBtn">Previous</button>
-    <span id="pageInfo"></span>
-    <button type="button" id="nextBtn">Next</button>
-  </div>
+    <p id="status"></p>
 
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Set</th>
+            <th>Finish</th>
+            <th>CK cash</th>
+            <th>CK adj</th>
+            <th>Cond</th>
+            <th>TCG buy</th>
+            <th>TCG low</th>
+            <th>TCG mkt</th>
+            <th>TCG mid</th>
+            <th>Diff $</th>
+            <th>Diff %</th>
+            <th>Max qty</th>
+            <th>Scryfall</th>
+          </tr>
+        </thead>
+        <tbody id="results"></tbody>
+      </table>
+    </div>
+
+    <div class="pager">
+      <button type="button" id="prevBtn" class="secondary">← Previous</button>
+      <span id="pageInfo"></span>
+      <button type="button" id="nextBtn" class="secondary">Next →</button>
+    </div>
+
+    <footer class="site-footer">
+      <p><strong>Manifest Bread</strong> by <a href="https://aizo.solutions" rel="noopener">Aizo Solutions</a>.
+      Not affiliated with Card Kingdom or Wizards of the Coast.</p>
+    </footer>
+  </main>
+  <script src="/static/app.js"></script>
   <script>
     const limit = 50;
     let offset = 0;
     let lastTotal = 0;
+    const searchBtn = document.getElementById('searchBtn');
 
     async function loadMeta() {
       const res = await fetch('/api/meta');
       const data = await res.json();
       const el = document.getElementById('meta');
       if (!data.snapshot_date) {
-        el.textContent = 'No buylist data loaded yet. Run the daily pipeline.';
+        el.textContent = 'No buylist data yet — run the daily pipeline.';
         return;
       }
-      el.textContent = `Prices as of ${data.snapshot_date} · ${data.row_count?.toLocaleString() ?? '?'} cards · source: ${data.source ?? 'api'}`;
+      el.textContent = `Fresh as of ${data.snapshot_date} · ${data.row_count?.toLocaleString() ?? '?'} cards on the menu`;
     }
 
     async function search() {
@@ -92,14 +117,16 @@
       const setCode = document.getElementById('set_code').value.trim();
       const finish = document.getElementById('finish').value;
       const minCash = document.getElementById('min_cash').value;
+      const sort = document.getElementById('sort').value;
       if (q) params.set('q', q);
       if (setCode) params.set('set_code', setCode);
       if (finish) params.set('finish', finish);
       if (minCash) params.set('min_cash', minCash);
+      if (sort) params.set('sort', sort);
 
       const status = document.getElementById('status');
-      status.textContent = 'Loading…';
-      status.className = '';
+      setStatusLoading(status, true, 'Kneading results…');
+      setButtonLoading(searchBtn, true);
 
       try {
         const res = await fetch(`/api/search?${params}`);
@@ -107,23 +134,51 @@
         const data = await res.json();
         lastTotal = data.total;
         const tbody = document.getElementById('results');
-        tbody.innerHTML = data.results.map(row => `
+        tbody.innerHTML = data.results.map(row => {
+          const pct = row.pct_diff;
+          const pctClass = pct == null ? '' : pct >= 0 ? 'pct-pos' : 'pct-neg';
+          const diffClass = row.diff_usd == null ? '' : row.diff_usd >= 0 ? 'diff-usd pos' : 'diff-usd neg';
+          const tcgId = row.tcgplayer_id != null ? String(row.tcgplayer_id).replace(/\.0$/, '') : null;
+          const foilParam = (row.finish || '').toLowerCase() === 'foil' ? '?Printing=Foil' : '';
+          const tcgLink = tcgId ? `https://www.tcgplayer.com/product/${tcgId}${foilParam}` : null;
+          const ckLink = ckBuylistUrl(row.name);
+          const ckCash = `$${fmt(row.cash_price)}`;
+          const tcgCell = (val) => tcgLink
+            ? `<a href="${tcgLink}" target="_blank" rel="noopener">$${fmt(val)}</a>`
+            : fmtUsd(val);
+          const rawCondition = row.tcg_listing_condition ? String(row.tcg_listing_condition) : '';
+          const cond = rawCondition
+            ? escapeHtml(rawCondition)
+            : '—';
+          return `
           <tr>
             <td>${escapeHtml(row.name)}</td>
             <td>${escapeHtml(row.set_name)} <small>(${escapeHtml(row.set_code || '')})</small></td>
             <td>${escapeHtml(row.finish || '')}</td>
-            <td>$${fmt(row.cash_price)}</td>
-            <td>$${fmt(row.credit_price)}</td>
+            <td class="price-cash">${ckLink
+              ? `<a href="${ckLink}" target="_blank" rel="noopener">${ckCash}</a>`
+              : ckCash}</td>
+            <td class="price-cash">$${fmt(row.ck_cash_adjusted)}</td>
+            <td><small>${cond}</small></td>
+            <td class="price-tcg buy">${tcgCell(row.tcg_buy_price)}</td>
+            <td class="price-tcg">${tcgCell(row.tcg_low)}</td>
+            <td class="price-tcg">${tcgCell(row.tcg_market)}</td>
+            <td class="price-tcg">${tcgCell(row.tcg_mid)}</td>
+            <td class="${diffClass}">${fmtSigned(row.diff_usd)}</td>
+            <td class="${pctClass}">${fmtPct(pct)}</td>
             <td>${row.max_qty ?? ''}</td>
             <td>${row.scryfall_id ? `<a href="https://scryfall.com/card/${row.scryfall_id}" target="_blank" rel="noopener">View</a>` : '—'}</td>
-          </tr>
-        `).join('');
+          </tr>`;
+        }).join('');
+        animateTableRows(tbody);
         document.getElementById('pageInfo').textContent =
-          `${offset + 1}–${Math.min(offset + limit, lastTotal)} of ${lastTotal}`;
-        status.textContent = '';
+          `${offset + 1}–${Math.min(offset + limit, lastTotal)} of ${lastTotal.toLocaleString()}`;
+        setStatusLoading(status, false);
       } catch (e) {
         status.textContent = e.message;
         status.className = 'error';
+      } finally {
+        setButtonLoading(searchBtn, false);
       }
     }
 
@@ -134,8 +189,22 @@
     function fmt(n) {
       return n == null ? '—' : Number(n).toFixed(2);
     }
+    function fmtUsd(n) {
+      return n == null ? '—' : '$' + Number(n).toFixed(2);
+    }
+    function fmtSigned(n) {
+      if (n == null) return '—';
+      const v = Number(n);
+      return (v >= 0 ? '+' : '') + '$' + v.toFixed(2);
+    }
+    function fmtPct(n) {
+      if (n == null) return '—';
+      const v = Number(n);
+      return (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+    }
 
-    document.getElementById('searchBtn').addEventListener('click', () => { offset = 0; search(); });
+    searchBtn.addEventListener('click', () => { offset = 0; search(); });
+    document.getElementById('sort').addEventListener('change', () => { offset = 0; search(); });
     document.getElementById('prevBtn').addEventListener('click', () => {
       offset = Math.max(0, offset - limit);
       search();
@@ -150,10 +219,5 @@
     loadMeta();
     search();
   </script>
-  <footer class="site-footer">
-    <p>Card Kingdom buylist tools by <a href="https://aizo.solutions" rel="noopener">Aizo Solutions</a>.
-    Not affiliated with Card Kingdom or Wizards of the Coast. Prices update daily from public data.</p>
-  </footer>
-  </main>
 </body>
 </html>

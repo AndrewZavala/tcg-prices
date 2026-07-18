@@ -10,7 +10,7 @@ services:
     ports: []
     restart: unless-stopped
     environment:
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://tcgprices.aizo.solutions}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://manifestbread.aizo.solutions}
 
   scheduler:
     restart: unless-stopped
@@ -21,9 +21,11 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    environment:
-      SITE_DOMAIN: ${SITE_DOMAIN:-tcgprices.aizo.solutions}
+  environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:-manifestbread.aizo.solutions}
       ACME_EMAIL: ${ACME_EMAIL:-}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:-andre}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:?Set BASIC_AUTH_HASH in .env — see deploy/README.md}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

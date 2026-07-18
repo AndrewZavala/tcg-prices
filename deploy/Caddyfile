@@ -2,13 +2,19 @@
 	email {$ACME_EMAIL}
 }
 
-{$SITE_DOMAIN:tcgprices.aizo.solutions} {
+{$SITE_DOMAIN:manifestbread.aizo.solutions} {
 	encode gzip zstd
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Shared site password — set BASIC_AUTH_USER / BASIC_AUTH_HASH in .env
+	# Generate hash: docker run --rm caddy:2-alpine caddy hash-password --plaintext 'YOUR_PASSWORD'
+	basic_auth {
+		{$BASIC_AUTH_USER:andre} {$BASIC_AUTH_HASH}
 	}
 
 	reverse_proxy web:8000
