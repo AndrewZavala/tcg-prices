@@ -25,8 +25,15 @@ def init_spelltag_oracle_tags(engine: Engine) -> None:
 
 
 class CreateTagDefBody(BaseModel):
-    slug: str = Field(min_length=1, max_length=64)
+    """Accept either a display name or a kebab slug (or both)."""
+
+    slug: str | None = Field(default=None, max_length=80)
     label: str | None = Field(default=None, max_length=80)
+    name: str | None = Field(
+        default=None,
+        max_length=80,
+        description="Either 'Rain Dance' or 'rain-dance' — slug/label derived automatically",
+    )
     description: str | None = Field(default=None, max_length=400)
 
 
@@ -42,12 +49,69 @@ class SetOracleTagsBody(BaseModel):
 
 def _normalize_slug(raw: str) -> str:
     slug = (raw or "").strip().lower().replace("_", "-").replace(" ", "-")
+    slug = re.sub(r"[^a-z0-9-]+", "", slug)
     slug = re.sub(r"-+", "-", slug).strip("-")
     return slug
 
 
 def _label_from_slug(slug: str) -> str:
     return " ".join(part.capitalize() for part in slug.split("-") if part)
+
+
+def _looks_like_slug(raw: str) -> bool:
+    """True for kebab-case like rain-dance (no spaces, mostly lowercase)."""
+    s = (raw or "").strip()
+    if not s or " " in s:
+        return False
+    return bool(SLUG_RE.match(s.lower().replace("_", "-")))
+
+
+def _resolve_slug_and_label(
+    *,
+    slug: str | None,
+    label: str | None,
+    name: str | None = None,
+) -> tuple[str, str]:
+    """
+    Derive (slug, label) from user input.
+    - "Rain Dance" → ("rain-dance", "Rain Dance")
+    - "rain-dance" → ("rain-dance", "Rain Dance")
+    """
+    raw_slug = (slug or "").strip()
+    raw_label = (label or "").strip()
+    raw_name = (name or "").strip()
+
+    if raw_name and not raw_slug and not raw_label:
+        if _looks_like_slug(raw_name):
+            raw_slug = raw_name
+        else:
+            raw_label = raw_name
+
+    # Slug field filled with a display name (spaces / Title Case)
+    if raw_slug and not _looks_like_slug(raw_slug) and not raw_label:
+        raw_label = raw_slug
+        raw_slug = ""
+
+    # Label field filled with a kebab slug
+    if raw_label and _looks_like_slug(raw_label) and not raw_slug:
+        raw_slug = raw_label
+        raw_label = ""
+
+    out_slug = _normalize_slug(raw_slug or raw_label)
+    if not out_slug or not SLUG_RE.match(out_slug):
+        raise HTTPException(
+            status_code=400,
+            detail="Enter a name like Rain Dance or a slug like rain-dance",
+        )
+
+    if raw_label and not _looks_like_slug(raw_label):
+        out_label = raw_label
+    else:
+        out_label = _label_from_slug(out_slug)
+
+    if len(out_label) > 80:
+        raise HTTPException(status_code=400, detail="Label is too long")
+    return out_slug, out_label
 
 
 def fetch_oracle_tags_for_oracles(
@@ -130,14 +194,12 @@ def list_oracle_tag_defs(active_only: bool = True) -> dict[str, Any]:
 
 @router.post("/api/oracle-tags")
 def create_oracle_tag_def(request: Request, body: CreateTagDefBody) -> dict[str, Any]:
-    user = require_admin(request)
-    slug = _normalize_slug(body.slug)
-    if not slug or not SLUG_RE.match(slug):
-        raise HTTPException(
-            status_code=400,
-            detail="Slug must be lowercase kebab-case (e.g. rain-dance)",
-        )
-    label = (body.label or "").strip() or _label_from_slug(slug)
+    user = require_tagger(request)
+    slug, label = _resolve_slug_and_label(
+        slug=body.slug,
+        label=body.label,
+        name=body.name,
+    )
     assert _engine is not None
     with _engine.begin() as conn:
         existing = conn.execute(

@@ -233,7 +233,6 @@
     }
     const user = window.__spelltagUser;
     const canTag = !!(user && user.is_tagger);
-    const canAdmin = !!(user && user.is_admin);
     if (!applied.length && !canTag) return "";
 
     const chips = applied
@@ -264,20 +263,14 @@
           <div class="sp-otag-options">${options || '<p class="sp-hint">No tag definitions yet.</p>'}</div>
           <button type="button" class="sp-otag-save" id="otagSaveBtn">Save tags</button>
           <span class="sp-otag-status" id="otagStatus" aria-live="polite"></span>
-        </div>`;
-    }
-
-    let adminCreate = "";
-    if (canAdmin) {
-      adminCreate = `
-        <div class="sp-otag-admin" id="otagAdmin">
-          <p class="sp-hint">Create a new oracle tag (admin).</p>
-          <div class="sp-otag-admin-row">
-            <input type="text" id="otagNewSlug" placeholder="slug (rain-dance)" maxlength="64" />
-            <input type="text" id="otagNewLabel" placeholder="Label (Rain Dance)" maxlength="80" />
-            <button type="button" class="sp-otag-save" id="otagCreateBtn">Create</button>
+          <div class="sp-otag-admin" id="otagAdmin">
+            <p class="sp-hint">Create a tag — use <em>Rain Dance</em> or <em>rain-dance</em>.</p>
+            <div class="sp-otag-admin-row">
+              <input type="text" id="otagNewName" placeholder="Rain Dance or rain-dance" maxlength="80" />
+              <button type="button" class="sp-otag-save" id="otagCreateBtn">Create</button>
+            </div>
+            <span class="sp-otag-status" id="otagCreateStatus" aria-live="polite"></span>
           </div>
-          <span class="sp-otag-status" id="otagCreateStatus" aria-live="polite"></span>
         </div>`;
     }
 
@@ -286,7 +279,6 @@
         <h3>Oracle tags</h3>
         <div class="sp-otag-list">${chips || '<span class="sp-hint">No oracle tags yet.</span>'}</div>
         ${editor}
-        ${adminCreate}
       </div>`;
   }
 
@@ -339,8 +331,7 @@
     if (createBtn) {
       createBtn.addEventListener("click", async () => {
         const status = document.getElementById("otagCreateStatus");
-        const slug = (document.getElementById("otagNewSlug") || {}).value || "";
-        const label = (document.getElementById("otagNewLabel") || {}).value || "";
+        const name = ((document.getElementById("otagNewName") || {}).value || "").trim();
         createBtn.disabled = true;
         if (status) status.textContent = "Creating…";
         try {
@@ -348,7 +339,7 @@
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ slug, label: label || null }),
+            body: JSON.stringify({ name }),
           });
           if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
@@ -360,7 +351,7 @@
           }
           const created = await resp.json();
           catalogFacets.oracle_tags = [...(catalogFacets.oracle_tags || []), created];
-          if (status) status.textContent = "Created.";
+          if (status) status.textContent = `Created ${created.label} (${created.slug}).`;
           openCard(card.id);
         } catch (err) {
           if (status) status.textContent = err.message || "Create failed";
