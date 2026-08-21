@@ -169,6 +169,29 @@ EX_BLOCK_SET_IDS = (
     "ex16",   # Power Keepers
 )
 
+# Wizards of the Coast era — Base Set through Skyridge
+WOTC_BLOCK_SET_IDS = (
+    "base1",   # Base Set
+    "base2",   # Jungle
+    "basep",   # Wizards Black Star Promos
+    "wp",      # W Promotional
+    "base3",   # Fossil
+    "base4",   # Base Set 2
+    "base5",   # Team Rocket
+    "gym1",    # Gym Heroes
+    "gym2",    # Gym Challenge
+    "neo1",    # Neo Genesis
+    "neo2",    # Neo Discovery
+    "si1",     # Southern Islands
+    "neo3",    # Neo Revelation
+    "neo4",    # Neo Destiny
+    "lc",      # Legendary Collection
+    "ecard1",  # Expedition Base Set
+    "bog",     # Best of Game
+    "ecard2",  # Aquapolis
+    "ecard3",  # Skyridge
+)
+
 
 def _session() -> requests.Session:
     s = requests.Session()
@@ -501,6 +524,8 @@ def main() -> int:
             set_ids = list(DP_BLOCK_SET_IDS)
         elif args.series.lower() == "ex":
             set_ids = list(EX_BLOCK_SET_IDS)
+        elif args.series.lower() in ("wotc", "wizards"):
+            set_ids = list(WOTC_BLOCK_SET_IDS)
         else:
             session = _session()
             set_ids = fetch_series_sets(session, args.lang, args.series.lower())
