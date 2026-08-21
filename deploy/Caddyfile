@@ -2,7 +2,8 @@
 	email {$ACME_EMAIL}
 }
 
-{$SITE_DOMAIN:manifestbread.aizo.solutions} {
+# Spell Tag — public Pokémon TCG search (no basic auth)
+{$SPELLTAG_DOMAIN:spelltag.com} {
 	encode gzip zstd
 
 	header {
@@ -11,11 +12,5 @@
 		Referrer-Policy "strict-origin-when-cross-origin"
 	}
 
-	# Shared site password — set BASIC_AUTH_USER / BASIC_AUTH_HASH in .env
-	# Generate hash: docker run --rm caddy:2-alpine caddy hash-password --plaintext 'YOUR_PASSWORD'
-	basic_auth {
-		{$BASIC_AUTH_USER:andre} {$BASIC_AUTH_HASH}
-	}
-
-	reverse_proxy web:8000
+	reverse_proxy star-piece:8001
 }

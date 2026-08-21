@@ -1,0 +1,31 @@
+# Star Piece catalog pipeline (TCGdex / subtypes / species / oracles).
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements-star-piece-pipeline.txt .
+RUN pip install --no-cache-dir -r requirements-star-piece-pipeline.txt
+
+COPY pipeline/config.py \
+     pipeline/refresh_tcgdex.py \
+     pipeline/enrich_pokemon.py \
+     pipeline/enrich_pokemon_subtypes.py \
+     pipeline/build_pokemon_species.py \
+     pipeline/build_pokemon_oracle.py \
+     pipeline/backfill_pokemon_tcgplayer.py \
+     ./pipeline/
+
+COPY migrations/025_pokemon_catalog.sql \
+     migrations/026_pokemon_oracle.sql \
+     migrations/027_pokemon_subtypes.sql \
+     migrations/028_pokemon_species.sql \
+     migrations/029_pokemon_tcgplayer.sql \
+     migrations/030_pokemon_species_groups.sql \
+     ./migrations/
+
+COPY helper/pokemon_species.json ./helper/pokemon_species.json
+
+ENV TCG_ROOT=/app
+ENV PYTHONPATH=/app/pipeline
+
+WORKDIR /app

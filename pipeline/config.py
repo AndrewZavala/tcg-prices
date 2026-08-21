@@ -38,6 +38,10 @@ DATABASE_URL = os.environ.get(
 CK_PRICELIST_URL = "https://api.cardkingdom.com/api/v2/pricelist"
 CK_CREDIT_MULTIPLIER = 1.3
 
+# Pokémon TCG API (free key: https://dev.pokemontcg.io)
+POKEMONTCG_API_KEY = os.environ.get("POKEMONTCG_API_KEY", "").strip()
+POKEMONTCG_BASE = os.environ.get("POKEMONTCG_BASE", "https://api.pokemontcg.io/v2").rstrip("/")
+
 
 def raw_dir_for_date(date_str: str) -> Path:
     return BUYLIST_RAW_DIR / date_str

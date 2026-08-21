@@ -1,0 +1,30 @@
+# Spell Tag web — FastAPI catalog UI only (no Manifest Bread / Playwright).
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements-star-piece.txt .
+RUN pip install --no-cache-dir -r requirements-star-piece.txt
+
+COPY web/star_piece_main.py web/pokemon_api.py web/tcgplayer_links.py ./web/
+COPY web/static/spell-tag.html \
+     web/static/spell-tag.css \
+     web/static/spell-tag-wordmark.png \
+     web/static/spell-tag-logo.png \
+     web/static/star-piece.css \
+     web/static/pokemon.js \
+     web/static/empty-pokeball.png \
+     ./web/static/
+COPY migrations/025_pokemon_catalog.sql \
+     migrations/026_pokemon_oracle.sql \
+     migrations/027_pokemon_subtypes.sql \
+     migrations/028_pokemon_species.sql \
+     migrations/029_pokemon_tcgplayer.sql \
+     migrations/030_pokemon_species_groups.sql \
+     ./migrations/
+
+ENV PYTHONPATH=/app/web
+WORKDIR /app/web
+
+EXPOSE 8001
+CMD ["uvicorn", "star_piece_main:app", "--host", "0.0.0.0", "--port", "8001"]

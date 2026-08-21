@@ -144,7 +144,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml exec sche
 
 ## Subdomain / branding
 
-Default subdomain is `manifestbread.aizo.solutions`. To change it, update in `.env`:
+Default Manifest Bread host is `manifestbread.aizo.solutions`. To change it, update in `.env`:
 
 - `SITE_DOMAIN`
 - `CORS_ORIGINS`
@@ -153,4 +153,29 @@ Then restart Caddy:
 
 ```bash
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d caddy
+```
+
+## Spell Tag (spelltag.com)
+
+Public Pokémon catalog — **no** basic auth. This production overlay (`deploy/docker-compose.prod.yml` + `deploy/Caddyfile`) is for Spell Tag only.
+
+1. Point DNS **A/AAAA** for `spelltag.com` at the VPS.
+2. Copy env and set passwords / ACME email:
+
+```bash
+cp deploy/.env.production.example .env
+nano .env   # STAR_PIECE_PG_PASSWORD, ACME_EMAIL, SPELLTAG_*
+```
+
+3. Bring up the stack:
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d star-piece-db star-piece caddy
+```
+
+4. Load catalog data (example):
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
+  python -m pipeline.refresh_tcgdex
 ```

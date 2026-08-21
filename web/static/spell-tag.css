@@ -1,0 +1,159 @@
+/* Spell Tag — charcoal + light purple accents */
+
+@import url("https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap");
+
+.st-body {
+  --sp-font: "Lato", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --sp-display: "Lato", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --sp-space: #0c0c0e;
+  --sp-space-mid: #1a1a1f;
+  --sp-nebula: #2a2a32;
+  --sp-nebula-teal: #3d3d48;
+  --sp-pink: #c4a8e8;
+  --sp-pink-hot: #a78bfa;
+  --sp-pink-soft: #ddd6fe;
+  --sp-lilac: #9a9aaa;
+  --sp-cyan: #c8c8d0;
+  --sp-star: #f0f0f4;
+  --sp-text: #e8e8ee;
+  --sp-muted: #9a9aaa;
+  --sp-glass: rgba(22, 22, 28, 0.88);
+  --sp-glass-border: rgba(196, 168, 232, 0.28);
+  --sp-glow: 0 0 28px rgba(196, 168, 232, 0.22);
+  --st-red: #c4a8e8;
+  --st-paper: #d4d4dc;
+}
+
+.st-body button,
+.st-body input,
+.st-body select,
+.st-body textarea {
+  font-family: "Lato", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.st-body::before {
+  background:
+    radial-gradient(ellipse 60% 40% at 15% 10%, rgba(196, 168, 232, 0.14), transparent 55%),
+    radial-gradient(ellipse 50% 35% at 90% 20%, rgba(200, 200, 210, 0.06), transparent 50%),
+    radial-gradient(ellipse 70% 50% at 50% 100%, rgba(196, 168, 232, 0.08), transparent 55%),
+    radial-gradient(ellipse 40% 30% at 40% 50%, rgba(40, 40, 48, 0.9), transparent 60%),
+    linear-gradient(165deg, #08080a 0%, #121218 40%, #1a1a22 75%, #0c0c0e 100%);
+}
+
+.st-body .sp-stars {
+  background-image:
+    radial-gradient(1px 1px at 14% 22%, rgba(196, 168, 232, 0.55), transparent),
+    radial-gradient(1px 1px at 36% 58%, rgba(212, 212, 220, 0.4), transparent),
+    radial-gradient(1.5px 1.5px at 62% 16%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 80% 44%, rgba(196, 168, 232, 0.35), transparent),
+    radial-gradient(1px 1px at 92% 78%, rgba(200, 200, 210, 0.35), transparent),
+    radial-gradient(1px 1px at 24% 86%, rgba(196, 168, 232, 0.3), transparent);
+}
+
+.st-body .sp-shooting-star {
+  background: linear-gradient(90deg, transparent 0%, var(--st-red) 55%, #fff 100%);
+  filter: drop-shadow(0 0 6px rgba(196, 168, 232, 0.7));
+}
+
+.st-mock-banner {
+  display: none;
+}
+
+.st-body .sp-brand.st-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem 1.1rem;
+  flex-wrap: wrap;
+  max-width: min(920px, 96vw);
+}
+
+.st-body .sp-brand-logo.st-mascot {
+  width: min(72px, 18vw);
+  height: auto;
+  margin: 0;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 8px 24px rgba(196, 168, 232, 0.35));
+}
+
+.st-wordmark {
+  display: block;
+  width: min(220px, 48vw);
+  height: auto;
+  margin: 0;
+  flex: 1 1 160px;
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.55));
+}
+
+.st-body .sp-topbar {
+  background: rgba(12, 12, 14, 0.85);
+  border-bottom-color: rgba(196, 168, 232, 0.2);
+}
+
+.st-body .sp-topbar-link.is-active,
+.st-body .sp-topbar-link:hover {
+  color: var(--sp-pink-soft);
+}
+
+.st-body .sp-panel {
+  border-color: rgba(200, 200, 210, 0.14);
+  box-shadow: var(--sp-glow), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.st-body .sp-card {
+  background:
+    radial-gradient(circle at 50% 25%, rgba(196, 168, 232, 0.08), transparent 55%),
+    rgba(16, 16, 20, 0.55);
+  border-color: rgba(200, 200, 210, 0.12);
+}
+
+.st-body .sp-card:hover {
+  border-color: rgba(196, 168, 232, 0.55);
+  box-shadow: 0 14px 32px rgba(196, 168, 232, 0.22), 0 0 18px rgba(196, 168, 232, 0.15);
+}
+
+.st-body .sp-segment-btn.active {
+  background: linear-gradient(135deg, #2a2a32, var(--st-red));
+  border-color: transparent;
+  color: #fff;
+}
+
+.st-body .sp-adv-toggle:hover,
+.st-body .sp-page-btn:hover:not(:disabled),
+.st-body .sp-clear-btn:hover,
+.st-body .sp-zoom-btn:hover:not(:disabled) {
+  border-color: var(--st-red);
+  color: var(--sp-pink-soft);
+}
+
+.st-body .sp-linkish {
+  color: var(--sp-pink-soft);
+}
+
+.st-body .sp-view-row {
+  border-top-color: rgba(196, 168, 232, 0.15);
+}
+
+.st-body .sp-field input:focus,
+.st-body .sp-field select:focus {
+  border-color: var(--st-red);
+  box-shadow: 0 0 0 3px rgba(196, 168, 232, 0.2);
+}
+
+.st-body .sp-sibling.rep {
+  outline-color: var(--st-red);
+  box-shadow: 0 0 14px rgba(196, 168, 232, 0.35);
+}
+
+.st-body .sp-name-link {
+  background-image: linear-gradient(90deg, #f0f0f4, var(--st-red));
+  border-bottom-color: rgba(196, 168, 232, 0.4);
+}
+
+.st-body .sp-footer strong {
+  color: var(--sp-pink-soft);
+}
+
+.st-body .sp-footer a {
+  color: var(--st-paper);
+}

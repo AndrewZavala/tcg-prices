@@ -54,6 +54,77 @@ services:
       postgres:
         condition: service_healthy
 
+  # Spell Tag (own Postgres + app — separate from Manifest Bread)
+  star-piece-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${STAR_PIECE_PG_USER:-starpiece}
+      POSTGRES_PASSWORD: ${STAR_PIECE_PG_PASSWORD:-starpiece_secret}
+      POSTGRES_DB: ${STAR_PIECE_PG_DB:-star_piece}
+    ports:
+      - "${STAR_PIECE_PG_PORT:-5433}:5432"
+    volumes:
+      - star_piece_pgdata:/var/lib/postgresql/data
+      - ./migrations/star_piece_init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${STAR_PIECE_PG_USER:-starpiece} -d ${STAR_PIECE_PG_DB:-star_piece}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  star-piece:
+    build:
+      context: .
+      dockerfile: Dockerfile.star-piece
+    volumes:
+      - ./web:/app/web
+      - ./migrations:/app/migrations
+    environment:
+      DATABASE_URL: postgresql://${STAR_PIECE_PG_USER:-starpiece}:${STAR_PIECE_PG_PASSWORD:-starpiece_secret}@star-piece-db:5432/${STAR_PIECE_PG_DB:-star_piece}
+      TCG_ROOT: /app
+      CORS_ORIGINS: ${STAR_PIECE_CORS_ORIGINS:-http://localhost:8001,http://127.0.0.1:8001}
+      TCGPLAYER_PARTNER_LINK: ${TCGPLAYER_PARTNER_LINK:-}
+      TCGPLAYER_PARTNER_ID: ${TCGPLAYER_PARTNER_ID:-}
+      TCGPLAYER_AD_ID: ${TCGPLAYER_AD_ID:-}
+    ports:
+      - "8001:8001"
+    depends_on:
+      star-piece-db:
+        condition: service_healthy
+    command:
+      [
+        "uvicorn",
+        "star_piece_main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8001",
+        "--reload",
+      ]
+
+  star-piece-pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.star-piece-pipeline
+    environment:
+      TCG_ROOT: /app
+      DATABASE_URL: postgresql://${STAR_PIECE_PG_USER:-starpiece}:${STAR_PIECE_PG_PASSWORD:-starpiece_secret}@star-piece-db:5432/${STAR_PIECE_PG_DB:-star_piece}
+      TZ: ${TZ:-America/New_York}
+      POKEMONTCG_API_KEY: ${POKEMONTCG_API_KEY:-}
+    volumes:
+      - ./pipeline:/app/pipeline
+      - ./migrations:/app/migrations
+      - ./helper:/app/helper
+    depends_on:
+      star-piece-db:
+        condition: service_healthy
+    profiles:
+      - manual
+
   scheduler:
     build:
       context: .
@@ -77,3 +148,4 @@ services:
 
 volumes:
   pgdata:
+  star_piece_pgdata:
