@@ -120,7 +120,12 @@ REGIONAL_NAME_SQL = (
 
 SORT_SQL = {
     "name": "c.name ASC, s.release_date ASC NULLS LAST, c.local_id",
-    "set": "s.release_date ASC NULLS LAST, c.set_id, NULLIF(c.local_id, '')::int NULLS LAST",
+    # local_id is often "SM142" / "TG01" / "RC1" — never cast the whole string to int
+    "set": (
+        "s.release_date ASC NULLS LAST, c.set_id, "
+        "NULLIF(regexp_replace(c.local_id, '[^0-9]', '', 'g'), '')::int NULLS LAST, "
+        "c.local_id ASC NULLS LAST"
+    ),
     "dex": "c.dex_ids[1] ASC NULLS LAST, c.name ASC",
     "hp_desc": "c.hp DESC NULLS LAST, c.name ASC",
 }
