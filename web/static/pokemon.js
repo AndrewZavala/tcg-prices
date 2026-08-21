@@ -366,6 +366,16 @@
             ${esc(card.series_name || "—")} · ${esc(card.set_name)} · #${esc(card.local_id)} · ${esc(card.rarity || "—")}
             · ${esc(card.illustrator || "Unknown artist")}
           </p>
+          <div class="sp-collect-bar" id="collectBar" hidden>
+            <button type="button" class="sp-fav-btn" id="favToggleBtn" aria-pressed="false">♡ Favorite</button>
+            <label class="sp-collect-add">
+              <span class="sp-visually-hidden">Add to collection</span>
+              <select id="collectAddSelect">
+                <option value="">Add to collection…</option>
+              </select>
+            </label>
+            <a class="sp-collect-link" href="/collections">My Collections</a>
+          </div>
           ${pokemonMetaBlock(card)}
           ${subtypeBlock(card)}
           ${statGridBlock(card)}
@@ -413,7 +423,97 @@
         if (url) window.open(url, "_blank", "noopener,noreferrer");
       });
     });
+    wireCollectionControls(card.id);
     modal.showModal();
+  }
+
+  async function wireCollectionControls(cardId) {
+    const bar = document.getElementById("collectBar");
+    const favBtn = document.getElementById("favToggleBtn");
+    const addSel = document.getElementById("collectAddSelect");
+    if (!bar || !favBtn || !addSel) return;
+
+    if (window.__spelltagAuthReady) {
+      try {
+        await window.__spelltagAuthReady;
+      } catch (_) { /* ignore */ }
+    }
+
+    const setFavUi = (on) => {
+      favBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      favBtn.classList.toggle("is-on", on);
+      favBtn.textContent = on ? "♥ Favorited" : "♡ Favorite";
+    };
+
+    try {
+      const resp = await fetch(
+        `/api/me/cards/${encodeURIComponent(cardId)}/memberships`,
+        { credentials: "same-origin" }
+      );
+      if (resp.status === 401 || !resp.ok) {
+        bar.hidden = true;
+        return;
+      }
+      bar.hidden = false;
+      const data = await resp.json();
+      const cols = data.collections || [];
+      const fav = cols.find((c) => c.kind === "favorites");
+      setFavUi(!!(fav && fav.contains));
+
+      addSel.innerHTML = '<option value="">Add to collection…</option>';
+      for (const c of cols) {
+        if (c.kind === "favorites") continue;
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = c.contains ? `${c.name} ✓` : c.name;
+        opt.disabled = !!c.contains;
+        addSel.appendChild(opt);
+      }
+
+      favBtn.onclick = async () => {
+        favBtn.disabled = true;
+        try {
+          const r = await fetch("/api/me/favorites/toggle", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ card_id: cardId }),
+          });
+          if (r.ok) {
+            const body = await r.json();
+            setFavUi(!!body.favorited);
+          }
+        } finally {
+          favBtn.disabled = false;
+        }
+      };
+
+      addSel.onchange = async () => {
+        const cid = addSel.value;
+        if (!cid) return;
+        addSel.disabled = true;
+        try {
+          const r = await fetch(`/api/me/collections/${encodeURIComponent(cid)}/items`, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ card_id: cardId }),
+          });
+          if (r.ok) {
+            const opt = addSel.selectedOptions[0];
+            if (opt) {
+              opt.textContent = `${opt.textContent.replace(/ ✓$/, "")} ✓`;
+              opt.disabled = true;
+            }
+            addSel.value = "";
+          }
+        } finally {
+          addSel.disabled = false;
+        }
+      };
+    } catch (_) {
+      bar.hidden = true;
+    }
   }
 
   function fillSelect(el, values, { labelFn } = {}) {

@@ -21,6 +21,7 @@ from starlette.responses import Response
 
 from pokemon_api import init_pokemon_api, router as pokemon_router
 from spelltag_auth import init_spelltag_auth, router as auth_router
+from spelltag_collections import init_spelltag_collections, router as collections_router
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -49,6 +50,7 @@ POKEMON_MIGRATIONS = (
     "029_pokemon_tcgplayer.sql",
     "030_pokemon_species_groups.sql",
     "031_spelltag_users.sql",
+    "032_spelltag_collections.sql",
 )
 
 
@@ -62,7 +64,8 @@ class DevNoCacheMiddleware(BaseHTTPMiddleware):
             "/",
             "/pokemon",
             "/spell-tag",
-        ):
+            "/collections",
+        ) or path.startswith("/collections/"):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
@@ -88,8 +91,10 @@ app.add_middleware(
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 init_pokemon_api(engine)
 init_spelltag_auth(engine)
+init_spelltag_collections(engine)
 app.include_router(pokemon_router)
 app.include_router(auth_router)
+app.include_router(collections_router)
 
 
 def _apply_sql_file(conn, filename: str) -> None:
@@ -125,6 +130,16 @@ def pokemon_page():
 @app.get("/spell-tag")
 def spell_tag_page():
     return _page("spell-tag.html")
+
+
+@app.get("/collections")
+def collections_page():
+    return _page("collections.html")
+
+
+@app.get("/collections/{collection_id}")
+def collection_detail_page(collection_id: str):
+    return _page("collections.html")
 
 
 @app.get("/health")

@@ -230,3 +230,225 @@
   color: var(--sp-pink-soft);
   border-color: rgba(196, 168, 232, 0.45);
 }
+
+.st-body .sp-account-wrap {
+  position: relative;
+}
+
+.st-body .sp-topbar-profile {
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.15rem 0.35rem 0.15rem 0.15rem;
+  font: inherit;
+  color: inherit;
+}
+
+.st-body .sp-topbar-profile:hover,
+.st-body .sp-topbar-profile[aria-expanded="true"] {
+  border-color: rgba(196, 168, 232, 0.35);
+  background: rgba(22, 22, 28, 0.55);
+}
+
+.st-body .sp-account-caret {
+  font-size: 0.7rem;
+  color: var(--sp-muted);
+  margin-left: 0.15rem;
+}
+
+.st-body .sp-account-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  min-width: 11rem;
+  background: rgba(16, 16, 20, 0.96);
+  border: 1px solid rgba(196, 168, 232, 0.28);
+  border-radius: 10px;
+  padding: 0.35rem;
+  z-index: 40;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.st-body .sp-account-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--sp-text);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.st-body .sp-account-menu-item:hover {
+  background: rgba(196, 168, 232, 0.12);
+  color: var(--sp-pink-soft);
+}
+
+.st-body .sp-collect-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.st-body .sp-fav-btn {
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--sp-pink-soft);
+  background: rgba(196, 168, 232, 0.1);
+  border: 1px solid rgba(196, 168, 232, 0.4);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+}
+
+.st-body .sp-fav-btn.is-on {
+  background: rgba(196, 168, 232, 0.22);
+  border-color: rgba(196, 168, 232, 0.7);
+}
+
+.st-body .sp-collect-add select {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--sp-text);
+  background: rgba(12, 12, 14, 0.85);
+  border: 1px solid rgba(200, 200, 210, 0.25);
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+  max-width: 14rem;
+}
+
+.st-body .sp-collect-link {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--sp-pink-soft);
+}
+
+.st-body .sp-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.st-body .sp-collections-head {
+  margin-bottom: 1.25rem;
+}
+
+.st-body .sp-collections-title {
+  font-size: 1.45rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.st-body .sp-collections-back a {
+  color: var(--sp-pink-soft);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.st-body .sp-new-collection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.st-body .sp-new-collection input {
+  flex: 1 1 12rem;
+  font: inherit;
+  color: var(--sp-text);
+  background: rgba(12, 12, 14, 0.85);
+  border: 1px solid rgba(200, 200, 210, 0.25);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+}
+
+.st-body .sp-new-collection button {
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #2a2a32, var(--st-red));
+  border: 0;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+
+.st-body .sp-collection-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.st-body .sp-collection-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(200, 200, 210, 0.14);
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--sp-text);
+  background: rgba(16, 16, 20, 0.45);
+}
+
+.st-body .sp-collection-row:hover {
+  border-color: rgba(196, 168, 232, 0.45);
+}
+
+.st-body .sp-collection-name {
+  font-weight: 700;
+}
+
+.st-body .sp-collection-count {
+  color: var(--sp-muted);
+  font-size: 0.9rem;
+}
+
+.st-body .sp-collection-badge {
+  color: var(--sp-pink-soft);
+}
+
+.st-body .sp-collection-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.st-body .sp-collection-card-link {
+  display: block;
+  text-decoration: none;
+}
+
+.st-body .sp-collection-remove {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--sp-muted);
+  background: transparent;
+  border: 1px solid rgba(200, 200, 210, 0.2);
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+}
+
+.st-body .sp-collection-remove:hover {
+  color: var(--sp-pink-soft);
+  border-color: rgba(196, 168, 232, 0.4);
+}
