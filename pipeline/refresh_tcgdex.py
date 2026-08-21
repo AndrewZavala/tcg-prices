@@ -21,6 +21,7 @@ import requests
 from sqlalchemy import create_engine, text
 
 from config import DATABASE_URL, MIGRATIONS_DIR
+from pokemon_card_corrections import correct_abilities
 
 TCGDEX_BASE = "https://api.tcgdex.net/v2"
 USER_AGENT = "TCGPokemonCatalog/1.0"
@@ -451,6 +452,9 @@ def upsert_set(conn, set_obj: dict[str, Any]) -> None:
 def upsert_card(conn, card: dict[str, Any]) -> None:
     legal = card.get("legal") or {}
     cleaned = _strip_pricing(card)
+    abilities = correct_abilities(str(card.get("id") or ""), card.get("abilities") or [])
+    if isinstance(cleaned.get("abilities"), list):
+        cleaned["abilities"] = correct_abilities(str(card.get("id") or ""), cleaned["abilities"])
     conn.execute(
         text(
             """
@@ -518,7 +522,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
             "image_url": card.get("image"),
             "retreat": card.get("retreat"),
             "attacks": json.dumps(card.get("attacks") or []),
-            "abilities": json.dumps(card.get("abilities") or []),
+            "abilities": json.dumps(abilities),
             "weaknesses": json.dumps(card.get("weaknesses") or []),
             "resistances": json.dumps(card.get("resistances") or []),
             "variants": json.dumps(card.get("variants") or {}),

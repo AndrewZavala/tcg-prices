@@ -47,6 +47,13 @@ class SetOracleTagsBody(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class MergeOraclesBody(BaseModel):
+    """Merge absorb card's oracle into keep card's oracle; union curated tags."""
+
+    keep_card_id: str = Field(min_length=1, max_length=80)
+    absorb_card_id: str = Field(min_length=1, max_length=80)
+
+
 def _normalize_slug(raw: str) -> str:
     slug = (raw or "").strip().lower().replace("_", "-").replace(" ", "-")
     slug = re.sub(r"[^a-z0-9-]+", "", slug)
@@ -162,6 +169,122 @@ def _card_oracle_id(conn, card_id: str) -> tuple[str, str]:
             detail="Card has no oracle grouping yet; cannot attach oracle tags",
         )
     return str(row["id"]), str(oracle_id)
+
+
+def union_oracle_tags(conn, target_oracle_id: str, source_oracle_ids: list[str]) -> int:
+    """Copy tags from source oracles onto target; identical slugs stay one row.
+
+    Returns number of tag rows inserted onto the target (conflicts skipped).
+    """
+    sources = [
+        oid
+        for oid in dict.fromkeys(source_oracle_ids)
+        if oid and oid != target_oracle_id
+    ]
+    if not sources:
+        return 0
+    result = conn.execute(
+        text(
+            """
+            INSERT INTO oracle_tags (oracle_id, tag_slug, tagged_by, tagged_at)
+            SELECT :target, ot.tag_slug, ot.tagged_by, ot.tagged_at
+            FROM oracle_tags ot
+            WHERE ot.oracle_id = ANY(:sources)
+            ON CONFLICT (oracle_id, tag_slug) DO NOTHING
+            """
+        ),
+        {"target": target_oracle_id, "sources": sources},
+    )
+    return int(result.rowcount or 0)
+
+
+def merge_oracle_into(conn, keep_oracle_id: str, absorb_oracle_id: str) -> dict[str, Any]:
+    """Move all printings from absorb → keep, union tags, delete absorb oracle."""
+    if keep_oracle_id == absorb_oracle_id:
+        return {
+            "keep_oracle_id": keep_oracle_id,
+            "absorb_oracle_id": absorb_oracle_id,
+            "moved_printings": 0,
+            "tags_unioned": 0,
+            "already_same": True,
+        }
+
+    keep = conn.execute(
+        text("SELECT id, name FROM pokemon_oracles WHERE id = :id"),
+        {"id": keep_oracle_id},
+    ).mappings().first()
+    absorb = conn.execute(
+        text("SELECT id, name FROM pokemon_oracles WHERE id = :id"),
+        {"id": absorb_oracle_id},
+    ).mappings().first()
+    if not keep:
+        raise HTTPException(status_code=404, detail="Keep oracle not found")
+    if not absorb:
+        raise HTTPException(status_code=404, detail="Absorb oracle not found")
+
+    tags_unioned = union_oracle_tags(conn, keep_oracle_id, [absorb_oracle_id])
+    moved = conn.execute(
+        text(
+            """
+            UPDATE pokemon_cards
+            SET oracle_id = :keep
+            WHERE oracle_id = :absorb
+            """
+        ),
+        {"keep": keep_oracle_id, "absorb": absorb_oracle_id},
+    )
+    moved_n = int(moved.rowcount or 0)
+
+    # Drop absorb tags then oracle (CASCADE would also clear tags)
+    conn.execute(
+        text("DELETE FROM oracle_tags WHERE oracle_id = :oid"),
+        {"oid": absorb_oracle_id},
+    )
+    conn.execute(
+        text("DELETE FROM pokemon_oracles WHERE id = :oid"),
+        {"oid": absorb_oracle_id},
+    )
+
+    count_row = conn.execute(
+        text(
+            """
+            SELECT COUNT(*) AS n,
+                   COUNT(DISTINCT illustration_id) AS arts,
+                   MIN(s.release_date) AS first_release
+            FROM pokemon_cards c
+            LEFT JOIN pokemon_sets s ON s.id = c.set_id
+            WHERE c.oracle_id = :oid
+            """
+        ),
+        {"oid": keep_oracle_id},
+    ).mappings().one()
+    conn.execute(
+        text(
+            """
+            UPDATE pokemon_oracles
+            SET printing_count = :n,
+                art_variant_count = :arts,
+                first_release_date = :first_release
+            WHERE id = :oid
+            """
+        ),
+        {
+            "oid": keep_oracle_id,
+            "n": int(count_row["n"] or 0),
+            "arts": int(count_row["arts"] or 0),
+            "first_release": count_row["first_release"],
+        },
+    )
+
+    return {
+        "keep_oracle_id": keep_oracle_id,
+        "absorb_oracle_id": absorb_oracle_id,
+        "keep_name": keep.get("name"),
+        "absorb_name": absorb.get("name"),
+        "moved_printings": moved_n,
+        "tags_unioned": tags_unioned,
+        "already_same": False,
+    }
 
 
 @router.get("/api/oracle-tags")
@@ -389,3 +512,29 @@ def detach_card_oracle_tag(request: Request, card_id: str, slug: str) -> dict[st
         )
         tags = fetch_oracle_tags_for_oracles(conn, [oracle_id]).get(oracle_id, [])
     return {"card_id": _card_id, "oracle_id": oracle_id, "tags": tags}
+
+
+@router.post("/api/admin/oracles/merge")
+def admin_merge_oracles(request: Request, body: MergeOraclesBody) -> dict[str, Any]:
+    """Merge one card's oracle into another's; curated tags are unioned (deduped)."""
+    require_admin(request)
+    keep_raw = (body.keep_card_id or "").strip()
+    absorb_raw = (body.absorb_card_id or "").strip()
+    if not keep_raw or not absorb_raw:
+        raise HTTPException(status_code=400, detail="keep_card_id and absorb_card_id required")
+    if keep_raw.lower() == absorb_raw.lower():
+        raise HTTPException(status_code=400, detail="Cards must be different")
+    assert _engine is not None
+    with _engine.begin() as conn:
+        keep_card_id, keep_oracle_id = _card_oracle_id(conn, keep_raw)
+        absorb_card_id, absorb_oracle_id = _card_oracle_id(conn, absorb_raw)
+        result = merge_oracle_into(conn, keep_oracle_id, absorb_oracle_id)
+        tags = fetch_oracle_tags_for_oracles(conn, [keep_oracle_id]).get(keep_oracle_id, [])
+    result.update(
+        {
+            "keep_card_id": keep_card_id,
+            "absorb_card_id": absorb_card_id,
+            "tags": tags,
+        }
+    )
+    return result

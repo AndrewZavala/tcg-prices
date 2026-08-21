@@ -249,7 +249,7 @@
       const selectedSlugs = applied.map((t) => t.slug).filter(Boolean);
       editor = `
         <div class="sp-otag-editor" id="otagEditor">
-          <p class="sp-hint">Select oracle tags for this card (all printings share them).</p>
+          <p class="sp-hint">Select oracle tags for this card (all printings share them). Changes save automatically.</p>
           <div class="sp-otag-ms" id="otagMulti">
             <div class="sp-otag-ms-control" id="otagMsControl">
               <div class="sp-otag-ms-chips" id="otagMsChips"></div>
@@ -261,7 +261,6 @@
             <input type="hidden" id="otagMsValue" value="${esc(selectedSlugs.join(","))}" />
           </div>
           <div class="sp-otag-actions">
-            <button type="button" class="sp-otag-save" id="otagSaveBtn">Save tags</button>
             <span class="sp-otag-status" id="otagStatus" aria-live="polite"></span>
           </div>
           <div class="sp-otag-admin" id="otagAdmin">
@@ -281,6 +280,27 @@
         <div class="sp-otag-list">${chips || '<span class="sp-hint">No oracle tags yet.</span>'}</div>
         ${editor}
       </div>`;
+  }
+
+  function renderOracleTagDisplayList(tags) {
+    const list = document.querySelector("#otagBlock .sp-otag-list");
+    if (!list) return;
+    const rows = Array.isArray(tags) ? tags : [];
+    if (!rows.length) {
+      list.innerHTML = '<span class="sp-hint">No oracle tags yet.</span>';
+      return;
+    }
+    list.innerHTML = rows
+      .map(
+        (t) =>
+          `<button type="button" class="sp-otag" data-otag="${esc(t.slug)}" title="Search otag:${esc(t.slug)}">${esc(
+            t.label || t.slug
+          )}</button>`
+      )
+      .join("");
+    list.querySelectorAll(".sp-otag[data-otag]").forEach((el) => {
+      el.addEventListener("click", () => searchByOtag(el.dataset.otag));
+    });
   }
 
   async function wireOracleTagControls(card) {
@@ -311,6 +331,7 @@
       const searchEl = document.getElementById("otagMsSearch");
       const menuEl = document.getElementById("otagMsMenu");
       const controlEl = document.getElementById("otagMsControl");
+      const status = document.getElementById("otagStatus");
 
       const selected = new Set(
         String((valueEl && valueEl.value) || "")
@@ -319,6 +340,9 @@
           .filter(Boolean)
       );
 
+      let saveSeq = 0;
+      let saving = false;
+
       const labelFor = (slug) => {
         const hit = defs.find((d) => d.slug === slug);
         return (hit && hit.label) || slug;
@@ -326,6 +350,52 @@
 
       const syncValue = () => {
         if (valueEl) valueEl.value = [...selected].join(",");
+      };
+
+      const applySavedTags = (tags) => {
+        const rows = Array.isArray(tags) ? tags : [];
+        card.oracle_tags = rows;
+        selected.clear();
+        for (const t of rows) {
+          if (t && t.slug) selected.add(t.slug);
+        }
+        syncValue();
+        renderChips();
+        renderOracleTagDisplayList(rows);
+      };
+
+      const apiErrorMessage = async (resp) => {
+        const err = await resp.json().catch(() => ({}));
+        const detail = err.detail;
+        if (Array.isArray(detail)) {
+          return detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
+        }
+        return detail || `Request failed (${resp.status})`;
+      };
+
+      const persistTagChange = async (slug, action) => {
+        const seq = ++saveSeq;
+        saving = true;
+        if (status) status.textContent = "Saving…";
+        try {
+          const url = `/api/pokemon/cards/${encodeURIComponent(card.id)}/oracle-tags/${encodeURIComponent(slug)}`;
+          const resp = await fetch(url, {
+            method: action === "add" ? "POST" : "DELETE",
+            credentials: "same-origin",
+          });
+          if (!resp.ok) throw new Error(await apiErrorMessage(resp));
+          const data = await resp.json();
+          if (seq !== saveSeq) return;
+          applySavedTags(data.tags || []);
+          if (status) status.textContent = "Saved.";
+        } catch (err) {
+          if (seq !== saveSeq) return;
+          if (status) status.textContent = err.message || "Save failed";
+          // Re-sync UI from last known good card state
+          applySavedTags(card.oracle_tags || []);
+        } finally {
+          if (seq === saveSeq) saving = false;
+        }
       };
 
       const renderChips = () => {
@@ -342,10 +412,12 @@
         chipsEl.querySelectorAll("[data-remove]").forEach((btn) => {
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
-            selected.delete(btn.dataset.remove);
+            if (saving) return;
+            const slug = btn.dataset.remove;
+            selected.delete(slug);
             syncValue();
             renderChips();
-            renderMenu(searchEl ? searchEl.value : "");
+            persistTagChange(slug, "remove");
           });
         });
       };
@@ -378,12 +450,20 @@
         menuEl.querySelectorAll("[data-slug]").forEach((btn) => {
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
+            if (saving) return;
             const slug = btn.dataset.slug;
-            if (selected.has(slug)) selected.delete(slug);
-            else selected.add(slug);
+            const adding = !selected.has(slug);
+            if (adding) selected.add(slug);
+            else selected.delete(slug);
             syncValue();
             renderChips();
-            renderMenu(searchEl ? searchEl.value : "");
+            if (adding) {
+              if (searchEl) searchEl.value = "";
+              closeMenu();
+            } else {
+              renderMenu(searchEl ? searchEl.value : "");
+            }
+            persistTagChange(slug, adding ? "add" : "remove");
           });
         });
       };
@@ -423,54 +503,13 @@
           }
         });
       }
-      document.addEventListener(
-        "click",
-        (e) => {
-          if (!multi.contains(e.target)) closeMenu();
-        },
-        { capture: true }
-      );
-    }
-
-    const saveBtn = document.getElementById("otagSaveBtn");
-    if (saveBtn) {
-      saveBtn.addEventListener("click", async () => {
-        const status = document.getElementById("otagStatus");
-        const valueEl = document.getElementById("otagMsValue");
-        const selected = String((valueEl && valueEl.value) || "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        saveBtn.disabled = true;
-        if (status) status.textContent = "Saving…";
-        try {
-          const resp = await fetch(
-            `/api/pokemon/cards/${encodeURIComponent(card.id)}/oracle-tags`,
-            {
-              method: "PUT",
-              credentials: "same-origin",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ tags: selected }),
-            }
-          );
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            const detail = err.detail;
-            const msg = Array.isArray(detail)
-              ? detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
-              : detail || "Save failed";
-            throw new Error(msg);
-          }
-          const data = await resp.json();
-          card.oracle_tags = data.tags || [];
-          if (status) status.textContent = "Saved.";
-          openCard(card.id);
-        } catch (err) {
-          if (status) status.textContent = err.message || "Save failed";
-        } finally {
-          saveBtn.disabled = false;
-        }
-      });
+      if (multi._otagOutsideClick) {
+        document.removeEventListener("click", multi._otagOutsideClick, true);
+      }
+      multi._otagOutsideClick = (e) => {
+        if (!multi.contains(e.target)) closeMenu();
+      };
+      document.addEventListener("click", multi._otagOutsideClick, true);
     }
 
     const createBtn = document.getElementById("otagCreateBtn");

@@ -31,6 +31,7 @@ from typing import Any
 from sqlalchemy import create_engine, text
 
 from config import DATABASE_URL, MIGRATIONS_DIR
+from pokemon_card_corrections import ABILITY_TYPE_BY_NAME, apply_card_corrections
 
 SECRET_RARITY_MARKERS = ("secret",)
 
@@ -83,6 +84,7 @@ def _norm_card_text(value: str | None) -> str:
         s = s.replace(old, new)
     s = s.casefold()
     s = s.replace("pokémon", "pokemon").replace("pokèmon", "pokemon")
+    s = s.replace("poké", "poke").replace("pokè", "poke")
     s = _UP_TO_RE.sub(r"\1", s)
     return " ".join(s.split())
 
@@ -392,6 +394,7 @@ def load_cards(conn) -> list[dict[str, Any]]:
             val = item.get(key)
             if isinstance(val, str):
                 item[key] = json.loads(val)
+        apply_card_corrections(item)
         out.append(item)
     return out
 
@@ -418,6 +421,25 @@ def build_oracles(engine) -> dict[str, int]:
         if not cards:
             print("No pokemon_cards rows found.")
             return {"cards": 0, "oracles": 0, "evolve_from_backfilled": 0}
+
+        # Persist narrow source fixes (e.g. base4-2 Rain Dance type) so UI matches.
+        for card in cards:
+            cid = str(card.get("id") or "")
+            if cid not in ABILITY_TYPE_BY_NAME:
+                continue
+            conn.execute(
+                text(
+                    """
+                    UPDATE pokemon_cards
+                    SET abilities = CAST(:abilities AS jsonb)
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "id": cid,
+                    "abilities": json.dumps(card.get("abilities") or []),
+                },
+            )
 
         evolve_updates = backfill_evolve_from(cards)
         if evolve_updates:
@@ -453,10 +475,29 @@ def build_oracles(engine) -> dict[str, int]:
         for card in cards:
             by_fingerprint.setdefault(card["_oracle_fingerprint"], []).append(card)
 
+        # Snapshot curated tags before DELETE (FK CASCADE would wipe them).
+        # Keyed by card_id so merged fingerprint groups can union tags.
+        tag_rows_by_card: dict[str, list[dict[str, Any]]] = {}
+        try:
+            for row in conn.execute(
+                text(
+                    """
+                    SELECT c.id AS card_id, ot.tag_slug, ot.tagged_by, ot.tagged_at
+                    FROM oracle_tags ot
+                    INNER JOIN pokemon_cards c ON c.oracle_id = ot.oracle_id
+                    """
+                )
+            ).mappings():
+                tag_rows_by_card.setdefault(str(row["card_id"]), []).append(dict(row))
+        except Exception:
+            # oracle_tags may not exist yet on older DBs
+            tag_rows_by_card = {}
+
         conn.execute(text("UPDATE pokemon_cards SET is_oracle_representative = FALSE"))
         conn.execute(text("DELETE FROM pokemon_oracles"))
 
         oracle_count = 0
+        tags_restored = 0
         for fp, group in by_fingerprint.items():
             rep = pick_representative(group)
             art_ids = {c["_illustration_id"] for c in group}
@@ -514,10 +555,57 @@ def build_oracles(engine) -> dict[str, int]:
                     },
                 )
 
+            # Union tags from every printing that previously carried them.
+            by_slug: dict[str, dict[str, Any]] = {}
+            for card in group:
+                for t in tag_rows_by_card.get(str(card.get("id")), []):
+                    slug = str(t.get("tag_slug") or "")
+                    if not slug:
+                        continue
+                    prev = by_slug.get(slug)
+                    if prev is None:
+                        by_slug[slug] = t
+                        continue
+                    # Prefer earliest tagged_at when both present
+                    ta = t.get("tagged_at")
+                    pa = prev.get("tagged_at")
+                    if ta is not None and (pa is None or ta < pa):
+                        by_slug[slug] = t
+
+            for slug, t in by_slug.items():
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO oracle_tags (oracle_id, tag_slug, tagged_by, tagged_at)
+                        VALUES (
+                            :oid,
+                            :slug,
+                            :uid,
+                            COALESCE(CAST(:tagged_at AS timestamptz), NOW())
+                        )
+                        ON CONFLICT (oracle_id, tag_slug) DO NOTHING
+                        """
+                    ),
+                    {
+                        "oid": oracle_id,
+                        "slug": slug,
+                        "uid": t.get("tagged_by"),
+                        "tagged_at": t.get("tagged_at"),
+                    },
+                )
+                tags_restored += 1
+
+        if tag_rows_by_card:
+            print(
+                f"Restored/unioned {tags_restored} oracle tag attachment(s) "
+                f"across {oracle_count} oracle(s)."
+            )
+
         return {
             "cards": len(cards),
             "oracles": oracle_count,
             "evolve_from_backfilled": len(evolve_updates),
+            "oracle_tags_restored": tags_restored,
         }
 
 
