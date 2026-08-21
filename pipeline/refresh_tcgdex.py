@@ -222,6 +222,72 @@ SWSH_BLOCK_SET_IDS = (
     "swsh12.5gg", # Crown Zenith Galarian Gallery
 )
 
+# POP Series 1–9
+POP_BLOCK_SET_IDS = (
+    "pop1",
+    "pop2",
+    "pop3",
+    "pop4",
+    "pop5",
+    "pop6",
+    "pop7",
+    "pop8",
+    "pop9",
+)
+
+# Nintendo Black Star Promos
+NP_BLOCK_SET_IDS = (
+    "np",
+)
+
+# McDonald's Collections
+MCD_BLOCK_SET_IDS = (
+    "2011bw",    # McDonald's Collection 2011
+    "2012bw",    # McDonald's Collection 2012
+    "2014xy",    # McDonald's Collection 2014
+    "2015xy",    # McDonald's Collection 2015
+    "2016xy",    # McDonald's Collection 2016
+    "2017sm",    # McDonald's Collection 2017
+    "2018sm",    # McDonald's Collection 2018
+    "2019sm",    # McDonald's Collection 2019
+    "2021swsh",  # McDonald's Collection 2021
+    "2022swsh",  # McDonald's Collection 2022
+    "2023sv",    # McDonald's Collection 2023
+    "2024sv",    # McDonald's Collection 2024
+)
+
+# Official Trainer Kits (EX through SM)
+TK_BLOCK_SET_IDS = (
+    "tk-ex-latia",  # EX trainer Kit (Latias)
+    "tk-ex-latio",  # EX trainer Kit (Latios)
+    "tk-ex-m",      # EX trainer Kit 2 (Minun)
+    "tk-ex-p",      # EX trainer Kit 2 (Plusle)
+    "tk-dp-l",      # DP trainer Kit (Lucario)
+    "tk-dp-m",      # DP trainer Kit (Manaphy)
+    "tk-hs-g",      # HS trainer Kit (Gyarados)
+    "tk-hs-r",      # HS trainer Kit (Raichu)
+    "tk-bw-e",      # BW trainer Kit (Excadrill)
+    "tk-bw-z",      # BW trainer Kit (Zoroark)
+    "tk-xy-b",      # XY trainer Kit (Bisharp)
+    "tk-xy-latia",  # XY trainer Kit (Latias)
+    "tk-xy-latio",  # XY trainer Kit (Latios)
+    "tk-xy-n",      # XY trainer Kit (Noivern)
+    "tk-xy-p",      # XY trainer Kit (Pikachu Libre)
+    "tk-xy-su",     # XY trainer Kit (Suicune)
+    "tk-xy-sy",     # XY trainer Kit (Sylveon)
+    "tk-xy-w",      # XY trainer Kit (Wigglytuff)
+    "tk-sm-l",      # SM trainer Kit (Lycanroc)
+    "tk-sm-r",      # SM trainer Kit (Alolan Raichu)
+)
+
+# Combined side products (POP + Nintendo promos + McDonald's + Trainer Kits)
+SIDE_BLOCK_SET_IDS = (
+    *POP_BLOCK_SET_IDS,
+    *NP_BLOCK_SET_IDS,
+    *MCD_BLOCK_SET_IDS,
+    *TK_BLOCK_SET_IDS,
+)
+
 
 def _session() -> requests.Session:
     s = requests.Session()
@@ -558,6 +624,16 @@ def main() -> int:
             set_ids = list(WOTC_BLOCK_SET_IDS)
         elif args.series.lower() == "swsh":
             set_ids = list(SWSH_BLOCK_SET_IDS)
+        elif args.series.lower() in ("side", "extras"):
+            set_ids = list(SIDE_BLOCK_SET_IDS)
+        elif args.series.lower() == "pop":
+            set_ids = list(POP_BLOCK_SET_IDS)
+        elif args.series.lower() in ("np", "nintendo"):
+            set_ids = list(NP_BLOCK_SET_IDS)
+        elif args.series.lower() in ("mcd", "mcdonalds", "mcdonald"):
+            set_ids = list(MCD_BLOCK_SET_IDS)
+        elif args.series.lower() in ("tk", "trainer-kits", "trainers"):
+            set_ids = list(TK_BLOCK_SET_IDS)
         else:
             session = _session()
             set_ids = fetch_series_sets(session, args.lang, args.series.lower())
