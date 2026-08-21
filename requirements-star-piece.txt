@@ -1,7 +1,10 @@
-# Star Piece web runtime
+# Star Piece / Spell Tag web runtime
 fastapi>=0.110
 uvicorn[standard]>=0.27
 sqlalchemy>=2.0
 psycopg2-binary>=2.9
 pydantic>=2.0
 python-dotenv>=1.0
+authlib>=1.3
+httpx>=0.27
+itsdangerous>=2.1

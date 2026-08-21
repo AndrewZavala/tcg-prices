@@ -157,3 +157,76 @@
 .st-body .sp-footer a {
   color: var(--st-paper);
 }
+
+.st-body .sp-topbar-account {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.st-body a.sp-topbar-login {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  cursor: pointer;
+  opacity: 1;
+  border-color: rgba(196, 168, 232, 0.45);
+  color: var(--sp-pink-soft);
+}
+
+.st-body a.sp-topbar-login:hover {
+  border-color: rgba(196, 168, 232, 0.75);
+  color: #fff;
+}
+
+.st-body .sp-topbar-profile {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: min(220px, 42vw);
+}
+
+.st-body .sp-topbar-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+  border: 1px solid rgba(196, 168, 232, 0.35);
+}
+
+.st-body .sp-topbar-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(196, 168, 232, 0.2);
+  color: var(--sp-pink-soft);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.st-body .sp-topbar-profile-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--sp-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.st-body .sp-topbar-logout {
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--sp-muted);
+  background: transparent;
+  border: 1px solid rgba(200, 200, 210, 0.25);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.st-body .sp-topbar-logout:hover {
+  color: var(--sp-pink-soft);
+  border-color: rgba(196, 168, 232, 0.45);
+}

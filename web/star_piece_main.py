@@ -7,6 +7,7 @@ Does not mount inventory, opportunities, collection, or other Manifest Bread rou
 from __future__ import annotations
 
 import os
+import secrets
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,10 +15,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import create_engine, text
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
 from pokemon_api import init_pokemon_api, router as pokemon_router
+from spelltag_auth import init_spelltag_auth, router as auth_router
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -27,6 +30,7 @@ CORS_ORIGINS = os.environ.get(
     "CORS_ORIGINS",
     "http://localhost:8001,http://127.0.0.1:8001",
 ).split(",")
+SESSION_SECRET = os.environ.get("SPELLTAG_SESSION_SECRET", "").strip() or secrets.token_hex(32)
 
 app = FastAPI(
     title="Spell Tag",
@@ -44,6 +48,7 @@ POKEMON_MIGRATIONS = (
     "028_pokemon_species.sql",
     "029_pokemon_tcgplayer.sql",
     "030_pokemon_species_groups.sql",
+    "031_spelltag_users.sql",
 )
 
 
@@ -64,6 +69,7 @@ class DevNoCacheMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# SessionMiddleware is required for Authlib OAuth state (innermost of these runs first on request)
 app.add_middleware(DevNoCacheMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -72,10 +78,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SESSION_SECRET,
+    same_site="lax",
+    https_only=os.environ.get("SPELLTAG_PUBLIC_URL", "").startswith("https://"),
+)
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 init_pokemon_api(engine)
+init_spelltag_auth(engine)
 app.include_router(pokemon_router)
+app.include_router(auth_router)
 
 
 def _apply_sql_file(conn, filename: str) -> None:

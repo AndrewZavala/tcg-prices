@@ -177,5 +177,29 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d sta
 
 ```bash
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
-  python -m pipeline.refresh_tcgdex
+  python pipeline/refresh_tcgdex.py --series sv --enrich
 ```
+
+### Google sign-in
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials**, create an **OAuth 2.0 Client ID** (application type: Web application).
+2. Under **Authorized redirect URIs**, add:
+   - `https://spelltag.com/auth/google/callback`
+   - `http://localhost:8001/auth/google/callback` (local dev)
+3. OAuth consent screen: External, app name **Spell Tag**. While in Testing, add your Google account as a test user.
+4. Put values in `/opt/spelltag/.env`:
+
+```bash
+SPELLTAG_PUBLIC_URL=https://spelltag.com
+GOOGLE_CLIENT_ID=....apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=....
+SPELLTAG_SESSION_SECRET=$(openssl rand -hex 32)
+```
+
+5. Rebuild the app:
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build star-piece
+```
+
+6. Confirm: `https://spelltag.com/auth/status` should show `"google_configured": true`. Use **Sign in** in the top bar.

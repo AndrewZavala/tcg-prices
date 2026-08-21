@@ -11,6 +11,10 @@ services:
     restart: unless-stopped
     environment:
       CORS_ORIGINS: ${SPELLTAG_CORS_ORIGINS:-https://spelltag.com,https://www.spelltag.com}
+      SPELLTAG_PUBLIC_URL: ${SPELLTAG_PUBLIC_URL:-https://spelltag.com}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      SPELLTAG_SESSION_SECRET: ${SPELLTAG_SESSION_SECRET:-}
 
   caddy:
     image: caddy:2-alpine
