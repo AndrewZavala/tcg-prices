@@ -306,11 +306,16 @@
   margin: 1rem 0 1.15rem;
   padding-top: 0.35rem;
   border-top: 1px solid rgba(200, 200, 210, 0.12);
+  font-family: var(--sp-font);
+  color: var(--sp-text);
 }
 
 .st-body .sp-otag-block h3 {
   margin: 0 0 0.55rem;
+  font-family: var(--sp-font);
   font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--sp-text);
 }
 
 .st-body .sp-otag-list {
@@ -321,7 +326,7 @@
 }
 
 .st-body .sp-otag {
-  font: inherit;
+  font-family: var(--sp-font);
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--sp-pink-soft);
@@ -343,25 +348,144 @@
   border: 1px solid rgba(200, 200, 210, 0.14);
   border-radius: 10px;
   background: rgba(12, 12, 16, 0.45);
+  font-family: var(--sp-font);
+  color: var(--sp-text);
 }
 
-.st-body .sp-otag-options {
+.st-body .sp-otag-editor .sp-hint,
+.st-body .sp-otag-admin .sp-hint {
+  color: var(--sp-muted);
+  font-family: var(--sp-font);
+}
+
+.st-body .sp-otag-ms {
+  position: relative;
+  margin: 0.45rem 0 0.75rem;
+}
+
+.st-body .sp-otag-ms-control {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem 0.85rem;
-  margin: 0.45rem 0 0.65rem;
-}
-
-.st-body .sp-otag-option {
-  display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.88rem;
+  min-height: 2.6rem;
+  padding: 0.35rem 2rem 0.35rem 0.45rem;
+  border: 1px solid rgba(200, 200, 210, 0.28);
+  border-radius: 10px;
+  background: rgba(12, 12, 14, 0.92);
+  cursor: text;
+}
+
+.st-body .sp-otag-ms.is-open .sp-otag-ms-control {
+  border-color: rgba(196, 168, 232, 0.55);
+  box-shadow: 0 0 0 3px rgba(196, 168, 232, 0.12);
+}
+
+.st-body .sp-otag-ms-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.st-body .sp-otag-ms-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--sp-font);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--sp-pink-soft);
+  background: rgba(196, 168, 232, 0.16);
+  border: 1px solid rgba(196, 168, 232, 0.4);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
   cursor: pointer;
 }
 
+.st-body .sp-otag-ms-search {
+  flex: 1 1 7rem;
+  min-width: 6rem;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: var(--sp-font);
+  font-size: 0.9rem;
+  color: var(--sp-text);
+}
+
+.st-body .sp-otag-ms-search::placeholder {
+  color: rgba(200, 200, 210, 0.45);
+}
+
+.st-body .sp-otag-ms-caret {
+  position: absolute;
+  right: 0.7rem;
+  top: 0.7rem;
+  color: var(--sp-muted);
+  pointer-events: none;
+}
+
+.st-body .sp-otag-ms-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 8;
+  max-height: 14rem;
+  overflow: auto;
+  border: 1px solid rgba(200, 200, 210, 0.22);
+  border-radius: 10px;
+  background: rgba(16, 16, 22, 0.98);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
+  padding: 0.3rem;
+}
+
+.st-body .sp-otag-ms-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-family: var(--sp-font);
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--sp-text);
+  padding: 0.5rem 0.6rem;
+  cursor: pointer;
+}
+
+.st-body .sp-otag-ms-option:hover,
+.st-body .sp-otag-ms-option.is-on {
+  background: rgba(196, 168, 232, 0.14);
+  color: var(--sp-pink-soft);
+}
+
+.st-body .sp-otag-ms-check {
+  width: 1rem;
+  color: var(--sp-pink-soft);
+  font-weight: 700;
+}
+
+.st-body .sp-otag-ms-empty {
+  padding: 0.65rem 0.7rem;
+  color: var(--sp-muted);
+  font-family: var(--sp-font);
+  font-size: 0.88rem;
+}
+
+.st-body .sp-otag-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.35rem;
+}
+
 .st-body .sp-otag-save {
-  font: inherit;
+  font-family: var(--sp-font);
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--sp-text);
@@ -373,7 +497,7 @@
 }
 
 .st-body .sp-otag-status {
-  margin-left: 0.55rem;
+  font-family: var(--sp-font);
   font-size: 0.82rem;
   color: var(--sp-muted);
 }
@@ -387,13 +511,17 @@
 
 .st-body .sp-otag-admin-row input {
   flex: 1 1 8rem;
-  font: inherit;
+  font-family: var(--sp-font);
   font-size: 0.88rem;
   color: var(--sp-text);
   background: rgba(12, 12, 14, 0.85);
   border: 1px solid rgba(200, 200, 210, 0.25);
   border-radius: 8px;
   padding: 0.4rem 0.55rem;
+}
+
+.st-body .sp-otag-admin-row input::placeholder {
+  color: rgba(200, 200, 210, 0.45);
 }
 
 .st-body .sp-collect-bar {

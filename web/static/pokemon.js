@@ -246,23 +246,24 @@
 
     let editor = "";
     if (canTag) {
-      const options = [...bySlug.values()]
-        .sort((a, b) => String(a.label || a.slug).localeCompare(String(b.label || b.slug)))
-        .map((d) => {
-          const on = applied.some((t) => t.slug === d.slug);
-          return `
-            <label class="sp-otag-option">
-              <input type="checkbox" class="sp-otag-check" value="${esc(d.slug)}" ${on ? "checked" : ""} />
-              <span>${esc(d.label || d.slug)}</span>
-            </label>`;
-        })
-        .join("");
+      const selectedSlugs = applied.map((t) => t.slug).filter(Boolean);
       editor = `
         <div class="sp-otag-editor" id="otagEditor">
           <p class="sp-hint">Select oracle tags for this card (all printings share them).</p>
-          <div class="sp-otag-options">${options || '<p class="sp-hint">No tag definitions yet.</p>'}</div>
-          <button type="button" class="sp-otag-save" id="otagSaveBtn">Save tags</button>
-          <span class="sp-otag-status" id="otagStatus" aria-live="polite"></span>
+          <div class="sp-otag-ms" id="otagMulti">
+            <div class="sp-otag-ms-control" id="otagMsControl">
+              <div class="sp-otag-ms-chips" id="otagMsChips"></div>
+              <input type="search" class="sp-otag-ms-search" id="otagMsSearch"
+                     placeholder="Search tags…" autocomplete="off" aria-label="Search oracle tags" />
+              <span class="sp-otag-ms-caret" aria-hidden="true">▾</span>
+            </div>
+            <div class="sp-otag-ms-menu" id="otagMsMenu" hidden role="listbox"></div>
+            <input type="hidden" id="otagMsValue" value="${esc(selectedSlugs.join(","))}" />
+          </div>
+          <div class="sp-otag-actions">
+            <button type="button" class="sp-otag-save" id="otagSaveBtn">Save tags</button>
+            <span class="sp-otag-status" id="otagStatus" aria-live="polite"></span>
+          </div>
           <div class="sp-otag-admin" id="otagAdmin">
             <p class="sp-hint">Create a tag — use <em>Rain Dance</em> or <em>rain-dance</em>.</p>
             <div class="sp-otag-admin-row">
@@ -290,11 +291,156 @@
       el.addEventListener("click", () => searchByOtag(el.dataset.otag));
     });
 
+    const editor = document.getElementById("otagEditor");
+    const multi = document.getElementById("otagMulti");
+    if (editor && multi) {
+      const bySlug = new Map();
+      for (const d of catalogFacets.oracle_tags || []) {
+        if (d && d.slug) bySlug.set(d.slug, { slug: d.slug, label: d.label || d.slug });
+      }
+      for (const t of card.oracle_tags || []) {
+        if (t && t.slug && !bySlug.has(t.slug)) {
+          bySlug.set(t.slug, { slug: t.slug, label: t.label || t.slug });
+        }
+      }
+      const defs = [...bySlug.values()].sort((a, b) =>
+        String(a.label).localeCompare(String(b.label))
+      );
+      const valueEl = document.getElementById("otagMsValue");
+      const chipsEl = document.getElementById("otagMsChips");
+      const searchEl = document.getElementById("otagMsSearch");
+      const menuEl = document.getElementById("otagMsMenu");
+      const controlEl = document.getElementById("otagMsControl");
+
+      const selected = new Set(
+        String((valueEl && valueEl.value) || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      );
+
+      const labelFor = (slug) => {
+        const hit = defs.find((d) => d.slug === slug);
+        return (hit && hit.label) || slug;
+      };
+
+      const syncValue = () => {
+        if (valueEl) valueEl.value = [...selected].join(",");
+      };
+
+      const renderChips = () => {
+        if (!chipsEl) return;
+        chipsEl.innerHTML = [...selected]
+          .map(
+            (slug) => `
+            <button type="button" class="sp-otag-ms-chip" data-remove="${esc(slug)}" title="Remove ${esc(labelFor(slug))}">
+              ${esc(labelFor(slug))}
+              <span aria-hidden="true">×</span>
+            </button>`
+          )
+          .join("");
+        chipsEl.querySelectorAll("[data-remove]").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            selected.delete(btn.dataset.remove);
+            syncValue();
+            renderChips();
+            renderMenu(searchEl ? searchEl.value : "");
+          });
+        });
+      };
+
+      const renderMenu = (query) => {
+        if (!menuEl) return;
+        const q = String(query || "").trim().toLowerCase();
+        const rows = defs.filter((d) => {
+          if (!q) return true;
+          return (
+            String(d.label || "").toLowerCase().includes(q) ||
+            String(d.slug || "").toLowerCase().includes(q)
+          );
+        });
+        if (!rows.length) {
+          menuEl.innerHTML = '<div class="sp-otag-ms-empty">No matching tags</div>';
+          return;
+        }
+        menuEl.innerHTML = rows
+          .map((d) => {
+            const on = selected.has(d.slug);
+            return `
+              <button type="button" class="sp-otag-ms-option${on ? " is-on" : ""}" role="option"
+                      aria-selected="${on ? "true" : "false"}" data-slug="${esc(d.slug)}">
+                <span class="sp-otag-ms-check" aria-hidden="true">${on ? "✓" : ""}</span>
+                <span class="sp-otag-ms-label">${esc(d.label || d.slug)}</span>
+              </button>`;
+          })
+          .join("");
+        menuEl.querySelectorAll("[data-slug]").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const slug = btn.dataset.slug;
+            if (selected.has(slug)) selected.delete(slug);
+            else selected.add(slug);
+            syncValue();
+            renderChips();
+            renderMenu(searchEl ? searchEl.value : "");
+          });
+        });
+      };
+
+      const openMenu = () => {
+        if (!menuEl) return;
+        menuEl.hidden = false;
+        multi.classList.add("is-open");
+        renderMenu(searchEl ? searchEl.value : "");
+      };
+
+      const closeMenu = () => {
+        if (!menuEl) return;
+        menuEl.hidden = true;
+        multi.classList.remove("is-open");
+      };
+
+      renderChips();
+      syncValue();
+
+      if (controlEl) {
+        controlEl.addEventListener("click", () => {
+          openMenu();
+          if (searchEl) searchEl.focus();
+        });
+      }
+      if (searchEl) {
+        searchEl.addEventListener("focus", openMenu);
+        searchEl.addEventListener("input", () => {
+          openMenu();
+          renderMenu(searchEl.value);
+        });
+        searchEl.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") {
+            closeMenu();
+            searchEl.blur();
+          }
+        });
+      }
+      document.addEventListener(
+        "click",
+        (e) => {
+          if (!multi.contains(e.target)) closeMenu();
+        },
+        { capture: true }
+      );
+    }
+
     const saveBtn = document.getElementById("otagSaveBtn");
     if (saveBtn) {
       saveBtn.addEventListener("click", async () => {
         const status = document.getElementById("otagStatus");
-        const selected = [...block.querySelectorAll(".sp-otag-check:checked")].map((el) => el.value);
+        const valueEl = document.getElementById("otagMsValue");
+        const selected = String((valueEl && valueEl.value) || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
         saveBtn.disabled = true;
         if (status) status.textContent = "Saving…";
         try {
