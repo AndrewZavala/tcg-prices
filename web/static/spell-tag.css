@@ -425,15 +425,40 @@
   color: var(--sp-pink-soft);
 }
 
-.st-body .sp-collection-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+.st-body .sp-collections-grid {
+  align-items: start;
 }
 
-.st-body .sp-collection-card-link {
-  display: block;
-  text-decoration: none;
+.st-body .sp-collection-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.st-body .sp-collection-item .sp-card {
+  width: 100%;
+}
+
+.st-body .sp-collection-caption {
+  padding: 0 0.15rem;
+}
+
+.st-body .sp-collection-card-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--sp-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.st-body .sp-collection-card-set {
+  font-size: 0.72rem;
+  color: var(--sp-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .st-body .sp-collection-remove {
@@ -446,6 +471,7 @@
   border-radius: 6px;
   padding: 0.25rem 0.4rem;
   cursor: pointer;
+  align-self: flex-start;
 }
 
 .st-body .sp-collection-remove:hover {

@@ -19,7 +19,7 @@
 
   function cardImg(src, alt) {
     const url = src || CARD_IMG_FALLBACK;
-    return `<img class="sp-card-img" src="${esc(url)}" alt="${esc(alt || "")}" loading="lazy" onerror="this.onerror=null;this.src='${CARD_IMG_FALLBACK}';this.classList.add('is-fallback')" />`;
+    return `<img src="${esc(url)}" alt="${esc(alt || "")}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${CARD_IMG_FALLBACK}';this.classList.add('is-fallback')" />`;
   }
 
   async function api(path, opts) {
@@ -36,7 +36,9 @@
     }
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
-      throw new Error(err.detail || `Request failed (${resp.status})`);
+      const detail = err.detail;
+      const msg = typeof detail === "string" ? detail : `Request failed (${resp.status})`;
+      throw new Error(msg);
     }
     return resp.json();
   }
@@ -48,6 +50,7 @@
     root.innerHTML = `
       <div class="sp-collections-head">
         <h1 class="sp-collections-title">My Collections</h1>
+        <p class="sp-hint">Save favorite arts from Search, then browse them here.</p>
         <form class="sp-new-collection" id="newCollectionForm">
           <input type="text" name="name" maxlength="80" placeholder="New collection name" required />
           <button type="submit">Create</button>
@@ -86,39 +89,68 @@
     });
   }
 
+  function renderCardTile(c, collectionId) {
+    const label = `${c.name} — ${c.set_name} #${c.local_id}`;
+    return `
+      <div class="sp-collection-item">
+        <article class="sp-card" data-id="${esc(c.id)}" title="${esc(label)}" tabindex="0" aria-label="${esc(label)}">
+          ${cardImg(c.image_url, label)}
+        </article>
+        <div class="sp-collection-caption">
+          <div class="sp-collection-card-name">${esc(c.name)}</div>
+          <div class="sp-collection-card-set">${esc(c.set_name)} · #${esc(c.local_id)}</div>
+        </div>
+        <button type="button" class="sp-collection-remove" data-card-id="${esc(c.id)}" title="Remove from collection">Remove</button>
+      </div>`;
+  }
+
   async function renderDetail(id) {
     const data = await api(`/api/me/collections/${encodeURIComponent(id)}`);
     if (!data) return;
     const coll = data.collection;
     const cards = data.cards || [];
+    const isFav = coll.kind === "favorites";
     root.innerHTML = `
       <div class="sp-collections-head">
         <p class="sp-collections-back"><a href="/collections">← All collections</a></p>
-        <h1 class="sp-collections-title">${esc(coll.name)}${
-          coll.kind === "favorites" ? ' <span class="sp-collection-badge">♥</span>' : ""
-        }</h1>
-        <p class="sp-hint">${cards.length} saved art${cards.length === 1 ? "" : "s"}</p>
+        <h1 class="sp-collections-title">${
+          isFav ? '<span class="sp-collection-badge">♥</span> ' : ""
+        }${esc(coll.name)}</h1>
+        <p class="sp-hint">${
+          isFav
+            ? "Card arts you’ve hearted from Search."
+            : "Cards you’ve saved to this list."
+        } · ${cards.length} saved</p>
       </div>
       ${
         cards.length
           ? `<div class="sp-grid sp-collections-grid">
-              ${cards
-                .map(
-                  (c) => `
-                <article class="sp-card sp-collection-card" data-id="${esc(c.id)}" title="${esc(c.name)} — ${esc(c.set_name)} #${esc(c.local_id)}">
-                  <a href="/?q=${encodeURIComponent(c.name)}" class="sp-collection-card-link">
-                    ${cardImg(c.image_url, c.name)}
-                  </a>
-                  <button type="button" class="sp-collection-remove" data-card-id="${esc(c.id)}" title="Remove from collection">Remove</button>
-                </article>`
-                )
-                .join("")}
+              ${cards.map((c) => renderCardTile(c, id)).join("")}
             </div>`
-          : `<p class="sp-empty">No cards yet. Open a card from Search and tap Favorite or Add to collection.</p>`
+          : `<p class="sp-empty">${
+              isFav
+                ? "No favorites yet. Open a card on Search and tap ♡ Favorite."
+                : "No cards yet. Open a card on Search and choose Add to collection."
+            }</p>`
       }`;
 
+    root.querySelectorAll(".sp-card[data-id]").forEach((el) => {
+      const openSearch = () => {
+        const name = el.getAttribute("aria-label")?.split(" — ")[0] || "";
+        window.location.href = `/?q=${encodeURIComponent(name)}`;
+      };
+      el.addEventListener("click", openSearch);
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openSearch();
+        }
+      });
+    });
+
     root.querySelectorAll(".sp-collection-remove").forEach((btn) => {
-      btn.addEventListener("click", async () => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
         const cardId = btn.dataset.cardId;
         try {
           await api(

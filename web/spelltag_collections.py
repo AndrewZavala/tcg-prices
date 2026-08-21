@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from spelltag_auth import require_user
+from pokemon_api import _image_url
 
 router = APIRouter(tags=["collections"])
 
@@ -167,10 +168,15 @@ def get_collection(request: Request, collection_id: str):
             ),
             {"cid": collection_id},
         ).mappings().all()
+    out = []
+    for c in cards:
+        row = dict(c)
+        row["image_url"] = _image_url(row.get("image_url"))
+        out.append(row)
     return {
         "collection": coll,
-        "cards": [dict(c) for c in cards],
-        "total": len(cards),
+        "cards": out,
+        "total": len(out),
     }
 
 
