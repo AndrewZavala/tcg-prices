@@ -85,6 +85,13 @@ if (-not $SkipIngest) {
                 "lc",
                 "ecard1","bog","ecard2","ecard3"
             )
+        } elseif ($seriesLower -eq "swsh") {
+            $enrichSets += @(
+                "swshp","swsh1","swsh2","swsh3","fut2020","swsh3.5","swsh4",
+                "swsh4.5","swsh4.5sv","swsh5","swsh6","swsh7","cel25","cel25cc",
+                "swsh8","swsh9","swsh9.5tg","swsh10","swsh10.5tg","swsh10.5",
+                "swsh11","swsh11.5tg","swsh12","swsh12.5tg","swsh12.5","swsh12.5gg"
+            )
         } else {
             Write-Error "Unknown -Series '$Series' with -SkipIngest. Use -Set for individual sets."
         }

@@ -192,6 +192,36 @@ WOTC_BLOCK_SET_IDS = (
     "ecard3",  # Skyridge
 )
 
+# Sword & Shield era (TCGdex series swsh)
+SWSH_BLOCK_SET_IDS = (
+    "swshp",      # SWSH Black Star Promos
+    "swsh1",      # Sword & Shield
+    "swsh2",      # Rebel Clash
+    "swsh3",      # Darkness Ablaze
+    "fut2020",    # Pokémon Futsal 2020
+    "swsh3.5",    # Champion's Path
+    "swsh4",      # Vivid Voltage
+    "swsh4.5",    # Shining Fates
+    "swsh4.5sv",  # Shining Fates Shiny Vault
+    "swsh5",      # Battle Styles
+    "swsh6",      # Chilling Reign
+    "swsh7",      # Evolving Skies
+    "cel25",      # Celebrations
+    "cel25cc",    # Celebrations Classic Collection
+    "swsh8",      # Fusion Strike
+    "swsh9",      # Brilliant Stars
+    "swsh9.5tg",  # Brilliant Stars Trainer Gallery
+    "swsh10",     # Astral Radiance
+    "swsh10.5tg", # Astral Radiance Trainer Gallery
+    "swsh10.5",   # Pokémon GO
+    "swsh11",     # Lost Origin
+    "swsh11.5tg", # Lost Origin Trainer Gallery
+    "swsh12",     # Silver Tempest
+    "swsh12.5tg", # Silver Tempest Trainer Gallery
+    "swsh12.5",   # Crown Zenith
+    "swsh12.5gg", # Crown Zenith Galarian Gallery
+)
+
 
 def _session() -> requests.Session:
     s = requests.Session()
@@ -526,6 +556,8 @@ def main() -> int:
             set_ids = list(EX_BLOCK_SET_IDS)
         elif args.series.lower() in ("wotc", "wizards"):
             set_ids = list(WOTC_BLOCK_SET_IDS)
+        elif args.series.lower() == "swsh":
+            set_ids = list(SWSH_BLOCK_SET_IDS)
         else:
             session = _session()
             set_ids = fetch_series_sets(session, args.lang, args.series.lower())
