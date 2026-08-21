@@ -21,7 +21,7 @@ import requests
 from sqlalchemy import create_engine, text
 
 from config import DATABASE_URL, MIGRATIONS_DIR
-from pokemon_card_corrections import correct_abilities
+from pokemon_card_corrections import correct_abilities, correct_attacks, apply_card_corrections
 
 TCGDEX_BASE = "https://api.tcgdex.net/v2"
 USER_AGENT = "TCGPokemonCatalog/1.0"
@@ -452,9 +452,24 @@ def upsert_set(conn, set_obj: dict[str, Any]) -> None:
 def upsert_card(conn, card: dict[str, Any]) -> None:
     legal = card.get("legal") or {}
     cleaned = _strip_pricing(card)
-    abilities = correct_abilities(str(card.get("id") or ""), card.get("abilities") or [])
-    if isinstance(cleaned.get("abilities"), list):
-        cleaned["abilities"] = correct_abilities(str(card.get("id") or ""), cleaned["abilities"])
+    card_id = str(card.get("id") or "")
+    abilities = correct_abilities(card_id, card.get("abilities") or [])
+    attacks = correct_attacks(card_id, card.get("attacks") or [])
+    stage = card.get("stage")
+    patched = apply_card_corrections(
+        {
+            "id": card_id,
+            "abilities": abilities,
+            "attacks": attacks,
+            "stage": stage,
+            "card_data": cleaned if isinstance(cleaned, dict) else {},
+        }
+    )
+    abilities = patched.get("abilities") or []
+    attacks = patched.get("attacks") or []
+    stage = patched.get("stage")
+    if isinstance(cleaned, dict):
+        cleaned = patched.get("card_data") or cleaned
     conn.execute(
         text(
             """
@@ -510,7 +525,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
             "category": card.get("category") or "Unknown",
             "hp": card.get("hp"),
             "types": card.get("types"),
-            "stage": card.get("stage"),
+            "stage": stage,
             "evolve_from": card.get("evolveFrom"),
             "dex_ids": card.get("dexId"),
             "description": card.get("description") or card.get("effect"),
@@ -521,7 +536,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
             "legal_expanded": legal.get("expanded"),
             "image_url": card.get("image"),
             "retreat": card.get("retreat"),
-            "attacks": json.dumps(card.get("attacks") or []),
+            "attacks": json.dumps(attacks),
             "abilities": json.dumps(abilities),
             "weaknesses": json.dumps(card.get("weaknesses") or []),
             "resistances": json.dumps(card.get("resistances") or []),

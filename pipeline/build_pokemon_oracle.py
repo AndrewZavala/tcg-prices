@@ -31,7 +31,7 @@ from typing import Any
 from sqlalchemy import create_engine, text
 
 from config import DATABASE_URL, MIGRATIONS_DIR
-from pokemon_card_corrections import ABILITY_TYPE_BY_NAME, apply_card_corrections
+from pokemon_card_corrections import apply_card_corrections
 
 SECRET_RARITY_MARKERS = ("secret",)
 
@@ -417,41 +417,76 @@ def pick_representative(cards: list[dict[str, Any]]) -> dict[str, Any]:
 
 def persist_card_corrections(engine) -> int:
     """Apply narrow source fixes in their own short transaction (avoids rebuild deadlocks)."""
+    from pokemon_card_corrections import (
+        ABILITY_TYPE_BY_NAME,
+        ATTACK_FIELD_BY_NAME,
+        DROP_NAMELESS_ATTACKS,
+        STAGE_BY_ID,
+        apply_card_corrections,
+    )
+
+    ids = sorted(
+        set(ABILITY_TYPE_BY_NAME)
+        | set(ATTACK_FIELD_BY_NAME)
+        | set(DROP_NAMELESS_ATTACKS)
+        | set(STAGE_BY_ID)
+    )
+    if not ids:
+        return 0
+
     fixed = 0
     with engine.begin() as conn:
         rows = conn.execute(
             text(
                 """
-                SELECT id, abilities
+                SELECT id, abilities, attacks, stage
                 FROM pokemon_cards
                 WHERE id = ANY(:ids)
                 """
             ),
-            {"ids": list(ABILITY_TYPE_BY_NAME.keys())},
+            {"ids": ids},
         ).mappings().all()
         for row in rows:
             cid = str(row["id"])
-            raw = row.get("abilities")
-            if isinstance(raw, str):
-                abilities = json.loads(raw)
-            else:
-                abilities = list(raw or [])
-            corrected = apply_card_corrections({"id": cid, "abilities": abilities})["abilities"]
-            if corrected == abilities:
+            abilities = row.get("abilities")
+            attacks = row.get("attacks")
+            if isinstance(abilities, str):
+                abilities = json.loads(abilities)
+            if isinstance(attacks, str):
+                attacks = json.loads(attacks)
+            before = {
+                "id": cid,
+                "abilities": list(abilities or []),
+                "attacks": list(attacks or []),
+                "stage": row.get("stage"),
+            }
+            after = apply_card_corrections(dict(before))
+            if (
+                after.get("abilities") == before["abilities"]
+                and after.get("attacks") == before["attacks"]
+                and after.get("stage") == before["stage"]
+            ):
                 continue
             conn.execute(
                 text(
                     """
                     UPDATE pokemon_cards
-                    SET abilities = CAST(:abilities AS jsonb)
+                    SET abilities = CAST(:abilities AS jsonb),
+                        attacks = CAST(:attacks AS jsonb),
+                        stage = :stage
                     WHERE id = :id
                     """
                 ),
-                {"id": cid, "abilities": json.dumps(corrected)},
+                {
+                    "id": cid,
+                    "abilities": json.dumps(after.get("abilities") or []),
+                    "attacks": json.dumps(after.get("attacks") or []),
+                    "stage": after.get("stage"),
+                },
             )
             fixed += 1
     if fixed:
-        print(f"Persisted {fixed} card ability correction(s).")
+        print(f"Persisted {fixed} card correction(s).")
     return fixed
 
 
