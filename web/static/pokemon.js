@@ -1,5 +1,6 @@
 (function () {
-  const PAGE_SIZE = 48;
+  const GRID_ROWS = 6;
+  let pageSize = 48;
 
   const qEl = document.getElementById("q");
   const seriesEl = document.getElementById("seriesId");
@@ -616,10 +617,11 @@
   }
 
   async function search() {
+    syncPageSize();
     const params = new URLSearchParams();
     params.set("unique", unique);
     params.set("sort", sortEl.value);
-    params.set("limit", String(PAGE_SIZE));
+    params.set("limit", String(pageSize));
     params.set("offset", String(offset));
     if (qEl.value.trim()) params.set("q", qEl.value.trim());
     if (setEl.value) params.set("set_id", setEl.value);
@@ -683,12 +685,32 @@
     });
   });
 
+  function gridGapPx() {
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    return 0.85 * rem;
+  }
+
+  function columnCount() {
+    const width = gridEl?.clientWidth || 0;
+    if (width < 40) return 6;
+    const gap = gridGapPx();
+    return Math.max(1, Math.floor((width + gap) / (cardZoomPx + gap)));
+  }
+
+  /** Keep page length a multiple of visible columns so the last cell is never empty. */
+  function syncPageSize() {
+    const next = Math.max(columnCount() * GRID_ROWS, columnCount());
+    const changed = next !== pageSize;
+    pageSize = next;
+    return changed;
+  }
+
   function clampCardZoom(px) {
     const n = Math.round(Number(px) / CARD_ZOOM_STEP) * CARD_ZOOM_STEP;
     return Math.min(CARD_ZOOM_MAX, Math.max(CARD_ZOOM_MIN, n));
   }
 
-  function applyCardZoom(px, persist) {
+  function applyCardZoom(px, persist, refetchOnPageChange = true) {
     cardZoomPx = clampCardZoom(px);
     document.documentElement.style.setProperty("--sp-card-min", `${cardZoomPx}px`);
     if (zoomOutBtn) zoomOutBtn.disabled = cardZoomPx <= CARD_ZOOM_MIN;
@@ -698,6 +720,10 @@
         localStorage.setItem(CARD_ZOOM_KEY, String(cardZoomPx));
       } catch (_) { /* ignore */ }
     }
+    if (syncPageSize() && refetchOnPageChange) {
+      offset = 0;
+      search();
+    }
   }
 
   function loadCardZoom() {
@@ -706,7 +732,7 @@
       const raw = localStorage.getItem(CARD_ZOOM_KEY);
       if (raw != null) saved = clampCardZoom(raw);
     } catch (_) { /* ignore */ }
-    applyCardZoom(saved, false);
+    applyCardZoom(saved, false, false);
   }
 
   function bindZoomHold(btn, delta) {
@@ -825,13 +851,24 @@
   });
 
   pagePrev.addEventListener("click", () => {
-    offset = Math.max(0, offset - PAGE_SIZE);
+    offset = Math.max(0, offset - pageSize);
     search();
   });
 
   pageNext.addEventListener("click", () => {
-    offset += PAGE_SIZE;
+    offset += pageSize;
     search();
+  });
+
+  let resizePageTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizePageTimer);
+    resizePageTimer = setTimeout(() => {
+      if (syncPageSize()) {
+        offset = 0;
+        search();
+      }
+    }, 200);
   });
 
   modalClose.addEventListener("click", () => modal.close());
