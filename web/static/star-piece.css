@@ -687,6 +687,7 @@ body {
   max-width: min(920px, 96vw);
   width: 100%;
   background: transparent;
+  margin: auto;
 }
 
 .sp-modal::backdrop {
@@ -700,23 +701,58 @@ body {
   border: 1px solid var(--sp-glass-border);
   border-radius: var(--sp-radius);
   box-shadow: var(--sp-glow), 0 24px 60px rgba(0, 0, 0, 0.5);
-  padding: 1.35rem;
   position: relative;
-  max-height: 90vh;
+  max-height: min(90vh, 90dvh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateY(0);
+  transition: transform 0.2s ease;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.sp-modal-chrome {
+  flex: 0 0 auto;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.6rem;
+  padding: 0.35rem 2.75rem 0.25rem 0.75rem;
+  background: linear-gradient(180deg, rgba(16, 16, 22, 0.96), rgba(16, 16, 22, 0.88));
+  border-bottom: 1px solid rgba(200, 200, 210, 0.1);
+}
+
+.sp-modal-grab {
+  display: none;
+  width: 2.5rem;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: rgba(200, 200, 210, 0.35);
+}
+
+.sp-modal-scroll {
+  flex: 1 1 auto;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 1rem 1.35rem 1.35rem;
 }
 
 .sp-modal-close {
   position: absolute;
   top: 0.45rem;
   right: 0.6rem;
+  z-index: 6;
   border: none;
   background: rgba(255, 110, 180, 0.15);
   color: var(--sp-pink-soft);
   font-size: 1.5rem;
   line-height: 1;
-  width: 2rem;
-  height: 2rem;
+  width: 2.5rem;
+  height: 2.5rem;
   border-radius: 50%;
   cursor: pointer;
   transition: background 0.15s;
@@ -732,9 +768,164 @@ body {
   gap: 1.35rem;
 }
 
+.sp-detail-art {
+  min-width: 0;
+}
+
+.sp-detail-body {
+  min-width: 0;
+}
+
+.sp-detail-sticky-actions {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.85rem;
+  padding: 0.55rem 0;
+  background: linear-gradient(180deg, rgba(16, 16, 22, 0.97) 70%, rgba(16, 16, 22, 0.75));
+  border-bottom: 1px solid rgba(200, 200, 210, 0.08);
+}
+
+.sp-detail-sticky-actions .sp-collect-bar {
+  margin: 0;
+}
+
+.sp-detail-sticky-actions .sp-buy-row {
+  margin: 0;
+}
+
+.sp-detail-sticky-actions:not(:has(.sp-buy-row)):has(#collectBar[hidden]) {
+  display: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
 @media (max-width: 720px) {
+  .sp-modal {
+    max-width: 100vw;
+    width: 100vw;
+    height: 100%;
+    max-height: 100%;
+    margin: 0;
+    align-self: stretch;
+  }
+
+  .sp-modal[open] {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+
+  .sp-modal-inner {
+    max-height: min(94vh, 94dvh);
+    height: min(94vh, 94dvh);
+    width: 100%;
+    border-radius: 1.1rem 1.1rem 0 0;
+    border-bottom: none;
+  }
+
+  .sp-modal-grab {
+    display: block;
+  }
+
+  .sp-modal-close {
+    width: 2.75rem;
+    height: 2.75rem;
+    top: 0.35rem;
+    right: max(0.5rem, env(safe-area-inset-right));
+  }
+
   .sp-detail {
     grid-template-columns: 1fr;
+  }
+
+  .sp-detail-art img,
+  .sp-detail img.sp-detail-img {
+    max-height: min(48vh, 48dvh);
+    width: auto;
+    max-width: 100%;
+    margin: 0 auto;
+    display: block;
+    object-fit: contain;
+  }
+
+  .sp-search-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sp-field,
+  .sp-field-grow,
+  .sp-field-sort,
+  .sp-field-narrow {
+    flex: 1 1 auto;
+    max-width: none;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .sp-adv-toggle {
+    align-self: stretch;
+    width: 100%;
+    min-height: 2.75rem;
+    font-size: 0.95rem;
+  }
+
+  .sp-adv-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sp-view-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.85rem;
+  }
+
+  .sp-segment {
+    width: 100%;
+  }
+
+  .sp-segment-btn {
+    flex: 1 1 auto;
+    min-height: 2.75rem;
+    padding: 0.65rem 0.75rem;
+  }
+
+  .sp-zoom {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .sp-zoom-btn,
+  .sp-page-btn,
+  .sp-clear-btn {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  .sp-page-btn {
+    padding: 0.65rem 1rem;
+  }
+
+  .sp-topbar-link,
+  .sp-topbar-login {
+    min-height: 2.5rem;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .sp-main {
+    padding: 0 0.75rem calc(2rem + env(safe-area-inset-bottom, 0));
+  }
+
+  .sp-wordmark,
+  .st-wordmark {
+    width: min(180px, 56vw);
   }
 }
 

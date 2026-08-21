@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Spell Tag — Pokémon TCG Search</title>
   <meta name="description" content="Premiere Pokémon TCG search. Unofficial fan project." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/star-piece.css?v=spell-tag" />
-  <link rel="stylesheet" href="/static/spell-tag.css?v=11" />
+  <link rel="stylesheet" href="/static/star-piece.css?v=mobile-sheet" />
+  <link rel="stylesheet" href="/static/spell-tag.css?v=12" />
   <link rel="icon" href="/static/spell-tag-logo.png?v=10" type="image/png" />
   <link rel="apple-touch-icon" href="/static/spell-tag-logo.png?v=10" />
 </head>
@@ -231,12 +231,15 @@
 
   <dialog id="cardModal" class="sp-modal">
     <div class="sp-modal-inner">
-      <button type="button" class="sp-modal-close" id="modalClose" aria-label="Close">×</button>
-      <div id="modalBody"></div>
+      <div class="sp-modal-chrome">
+        <div class="sp-modal-grab" aria-hidden="true"></div>
+        <button type="button" class="sp-modal-close" id="modalClose" aria-label="Close">×</button>
+      </div>
+      <div class="sp-modal-scroll" id="modalBody"></div>
     </div>
   </dialog>
 
-  <script src="/static/pokemon.js?v=collections"></script>
+  <script src="/static/pokemon.js?v=mobile-sheet"></script>
   <script src="/static/spelltag-auth.js?v=2"></script>
 </body>
 </html>

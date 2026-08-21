@@ -37,7 +37,14 @@
   const CARD_ZOOM_MAX = 260;
   const CARD_ZOOM_STEP = 20;
   const CARD_ZOOM_DEFAULT = 130;
+  const CARD_ZOOM_MOBILE_DEFAULT = 100;
   let cardZoomPx = CARD_ZOOM_DEFAULT;
+
+  function defaultCardZoom() {
+    return window.matchMedia("(max-width: 720px)").matches
+      ? CARD_ZOOM_MOBILE_DEFAULT
+      : CARD_ZOOM_DEFAULT;
+  }
 
   const filterEls = [
     seriesEl, setEl, dexEl, rarityEl, categoryEl, typeEl, stageEl, subtypeEl,
@@ -341,41 +348,43 @@
 
     modalBody.innerHTML = `
       <div class="sp-detail">
-        <div>
+        <div class="sp-detail-art">
           ${cardImg(card.image_url, card.name, "sp-detail-img")}
         </div>
-        <div>
+        <div class="sp-detail-body">
           <h2>
             <button type="button" class="sp-name-link" data-name="${esc(card.name)}" title="Search for ${esc(card.name)}">
               ${esc(card.name)}
             </button>
           </h2>
-          ${(card.tcg_url || card.limitless_url) ? `
-            <p class="sp-buy-row">
-              ${card.tcg_url ? `
-                <a class="sp-buy-btn" href="${esc(card.tcg_url)}" target="_blank" rel="noopener noreferrer sponsored">
-                  Buy on TCGplayer
-                </a>` : ""}
-              ${card.limitless_url ? `
-                <a class="sp-limitless-btn" href="${esc(card.limitless_url)}" target="_blank" rel="noopener noreferrer"
-                   title="Card stats &amp; decks on Limitless${card.limitless_set_code ? ` (${esc(card.limitless_set_code)} #${esc(card.local_id)})` : ""}">
-                  Decks on Limitless
-                </a>` : ""}
-            </p>` : ""}
+          <div class="sp-detail-sticky-actions">
+            ${(card.tcg_url || card.limitless_url) ? `
+              <p class="sp-buy-row">
+                ${card.tcg_url ? `
+                  <a class="sp-buy-btn" href="${esc(card.tcg_url)}" target="_blank" rel="noopener noreferrer sponsored">
+                    Buy on TCGplayer
+                  </a>` : ""}
+                ${card.limitless_url ? `
+                  <a class="sp-limitless-btn" href="${esc(card.limitless_url)}" target="_blank" rel="noopener noreferrer"
+                     title="Card stats &amp; decks on Limitless${card.limitless_set_code ? ` (${esc(card.limitless_set_code)} #${esc(card.local_id)})` : ""}">
+                    Decks on Limitless
+                  </a>` : ""}
+              </p>` : ""}
+            <div class="sp-collect-bar" id="collectBar" hidden>
+              <button type="button" class="sp-fav-btn" id="favToggleBtn" aria-pressed="false">♡ Favorite</button>
+              <label class="sp-collect-add">
+                <span class="sp-visually-hidden">Add to collection</span>
+                <select id="collectAddSelect">
+                  <option value="">Add to collection…</option>
+                </select>
+              </label>
+              <a class="sp-collect-link" href="/collections">My Collections</a>
+            </div>
+          </div>
           <p class="sp-detail-meta">
             ${esc(card.series_name || "—")} · ${esc(card.set_name)} · #${esc(card.local_id)} · ${esc(card.rarity || "—")}
             · ${esc(card.illustrator || "Unknown artist")}
           </p>
-          <div class="sp-collect-bar" id="collectBar" hidden>
-            <button type="button" class="sp-fav-btn" id="favToggleBtn" aria-pressed="false">♡ Favorite</button>
-            <label class="sp-collect-add">
-              <span class="sp-visually-hidden">Add to collection</span>
-              <select id="collectAddSelect">
-                <option value="">Add to collection…</option>
-              </select>
-            </label>
-            <a class="sp-collect-link" href="/collections">My Collections</a>
-          </div>
           ${pokemonMetaBlock(card)}
           ${subtypeBlock(card)}
           ${statGridBlock(card)}
@@ -827,7 +836,7 @@
   }
 
   function loadCardZoom() {
-    let saved = CARD_ZOOM_DEFAULT;
+    let saved = defaultCardZoom();
     try {
       const raw = localStorage.getItem(CARD_ZOOM_KEY);
       if (raw != null) saved = clampCardZoom(raw);
@@ -975,6 +984,91 @@
   modal.addEventListener("click", (e) => {
     if (e.target === modal) modal.close();
   });
+
+  // Swipe-down to close (mobile sheet)
+  (function bindModalSwipeClose() {
+    const inner = modal.querySelector(".sp-modal-inner");
+    const chrome = modal.querySelector(".sp-modal-chrome");
+    const scrollEl = modalBody;
+    if (!inner || !chrome) return;
+
+    let startY = 0;
+    let startX = 0;
+    let dragging = false;
+    let dy = 0;
+
+    const reset = () => {
+      dragging = false;
+      dy = 0;
+      inner.style.transition = "";
+      inner.style.transform = "";
+    };
+
+    const onStart = (y, x) => {
+      if (!modal.open) return;
+      if (scrollEl && scrollEl.scrollTop > 2) return;
+      startY = y;
+      startX = x;
+      dragging = true;
+      dy = 0;
+      inner.style.transition = "none";
+    };
+
+    const onMove = (y, x, e) => {
+      if (!dragging) return;
+      dy = y - startY;
+      const dx = Math.abs(x - startX);
+      if (dy < 0) dy = 0;
+      if (dy > 8 && dy > dx && e.cancelable) e.preventDefault();
+      inner.style.transform = `translateY(${dy}px)`;
+    };
+
+    const onEnd = () => {
+      if (!dragging) return;
+      const shouldClose = dy > 110;
+      inner.style.transition = "transform 0.2s ease";
+      if (shouldClose) {
+        inner.style.transform = "translateY(110%)";
+        const finish = () => {
+          modal.close();
+          reset();
+          inner.removeEventListener("transitionend", finish);
+        };
+        inner.addEventListener("transitionend", finish);
+        setTimeout(finish, 250);
+      } else {
+        inner.style.transform = "translateY(0)";
+        setTimeout(reset, 220);
+      }
+      dragging = false;
+    };
+
+    const target = chrome;
+    const bind = (el) => {
+      el.addEventListener(
+        "touchstart",
+        (e) => {
+          if (e.touches.length !== 1) return;
+          onStart(e.touches[0].clientY, e.touches[0].clientX);
+        },
+        { passive: true }
+      );
+      el.addEventListener(
+        "touchmove",
+        (e) => {
+          if (e.touches.length !== 1) return;
+          onMove(e.touches[0].clientY, e.touches[0].clientX, e);
+        },
+        { passive: false }
+      );
+      el.addEventListener("touchend", onEnd);
+      el.addEventListener("touchcancel", reset);
+    };
+    bind(target);
+    if (scrollEl) bind(scrollEl);
+
+    modal.addEventListener("close", reset);
+  })();
 
   loadMeta().then(resetOffsetAndSearch);
 })();
