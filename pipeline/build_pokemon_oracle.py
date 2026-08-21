@@ -415,17 +415,29 @@ def pick_representative(cards: list[dict[str, Any]]) -> dict[str, Any]:
     return sorted(cards, key=sort_key)[0]
 
 
-def build_oracles(engine) -> dict[str, int]:
+def persist_card_corrections(engine) -> int:
+    """Apply narrow source fixes in their own short transaction (avoids rebuild deadlocks)."""
+    fixed = 0
     with engine.begin() as conn:
-        cards = load_cards(conn)
-        if not cards:
-            print("No pokemon_cards rows found.")
-            return {"cards": 0, "oracles": 0, "evolve_from_backfilled": 0}
-
-        # Persist narrow source fixes (e.g. base4-2 Rain Dance type) so UI matches.
-        for card in cards:
-            cid = str(card.get("id") or "")
-            if cid not in ABILITY_TYPE_BY_NAME:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id, abilities
+                FROM pokemon_cards
+                WHERE id = ANY(:ids)
+                """
+            ),
+            {"ids": list(ABILITY_TYPE_BY_NAME.keys())},
+        ).mappings().all()
+        for row in rows:
+            cid = str(row["id"])
+            raw = row.get("abilities")
+            if isinstance(raw, str):
+                abilities = json.loads(raw)
+            else:
+                abilities = list(raw or [])
+            corrected = apply_card_corrections({"id": cid, "abilities": abilities})["abilities"]
+            if corrected == abilities:
                 continue
             conn.execute(
                 text(
@@ -435,11 +447,23 @@ def build_oracles(engine) -> dict[str, int]:
                     WHERE id = :id
                     """
                 ),
-                {
-                    "id": cid,
-                    "abilities": json.dumps(card.get("abilities") or []),
-                },
+                {"id": cid, "abilities": json.dumps(corrected)},
             )
+            fixed += 1
+    if fixed:
+        print(f"Persisted {fixed} card ability correction(s).")
+    return fixed
+
+
+def build_oracles(engine) -> dict[str, int]:
+    # Corrections first, committed separately — never share a lock with DELETE oracles.
+    persist_card_corrections(engine)
+
+    with engine.begin() as conn:
+        cards = load_cards(conn)
+        if not cards:
+            print("No pokemon_cards rows found.")
+            return {"cards": 0, "oracles": 0, "evolve_from_backfilled": 0}
 
         evolve_updates = backfill_evolve_from(cards)
         if evolve_updates:
@@ -493,7 +517,16 @@ def build_oracles(engine) -> dict[str, int]:
             # oracle_tags may not exist yet on older DBs
             tag_rows_by_card = {}
 
-        conn.execute(text("UPDATE pokemon_cards SET is_oracle_representative = FALSE"))
+        # Clear FKs first so DELETE oracles does not fight row locks via ON DELETE SET NULL.
+        conn.execute(
+            text(
+                """
+                UPDATE pokemon_cards
+                SET oracle_id = NULL,
+                    is_oracle_representative = FALSE
+                """
+            )
+        )
         conn.execute(text("DELETE FROM pokemon_oracles"))
 
         oracle_count = 0
