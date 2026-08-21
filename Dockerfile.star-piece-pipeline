@@ -13,6 +13,7 @@ COPY pipeline/config.py \
      pipeline/build_pokemon_species.py \
      pipeline/build_pokemon_oracle.py \
      pipeline/backfill_pokemon_tcgplayer.py \
+     pipeline/backfill_pokemon_images.py \
      ./pipeline/
 
 COPY migrations/025_pokemon_catalog.sql \

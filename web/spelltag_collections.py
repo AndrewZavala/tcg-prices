@@ -171,7 +171,11 @@ def get_collection(request: Request, collection_id: str):
     out = []
     for c in cards:
         row = dict(c)
-        row["image_url"] = _image_url(row.get("image_url"))
+        row["image_url"] = _image_url(
+            row.get("image_url"),
+            card_id=row.get("id"),
+            local_id=row.get("local_id"),
+        )
         out.append(row)
     return {
         "collection": coll,

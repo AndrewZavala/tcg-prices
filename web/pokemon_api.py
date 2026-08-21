@@ -144,12 +144,74 @@ def init_pokemon_api(engine) -> None:
     _engine = engine
 
 
-def _image_url(base: str | None) -> str | None:
-    if not base:
+# Fallback when TCGdex left image_url empty — pokemontcg.io CDN paths.
+# Keep in sync with pipeline/enrich_pokemon_subtypes.POKEMONTCG_SET_ALIASES.
+_POKEMONTCG_SET_ALIASES: dict[str, str] = {
+    "me01": "me1",
+    "me02": "me2",
+    "me02.5": "me2pt5",
+    "me03": "me3",
+    "me04": "me4",
+    "me05": "me5",
+    "sv01": "sv1",
+    "sv02": "sv2",
+    "sv03": "sv3",
+    "sv03.5": "sv3pt5",
+    "sv04": "sv4",
+    "sv04.5": "sv4pt5",
+    "sv05": "sv5",
+    "sv06": "sv6",
+    "sv06.5": "sv6pt5",
+    "sv07": "sv7",
+    "sv08": "sv8",
+    "sv08.5": "sv8pt5",
+    "sv09": "sv9",
+    "sv10": "sv10",
+    "sv10.5b": "zsv10pt5",
+    "sv10.5w": "rsv10pt5",
+    "sm3.5": "sm35",
+    "sm7.5": "sm75",
+    "swsh3.5": "swsh35",
+    "swsh4.5": "swsh45",
+    "swsh4.5sv": "swsh45sv",
+    "swsh9.5tg": "swsh9tg",
+    "swsh10.5": "pgo",
+    "swsh10.5tg": "swsh10tg",
+    "swsh11.5tg": "swsh11tg",
+    "swsh12.5": "swsh12pt5",
+    "swsh12.5tg": "swsh12tg",
+    "swsh12.5gg": "swsh12pt5gg",
+    "cel25cc": "cel25c",
+}
+
+
+def _pokemontcg_image_fallback(card_id: str | None, local_id: str | None = None) -> str | None:
+    """Best-effort CDN URL when TCGdex has no art. May 404 for very new promos."""
+    if not card_id or "-" not in card_id:
         return None
-    if base.endswith((".webp", ".png", ".jpg")):
-        return base
-    return f"{base}/high.webp"
+    set_part, local = card_id.split("-", 1)
+    if local_id:
+        local = str(local_id)
+    api_set = _POKEMONTCG_SET_ALIASES.get(set_part.lower(), set_part.lower())
+    num = local
+    if local.isdigit():
+        num = str(int(local))
+    elif local.upper().startswith("CC") and local[2:].isdigit():
+        num = f"{int(local[2:])}_A"
+    return f"https://images.pokemontcg.io/{api_set}/{num}_hires.png"
+
+
+def _image_url(
+    base: str | None,
+    *,
+    card_id: str | None = None,
+    local_id: str | None = None,
+) -> str | None:
+    if base:
+        if base.endswith((".webp", ".png", ".jpg", ".jpeg")):
+            return base
+        return f"{base}/high.webp"
+    return _pokemontcg_image_fallback(card_id, local_id)
 
 
 def _parse_search_query(
@@ -367,7 +429,11 @@ def _card_row(raw: dict[str, Any]) -> dict[str, Any]:
         "regulation_mark": raw["regulation_mark"],
         "legal_standard": raw["legal_standard"],
         "legal_expanded": raw["legal_expanded"],
-        "image_url": _image_url(raw.get("image_url")),
+        "image_url": _image_url(
+            raw.get("image_url"),
+            card_id=raw.get("id"),
+            local_id=raw.get("local_id"),
+        ),
         "oracle_id": raw.get("oracle_id"),
         "illustration_id": raw.get("illustration_id"),
         "is_oracle_representative": bool(raw.get("is_oracle_representative")),
@@ -836,7 +902,11 @@ def get_pokemon_card(card_id: str) -> dict[str, Any]:
     def _related_row(s: dict[str, Any]) -> dict[str, Any]:
         return {
             **s,
-            "image_url": _image_url(s.get("image_url")),
+            "image_url": _image_url(
+                s.get("image_url"),
+                card_id=s.get("id"),
+                local_id=s.get("local_id"),
+            ),
             "tcg_url": pokemon_buy_url(
                 product_id=s.get("tcgplayer_product_id"),
                 name=s.get("name") or card.get("name") or "",

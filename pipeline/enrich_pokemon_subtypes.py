@@ -54,6 +54,18 @@ POKEMONTCG_SET_ALIASES: dict[str, str] = {
     # Sun & Moon block (dot-ids → compact pokemontcg.io ids)
     "sm3.5": "sm35",
     "sm7.5": "sm75",
+    # Sword & Shield subsets / special sets
+    "swsh3.5": "swsh35",       # Champion's Path
+    "swsh4.5": "swsh45",       # Shining Fates
+    "swsh4.5sv": "swsh45sv",   # Shining Fates Shiny Vault
+    "swsh9.5tg": "swsh9tg",
+    "swsh10.5": "pgo",         # Pokémon GO
+    "swsh10.5tg": "swsh10tg",
+    "swsh11.5tg": "swsh11tg",
+    "swsh12.5": "swsh12pt5",   # Crown Zenith
+    "swsh12.5tg": "swsh12tg",
+    "swsh12.5gg": "swsh12pt5gg",
+    "cel25cc": "cel25c",       # Celebrations Classic Collection
 }
 
 
@@ -224,7 +236,11 @@ def enrich_set(
         """
         UPDATE pokemon_cards
         SET subtypes = :subtypes,
-            tags = :tags
+            tags = :tags,
+            image_url = COALESCE(
+                NULLIF(BTRIM(image_url), ''),
+                :image_url
+            )
         WHERE id = :id
         """
     )
@@ -246,6 +262,8 @@ def enrich_set(
             subtypes = []
         subtypes = [str(s) for s in subtypes if s]
         tags = subtypes_to_tags(subtypes)
+        images = api_card.get("images") or {}
+        image_url = images.get("large") or images.get("small") or None
 
         matched += 1
         if dry_run:
@@ -255,7 +273,12 @@ def enrich_set(
 
         conn.execute(
             upsert_sql,
-            {"id": card_id, "subtypes": subtypes or None, "tags": tags or None},
+            {
+                "id": card_id,
+                "subtypes": subtypes or None,
+                "tags": tags or None,
+                "image_url": image_url,
+            },
         )
         if subtypes:
             updated += 1
