@@ -221,6 +221,7 @@ def _parse_search_query(
     result: dict[str, Any] = {
         "name_q": None,
         "tags": [],
+        "oracle_tags": [],
         "generation": None,
         "pokemon_special": None,
         "species_groups": [],
@@ -329,11 +330,16 @@ def _parse_search_query(
                 result["dex_id"] = int(val)
         elif prefix == "stage":
             result["stage"] = stage_aliases.get(val_lower, val)
+        elif prefix == "otag":
+            slug = val_lower.replace("_", "-")
+            if slug:
+                result["oracle_tags"].append(slug)
         else:
             name_parts.append(token)
 
     result["name_q"] = " ".join(name_parts).strip() or None
     result["tags"] = list(dict.fromkeys(result["tags"]))
+    result["oracle_tags"] = list(dict.fromkeys(result["oracle_tags"]))
     result["species_groups"] = list(dict.fromkeys(result["species_groups"]))
     return result
 
@@ -442,6 +448,7 @@ def _card_row(raw: dict[str, Any]) -> dict[str, Any]:
         "attacks": raw.get("attacks") or [],
         "abilities": raw.get("abilities") or [],
         "tcgplayer_product_id": raw.get("tcgplayer_product_id"),
+        "oracle_tags": raw.get("oracle_tags") or [],
     }
     _attach_tcg_urls(row)
     return row
@@ -542,6 +549,19 @@ def pokemon_meta() -> PokemonMetaResponse:
                 """
             )
         ).scalars().all()
+        try:
+            oracle_tag_defs = conn.execute(
+                text(
+                    """
+                    SELECT slug, label
+                    FROM oracle_tag_defs
+                    WHERE active = TRUE
+                    ORDER BY label, slug
+                    """
+                )
+            ).mappings().all()
+        except Exception:
+            oracle_tag_defs = []
         generations = conn.execute(
             text(
                 """
@@ -569,6 +589,7 @@ def pokemon_meta() -> PokemonMetaResponse:
             "categories": list(categories),
             "stages": list(stages),
             "tags": list(tags),
+            "oracle_tags": [dict(r) for r in oracle_tag_defs],
             "generations": [dict(row) for row in generations],
             "pokemon_special": [
                 {"id": "legendary", "name": "Legendary"},
@@ -597,6 +618,7 @@ def search_pokemon_cards(
     type: str | None = Query(None, description="Energy type, e.g. Grass"),
     stage: str | None = Query(None, description="Basic | Stage1 | Stage2"),
     tag: str | None = Query(None, description="Subtype slug, e.g. team-plasma"),
+    otag: str | None = Query(None, description="Oracle tag slug(s), comma-separated, e.g. rain-dance"),
     generation: int | None = Query(None, ge=1, le=9, description="Pokémon generation, e.g. 5"),
     pokemon_special: str | None = Query(
         None,
@@ -627,6 +649,22 @@ def search_pokemon_cards(
         key = f"tag_{idx}"
         filters.append(f":{key} = ANY(c.tags)")
         params[key] = t
+
+    explicit_otags = [t.strip().lower().replace("_", "-") for t in (otag or "").split(",") if t.strip()]
+    all_otags = list(dict.fromkeys(parsed["oracle_tags"] + explicit_otags))
+    for idx, slug in enumerate(all_otags):
+        key = f"otag_{idx}"
+        filters.append(
+            f"""EXISTS (
+                SELECT 1 FROM oracle_tags ot
+                INNER JOIN oracle_tag_defs otd ON otd.slug = ot.tag_slug
+                WHERE ot.oracle_id = c.oracle_id
+                  AND ot.tag_slug = :{key}
+                  AND otd.active = TRUE
+            )"""
+        )
+        params[key] = slug
+
     gen = generation if generation is not None else parsed["generation"]
     special = (pokemon_special or "").strip().lower() or parsed["pokemon_special"]
     if special and special not in ("legendary", "mythical", "notable"):
@@ -768,13 +806,25 @@ def search_pokemon_cards(
     with _engine.connect() as conn:
         total = conn.execute(text(count_sql), params).scalar() or 0
         rows = conn.execute(text(data_sql), params).mappings().all()
+        cards = [_card_row(dict(r)) for r in rows]
+        try:
+            from spelltag_oracle_tags import fetch_oracle_tags_for_oracles
+
+            oids = [c.get("oracle_id") for c in cards if c.get("oracle_id")]
+            by_oid = fetch_oracle_tags_for_oracles(conn, oids)
+            for card in cards:
+                oid = card.get("oracle_id")
+                card["oracle_tags"] = by_oid.get(oid, []) if oid else []
+        except Exception:
+            for card in cards:
+                card["oracle_tags"] = card.get("oracle_tags") or []
 
     return {
         "unique": unique,
         "total": total,
         "limit": limit,
         "offset": offset,
-        "cards": [_card_row(dict(r)) for r in rows],
+        "cards": cards,
     }
 
 
@@ -860,7 +910,20 @@ def get_pokemon_card(card_id: str) -> dict[str, Any]:
             ).mappings().all()
             species_printings = [dict(r) for r in sp_rows]
 
+        try:
+            from spelltag_oracle_tags import fetch_oracle_tags_for_oracles
+
+            oid = row.get("oracle_id")
+            oracle_tags = (
+                fetch_oracle_tags_for_oracles(conn, [str(oid)]).get(str(oid), [])
+                if oid
+                else []
+            )
+        except Exception:
+            oracle_tags = []
+
     card = _card_row(dict(row))
+    card["oracle_tags"] = oracle_tags
     card["release_date"] = row.get("release_date")
     card["series_name"] = row.get("series_name")
     card["description"] = _card_text(dict(row))

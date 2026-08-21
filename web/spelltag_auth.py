@@ -22,6 +22,18 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
 SESSION_SECRET = os.environ.get("SPELLTAG_SESSION_SECRET", "").strip()
 PUBLIC_URL = os.environ.get("SPELLTAG_PUBLIC_URL", "http://localhost:8001").rstrip("/")
 
+
+def _parse_email_list(raw: str) -> frozenset[str]:
+    return frozenset(
+        part.strip().lower()
+        for part in (raw or "").split(",")
+        if part.strip()
+    )
+
+
+ADMIN_EMAILS = _parse_email_list(os.environ.get("SPELLTAG_ADMIN_EMAILS", ""))
+TAGGER_EMAILS = _parse_email_list(os.environ.get("SPELLTAG_TAGGER_EMAILS", ""))
+
 router = APIRouter(tags=["auth"])
 
 _engine: Engine | None = None
@@ -160,6 +172,36 @@ def require_user(request: Request) -> dict[str, Any]:
     return user
 
 
+def is_admin(user: dict[str, Any] | None) -> bool:
+    if not user:
+        return False
+    email = (user.get("email") or "").strip().lower()
+    return bool(email and email in ADMIN_EMAILS)
+
+
+def is_tagger(user: dict[str, Any] | None) -> bool:
+    if not user:
+        return False
+    if is_admin(user):
+        return True
+    email = (user.get("email") or "").strip().lower()
+    return bool(email and email in TAGGER_EMAILS)
+
+
+def require_admin(request: Request) -> dict[str, Any]:
+    user = require_user(request)
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+def require_tagger(request: Request) -> dict[str, Any]:
+    user = require_user(request)
+    if not is_tagger(user):
+        raise HTTPException(status_code=403, detail="Tagger access required")
+    return user
+
+
 @router.get("/auth/google/login")
 async def google_login(request: Request):
     if not _auth_configured():
@@ -214,13 +256,15 @@ async def google_callback(request: Request):
 def auth_me(request: Request):
     user = current_user(request)
     if not user:
-        return {"authenticated": False}
+        return {"authenticated": False, "is_admin": False, "is_tagger": False}
     return {
         "authenticated": True,
         "id": user["id"],
         "email": user.get("email"),
         "name": user.get("name"),
         "picture_url": user.get("picture_url"),
+        "is_admin": is_admin(user),
+        "is_tagger": is_tagger(user),
     }
 
 

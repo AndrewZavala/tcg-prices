@@ -216,6 +216,161 @@
     resetOffsetAndSearch();
   }
 
+  function searchByOtag(slug) {
+    if (!slug) return;
+    qEl.value = `otag:${slug}`;
+    clearAdvancedFilters();
+    modal.close();
+    resetOffsetAndSearch();
+  }
+
+  function oracleTagsBlock(card) {
+    const applied = Array.isArray(card.oracle_tags) ? card.oracle_tags : [];
+    const defs = (catalogFacets.oracle_tags || []).slice();
+    const bySlug = new Map(defs.map((d) => [d.slug, d]));
+    for (const t of applied) {
+      if (t && t.slug && !bySlug.has(t.slug)) bySlug.set(t.slug, t);
+    }
+    const user = window.__spelltagUser;
+    const canTag = !!(user && user.is_tagger);
+    const canAdmin = !!(user && user.is_admin);
+    if (!applied.length && !canTag) return "";
+
+    const chips = applied
+      .map(
+        (t) =>
+          `<button type="button" class="sp-otag" data-otag="${esc(t.slug)}" title="Search otag:${esc(t.slug)}">${esc(
+            t.label || t.slug
+          )}</button>`
+      )
+      .join("");
+
+    let editor = "";
+    if (canTag) {
+      const options = [...bySlug.values()]
+        .sort((a, b) => String(a.label || a.slug).localeCompare(String(b.label || b.slug)))
+        .map((d) => {
+          const on = applied.some((t) => t.slug === d.slug);
+          return `
+            <label class="sp-otag-option">
+              <input type="checkbox" class="sp-otag-check" value="${esc(d.slug)}" ${on ? "checked" : ""} />
+              <span>${esc(d.label || d.slug)}</span>
+            </label>`;
+        })
+        .join("");
+      editor = `
+        <div class="sp-otag-editor" id="otagEditor">
+          <p class="sp-hint">Select oracle tags for this card (all printings share them).</p>
+          <div class="sp-otag-options">${options || '<p class="sp-hint">No tag definitions yet.</p>'}</div>
+          <button type="button" class="sp-otag-save" id="otagSaveBtn">Save tags</button>
+          <span class="sp-otag-status" id="otagStatus" aria-live="polite"></span>
+        </div>`;
+    }
+
+    let adminCreate = "";
+    if (canAdmin) {
+      adminCreate = `
+        <div class="sp-otag-admin" id="otagAdmin">
+          <p class="sp-hint">Create a new oracle tag (admin).</p>
+          <div class="sp-otag-admin-row">
+            <input type="text" id="otagNewSlug" placeholder="slug (rain-dance)" maxlength="64" />
+            <input type="text" id="otagNewLabel" placeholder="Label (Rain Dance)" maxlength="80" />
+            <button type="button" class="sp-otag-save" id="otagCreateBtn">Create</button>
+          </div>
+          <span class="sp-otag-status" id="otagCreateStatus" aria-live="polite"></span>
+        </div>`;
+    }
+
+    return `
+      <div class="sp-otag-block" id="otagBlock">
+        <h3>Oracle tags</h3>
+        <div class="sp-otag-list">${chips || '<span class="sp-hint">No oracle tags yet.</span>'}</div>
+        ${editor}
+        ${adminCreate}
+      </div>`;
+  }
+
+  async function wireOracleTagControls(card) {
+    const block = document.getElementById("otagBlock");
+    if (!block) return;
+
+    block.querySelectorAll(".sp-otag[data-otag]").forEach((el) => {
+      el.addEventListener("click", () => searchByOtag(el.dataset.otag));
+    });
+
+    const saveBtn = document.getElementById("otagSaveBtn");
+    if (saveBtn) {
+      saveBtn.addEventListener("click", async () => {
+        const status = document.getElementById("otagStatus");
+        const selected = [...block.querySelectorAll(".sp-otag-check:checked")].map((el) => el.value);
+        saveBtn.disabled = true;
+        if (status) status.textContent = "Saving…";
+        try {
+          const resp = await fetch(
+            `/api/pokemon/cards/${encodeURIComponent(card.id)}/oracle-tags`,
+            {
+              method: "PUT",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tags: selected }),
+            }
+          );
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            const detail = err.detail;
+            const msg = Array.isArray(detail)
+              ? detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
+              : detail || "Save failed";
+            throw new Error(msg);
+          }
+          const data = await resp.json();
+          card.oracle_tags = data.tags || [];
+          if (status) status.textContent = "Saved.";
+          openCard(card.id);
+        } catch (err) {
+          if (status) status.textContent = err.message || "Save failed";
+        } finally {
+          saveBtn.disabled = false;
+        }
+      });
+    }
+
+    const createBtn = document.getElementById("otagCreateBtn");
+    if (createBtn) {
+      createBtn.addEventListener("click", async () => {
+        const status = document.getElementById("otagCreateStatus");
+        const slug = (document.getElementById("otagNewSlug") || {}).value || "";
+        const label = (document.getElementById("otagNewLabel") || {}).value || "";
+        createBtn.disabled = true;
+        if (status) status.textContent = "Creating…";
+        try {
+          const resp = await fetch("/api/oracle-tags", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ slug, label: label || null }),
+          });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            const detail = err.detail;
+            const msg = Array.isArray(detail)
+              ? detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
+              : detail || "Create failed";
+            throw new Error(msg);
+          }
+          const created = await resp.json();
+          catalogFacets.oracle_tags = [...(catalogFacets.oracle_tags || []), created];
+          if (status) status.textContent = "Created.";
+          openCard(card.id);
+        } catch (err) {
+          if (status) status.textContent = err.message || "Create failed";
+        } finally {
+          createBtn.disabled = false;
+        }
+      });
+    }
+  }
+
   function searchByGeneration(genId) {
     if (!genId) return;
     generationEl.value = String(genId);
@@ -312,6 +467,11 @@
   }
 
   async function openCard(id) {
+    if (window.__spelltagAuthReady) {
+      try {
+        await window.__spelltagAuthReady;
+      } catch (_) { /* ignore */ }
+    }
     const resp = await fetch(`/api/pokemon/cards/${encodeURIComponent(id)}`);
     if (!resp.ok) {
       console.warn("Could not load card", id, resp.status);
@@ -392,6 +552,7 @@
           ${cardTextBlock(card)}
           ${(card.abilities || []).length ? `<div class="sp-block"><h3>Abilities</h3>${card.abilities.map(abilityBlock).join("")}</div>` : ""}
           ${(card.attacks || []).length ? `<div class="sp-block"><h3>Attacks</h3>${card.attacks.map(attackBlock).join("")}</div>` : ""}
+          ${oracleTagsBlock(card)}
           ${related.length > 1 ? `
             <div class="sp-siblings">
               <h3>${esc(relatedTitle)}</h3>
@@ -433,6 +594,7 @@
       });
     });
     wireCollectionControls(card.id);
+    wireOracleTagControls(card);
     modal.showModal();
   }
 

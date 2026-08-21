@@ -291,6 +291,111 @@
   color: var(--sp-pink-soft);
 }
 
+.st-body .sp-account-menu-item.is-placeholder,
+.st-body .sp-account-menu-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.st-body .sp-account-menu-item.is-placeholder:hover {
+  background: transparent;
+  color: var(--sp-text);
+}
+
+.st-body .sp-otag-block {
+  margin: 1rem 0 1.15rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(200, 200, 210, 0.12);
+}
+
+.st-body .sp-otag-block h3 {
+  margin: 0 0 0.55rem;
+  font-size: 0.95rem;
+}
+
+.st-body .sp-otag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.65rem;
+}
+
+.st-body .sp-otag {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--sp-pink-soft);
+  background: rgba(196, 168, 232, 0.12);
+  border: 1px solid rgba(196, 168, 232, 0.4);
+  border-radius: 999px;
+  padding: 0.28rem 0.7rem;
+  cursor: pointer;
+}
+
+.st-body .sp-otag:hover {
+  background: rgba(196, 168, 232, 0.22);
+}
+
+.st-body .sp-otag-editor,
+.st-body .sp-otag-admin {
+  margin-top: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(200, 200, 210, 0.14);
+  border-radius: 10px;
+  background: rgba(12, 12, 16, 0.45);
+}
+
+.st-body .sp-otag-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.85rem;
+  margin: 0.45rem 0 0.65rem;
+}
+
+.st-body .sp-otag-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.st-body .sp-otag-save {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--sp-text);
+  background: rgba(196, 168, 232, 0.16);
+  border: 1px solid rgba(196, 168, 232, 0.45);
+  border-radius: 8px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+.st-body .sp-otag-status {
+  margin-left: 0.55rem;
+  font-size: 0.82rem;
+  color: var(--sp-muted);
+}
+
+.st-body .sp-otag-admin-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.45rem 0 0.35rem;
+}
+
+.st-body .sp-otag-admin-row input {
+  flex: 1 1 8rem;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--sp-text);
+  background: rgba(12, 12, 14, 0.85);
+  border: 1px solid rgba(200, 200, 210, 0.25);
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+}
+
 .st-body .sp-collect-bar {
   display: flex;
   flex-wrap: wrap;
