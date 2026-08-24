@@ -183,7 +183,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
 ### Self-hosted card images
 
 Card art is mirrored onto the VPS (`card_images` Docker volume) and served at
-`https://spelltag.com/media/cards/{id}/low.webp` (grid) and `.../high.webp` (detail).
+`https://spelltag.com/media/cards/{id}/low.webp` (grid, ~512px) and `.../high.webp` (detail).
 Remote TCGdex / pokemontcg URLs stay in `pokemon_cards.image_url` for re-download only.
 
 After deploy (rebuild pipeline image for Pillow + new scripts):
@@ -194,7 +194,7 @@ git pull --ff-only origin spell-tag
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build star-piece caddy
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual build star-piece-pipeline
 
-# Full mirror (~19k cards, ~2 GB, polite delay — run in screen/tmux)
+# Full mirror (~19k cards, polite delay — run in screen/tmux)
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
   python pipeline/download_pokemon_images.py
 
@@ -203,8 +203,15 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
   python pipeline/download_pokemon_images.py --set xy1 --limit 20
 ```
 
+Upgrade existing thumbs to 512px grid (local resize from `high.webp`, no CDN traffic — a few minutes):
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
+  python pipeline/download_pokemon_images.py --regen-grid
+```
+
 Confirm in DevTools Network that grid images are same-origin `/media/cards/...` (not `assets.tcgdex.net`).
-Watch disk: `df -h` (expect ~2 GB growth).
+Watch disk: `df -h`.
 
 ### Google sign-in
 

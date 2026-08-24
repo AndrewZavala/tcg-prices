@@ -2,8 +2,8 @@
 """Download card art into local CARD_IMAGE_ROOT for first-party serving.
 
 Layout:
-  {CARD_IMAGE_ROOT}/cards/{card_id}/low.webp
-  {CARD_IMAGE_ROOT}/cards/{card_id}/high.webp
+  {CARD_IMAGE_ROOT}/cards/{card_id}/low.webp   — ~512px wide (search grid)
+  {CARD_IMAGE_ROOT}/cards/{card_id}/high.webp  — full art (modal)
 
 Public URLs (via Caddy or FastAPI):
   /media/cards/{card_id}/low.webp
@@ -14,6 +14,7 @@ Remote image_url in Postgres stays as provenance; image_local marks readiness.
 Examples:
   python download_pokemon_images.py
   python download_pokemon_images.py --set xy1 --limit 50
+  python download_pokemon_images.py --regen-grid
   python download_pokemon_images.py --force --dry-run
 """
 
@@ -41,6 +42,9 @@ except ImportError:  # pragma: no cover
 USER_AGENT = "SpellTagImageMirror/1.0"
 REQUEST_DELAY_SEC = float(os.environ.get("CARD_IMAGE_DELAY_SEC", "0.08"))
 CARD_IMAGE_ROOT = Path(os.environ.get("CARD_IMAGE_ROOT", "/data/card-images"))
+# Grid tiles zoom up to ~260 CSS px; 512 covers 2× Retina without full-art weight.
+GRID_MAX_WIDTH = int(os.environ.get("CARD_IMAGE_GRID_WIDTH", "512"))
+GRID_WEBP_QUALITY = int(os.environ.get("CARD_IMAGE_GRID_QUALITY", "82"))
 
 
 def _session() -> requests.Session:
@@ -96,6 +100,22 @@ def _to_webp_bytes(content: bytes, content_type: str | None) -> bytes:
     return buf.getvalue()
 
 
+def _grid_webp_from_high(high_bytes: bytes) -> bytes:
+    """Resize full art to GRID_MAX_WIDTH for search-grid serving."""
+    if Image is None:
+        return high_bytes
+    img = Image.open(io.BytesIO(high_bytes))
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
+    w, h = img.size
+    if w > GRID_MAX_WIDTH:
+        new_h = max(1, round(h * (GRID_MAX_WIDTH / w)))
+        img = img.resize((GRID_MAX_WIDTH, new_h), Image.Resampling.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="WEBP", quality=GRID_WEBP_QUALITY, method=4)
+    return buf.getvalue()
+
+
 def _fetch_webp(session: requests.Session, urls: list[str]) -> bytes | None:
     for url in urls:
         try:
@@ -118,6 +138,21 @@ def files_ready(card_id: str) -> bool:
     return (d / "low.webp").is_file() and (d / "high.webp").is_file()
 
 
+def write_grid_from_high(card_id: str) -> bool:
+    """Rewrite low.webp from existing high.webp. Returns True if written."""
+    high_path = card_dir(card_id) / "high.webp"
+    if not high_path.is_file():
+        return False
+    high_bytes = high_path.read_bytes()
+    if not high_bytes:
+        return False
+    low_bytes = _grid_webp_from_high(high_bytes)
+    dest = card_dir(card_id)
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "low.webp").write_bytes(low_bytes)
+    return True
+
+
 def download_one(
     session: requests.Session,
     *,
@@ -128,24 +163,76 @@ def download_one(
 ) -> bool:
     targets = _remote_candidates(image_url, card_id, local_id)
     if dry_run:
-        print(f"  would fetch {card_id} low={targets['low'][:2]} high={targets['high'][:2]}")
+        print(f"  would fetch {card_id} high={targets['high'][:2]} → grid {GRID_MAX_WIDTH}px")
         return True
 
-    low = _fetch_webp(session, targets["low"])
-    time.sleep(REQUEST_DELAY_SEC)
+    # Prefer full art; derive grid size locally so thumbnails aren't soft on Retina.
     high = _fetch_webp(session, targets["high"])
-    if not low and not high:
-        return False
-    if low and not high:
-        high = low
-    if high and not low:
-        low = high
-    assert low and high
+    time.sleep(REQUEST_DELAY_SEC)
+    if not high:
+        # Fallback: remote low only (rare) — still write both sizes.
+        low_remote = _fetch_webp(session, targets["low"])
+        if not low_remote:
+            return False
+        high = low_remote
+        low = low_remote
+    else:
+        low = _grid_webp_from_high(high)
+
     dest = card_dir(card_id)
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "low.webp").write_bytes(low)
     (dest / "high.webp").write_bytes(high)
     return True
+
+
+def regen_grid_all(*, set_id: str | None, limit: int, dry_run: bool) -> int:
+    """Rewrite low.webp from on-disk high.webp for cards already mirrored."""
+    cards_root = CARD_IMAGE_ROOT / "cards"
+    if not cards_root.is_dir():
+        print(f"No cards directory at {cards_root}", file=sys.stderr)
+        return 1
+
+    engine = create_engine(DATABASE_URL, future=True)
+    where = ["COALESCE(image_local, FALSE) = TRUE"]
+    params: dict[str, Any] = {}
+    if set_id:
+        where.append("set_id = :set_id")
+        params["set_id"] = set_id
+    sql = f"""
+        SELECT id FROM pokemon_cards
+        WHERE {" AND ".join(where)}
+        ORDER BY set_id, id
+    """
+    if limit and limit > 0:
+        sql += " LIMIT :limit"
+        params["limit"] = limit
+
+    ok = miss = 0
+    with engine.connect() as conn:
+        rows = conn.execute(text(sql), params).mappings().all()
+    print(
+        f"Regen grid ({GRID_MAX_WIDTH}px) for {len(rows)} card(s); root={CARD_IMAGE_ROOT}"
+    )
+    for row in rows:
+        card_id = str(row["id"])
+        if dry_run:
+            high = card_dir(card_id) / "high.webp"
+            if high.is_file():
+                ok += 1
+            else:
+                miss += 1
+                print(f"  MISS {card_id} (no high.webp)")
+            continue
+        if write_grid_from_high(card_id):
+            ok += 1
+            if ok % 500 == 0:
+                print(f"  … {ok} rewritten / {miss} miss")
+        else:
+            miss += 1
+            print(f"  MISS {card_id} (no high.webp)")
+    print(f"Done — regen={ok} miss={miss}")
+    return 0 if ok > 0 or miss == 0 else 1
 
 
 def main() -> int:
@@ -159,6 +246,11 @@ def main() -> int:
         action="store_true",
         help="Only mark image_local when files already exist on disk",
     )
+    parser.add_argument(
+        "--regen-grid",
+        action="store_true",
+        help=f"Rewrite low.webp from high.webp at {GRID_MAX_WIDTH}px (no download)",
+    )
     args = parser.parse_args()
 
     if Image is None:
@@ -167,6 +259,11 @@ def main() -> int:
 
     CARD_IMAGE_ROOT.mkdir(parents=True, exist_ok=True)
     (CARD_IMAGE_ROOT / "cards").mkdir(parents=True, exist_ok=True)
+
+    if args.regen_grid:
+        return regen_grid_all(
+            set_id=args.set_id, limit=args.limit, dry_run=args.dry_run
+        )
 
     engine = create_engine(DATABASE_URL, future=True)
     where = ["TRUE"]

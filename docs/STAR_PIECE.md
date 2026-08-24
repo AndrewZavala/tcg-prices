@@ -51,6 +51,16 @@ docker compose --profile manual run --rm star-piece-pipeline \
 Files land in Docker volume `card_images` (`CARD_IMAGE_ROOT=/data/card-images`).
 API returns `/media/cards/{id}/low.webp` once `image_local` is true.
 
+- **`low.webp`** — ~512px wide (search grid; derived from high so Retina zoom stays sharp)
+- **`high.webp`** — full art (card modal)
+
+Rewrite grid tiles from existing full art (no re-download):
+
+```bash
+docker compose --profile manual run --rm star-piece-pipeline \
+  python pipeline/download_pokemon_images.py --regen-grid
+```
+
 1. DNS at your registrar (Squarespace or wherever): **A/AAAA** for `spelltag.com` (and optional `www`) → your VPS public IP. DNS-only is fine.
 2. On the server `.env` (see `deploy/.env.production.example`):
    - `SPELLTAG_DOMAIN=spelltag.com` (or `spelltag.com, www.spelltag.com` if you add www in Caddy)
