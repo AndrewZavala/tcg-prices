@@ -341,6 +341,16 @@
   background: rgba(196, 168, 232, 0.22);
 }
 
+.st-body .sp-artag {
+  color: #9ee7f5;
+  background: rgba(103, 232, 249, 0.1);
+  border-color: rgba(103, 232, 249, 0.4);
+}
+
+.st-body .sp-artag:hover {
+  background: rgba(103, 232, 249, 0.2);
+}
+
 .st-body .sp-otag-editor,
 .st-body .sp-otag-admin {
   margin-top: 0.65rem;

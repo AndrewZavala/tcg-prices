@@ -264,6 +264,7 @@ def _parse_search_query(
         "name_q": None,
         "tags": [],
         "oracle_tags": [],
+        "art_tags": [],
         "generation": None,
         "pokemon_special": None,
         "species_groups": [],
@@ -376,12 +377,17 @@ def _parse_search_query(
             slug = val_lower.replace("_", "-")
             if slug:
                 result["oracle_tags"].append(slug)
+        elif prefix == "art":
+            slug = val_lower.replace("_", "-")
+            if slug:
+                result["art_tags"].append(slug)
         else:
             name_parts.append(token)
 
     result["name_q"] = " ".join(name_parts).strip() or None
     result["tags"] = list(dict.fromkeys(result["tags"]))
     result["oracle_tags"] = list(dict.fromkeys(result["oracle_tags"]))
+    result["art_tags"] = list(dict.fromkeys(result["art_tags"]))
     result["species_groups"] = list(dict.fromkeys(result["species_groups"]))
     return result
 
@@ -619,6 +625,19 @@ def pokemon_meta(response: Response) -> PokemonMetaResponse:
             ).mappings().all()
         except Exception:
             oracle_tag_defs = []
+        try:
+            art_tag_defs = conn.execute(
+                text(
+                    """
+                    SELECT slug, label
+                    FROM art_tag_defs
+                    WHERE active = TRUE
+                    ORDER BY label, slug
+                    """
+                )
+            ).mappings().all()
+        except Exception:
+            art_tag_defs = []
         generations = conn.execute(
             text(
                 """
@@ -647,6 +666,7 @@ def pokemon_meta(response: Response) -> PokemonMetaResponse:
             "stages": list(stages),
             "tags": list(tags),
             "oracle_tags": [dict(r) for r in oracle_tag_defs],
+            "art_tags": [dict(r) for r in art_tag_defs],
             "generations": [dict(row) for row in generations],
             "pokemon_special": [
                 {"id": "legendary", "name": "Legendary"},
@@ -676,6 +696,7 @@ def search_pokemon_cards(
     stage: str | None = Query(None, description="Basic | Stage1 | Stage2"),
     tag: str | None = Query(None, description="Subtype slug, e.g. team-plasma"),
     otag: str | None = Query(None, description="Oracle tag slug(s), comma-separated, e.g. rain-dance"),
+    art: str | None = Query(None, description="Art tag slug(s), comma-separated, e.g. night"),
     generation: int | None = Query(None, ge=1, le=9, description="Pokémon generation, e.g. 5"),
     pokemon_special: str | None = Query(
         None,
@@ -718,6 +739,21 @@ def search_pokemon_cards(
                 WHERE ot.oracle_id = c.oracle_id
                   AND ot.tag_slug = :{key}
                   AND otd.active = TRUE
+            )"""
+        )
+        params[key] = slug
+
+    explicit_artags = [t.strip().lower().replace("_", "-") for t in (art or "").split(",") if t.strip()]
+    all_artags = list(dict.fromkeys(parsed["art_tags"] + explicit_artags))
+    for idx, slug in enumerate(all_artags):
+        key = f"artag_{idx}"
+        filters.append(
+            f"""EXISTS (
+                SELECT 1 FROM art_tags at
+                INNER JOIN art_tag_defs atd ON atd.slug = at.tag_slug
+                WHERE at.illustration_id = c.illustration_id
+                  AND at.tag_slug = :{key}
+                  AND atd.active = TRUE
             )"""
         )
         params[key] = slug
@@ -962,8 +998,21 @@ def get_pokemon_card(card_id: str) -> dict[str, Any]:
         except Exception:
             oracle_tags = []
 
+        try:
+            from spelltag_art_tags import fetch_art_tags_for_illustrations
+
+            iid = row.get("illustration_id")
+            art_tags = (
+                fetch_art_tags_for_illustrations(conn, [str(iid)]).get(str(iid), [])
+                if iid
+                else []
+            )
+        except Exception:
+            art_tags = []
+
     card = _card_row(dict(row))
     card["oracle_tags"] = oracle_tags
+    card["art_tags"] = art_tags
     card["release_date"] = row.get("release_date")
     card["series_name"] = row.get("series_name")
     card["description"] = _card_text(dict(row))
