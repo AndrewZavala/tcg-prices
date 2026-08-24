@@ -685,7 +685,7 @@
     modalBody.innerHTML = `
       <div class="sp-detail">
         <div class="sp-detail-art">
-          ${cardImg(card.image_url, card.name, "sp-detail-img")}
+          ${cardImg(card.image_url_high || card.image_url, card.name, "sp-detail-img")}
         </div>
         <div class="sp-detail-body">
           <h2>

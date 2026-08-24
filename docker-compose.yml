@@ -83,9 +83,11 @@ services:
     volumes:
       - ./web:/app/web
       - ./migrations:/app/migrations
+      - card_images:/data/card-images
     environment:
       DATABASE_URL: postgresql://${STAR_PIECE_PG_USER:-starpiece}:${STAR_PIECE_PG_PASSWORD:-starpiece_secret}@star-piece-db:5432/${STAR_PIECE_PG_DB:-star_piece}
       TCG_ROOT: /app
+      CARD_IMAGE_ROOT: /data/card-images
       CORS_ORIGINS: ${STAR_PIECE_CORS_ORIGINS:-http://localhost:8001,http://127.0.0.1:8001}
       TCGPLAYER_PARTNER_LINK: ${TCGPLAYER_PARTNER_LINK:-}
       TCGPLAYER_PARTNER_ID: ${TCGPLAYER_PARTNER_ID:-}
@@ -121,10 +123,12 @@ services:
       DATABASE_URL: postgresql://${STAR_PIECE_PG_USER:-starpiece}:${STAR_PIECE_PG_PASSWORD:-starpiece_secret}@star-piece-db:5432/${STAR_PIECE_PG_DB:-star_piece}
       TZ: ${TZ:-America/New_York}
       POKEMONTCG_API_KEY: ${POKEMONTCG_API_KEY:-}
+      CARD_IMAGE_ROOT: /data/card-images
     volumes:
       - ./pipeline:/app/pipeline
       - ./migrations:/app/migrations
       - ./helper:/app/helper
+      - card_images:/data/card-images
     depends_on:
       star-piece-db:
         condition: service_healthy
@@ -155,3 +159,4 @@ services:
 volumes:
   pgdata:
   star_piece_pgdata:
+  card_images:

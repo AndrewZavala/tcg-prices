@@ -31,9 +31,9 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - card_images:/srv/card-images:ro
     depends_on:
-      star-piece:
-        condition: service_started
+      - star-piece
 
 volumes:
   caddy_data:

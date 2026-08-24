@@ -180,6 +180,32 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
   python pipeline/refresh_tcgdex.py --series sv --enrich
 ```
 
+### Self-hosted card images
+
+Card art is mirrored onto the VPS (`card_images` Docker volume) and served at
+`https://spelltag.com/media/cards/{id}/low.webp` (grid) and `.../high.webp` (detail).
+Remote TCGdex / pokemontcg URLs stay in `pokemon_cards.image_url` for re-download only.
+
+After deploy (rebuild pipeline image for Pillow + new scripts):
+
+```bash
+cd /opt/spelltag
+git pull --ff-only origin spell-tag
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build star-piece caddy
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual build star-piece-pipeline
+
+# Full mirror (~19k cards, ~2 GB, polite delay — run in screen/tmux)
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
+  python pipeline/download_pokemon_images.py
+
+# Or smoke-test one set first:
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
+  python pipeline/download_pokemon_images.py --set xy1 --limit 20
+```
+
+Confirm in DevTools Network that grid images are same-origin `/media/cards/...` (not `assets.tcgdex.net`).
+Watch disk: `df -h` (expect ~2 GB growth).
+
 ### Google sign-in
 
 1. In [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials**, create an **OAuth 2.0 Client ID** (application type: Web application).

@@ -201,17 +201,56 @@ def _pokemontcg_image_fallback(card_id: str | None, local_id: str | None = None)
     return f"https://images.pokemontcg.io/{api_set}/{num}_hires.png"
 
 
+def _remote_image_url(
+    base: str | None,
+    *,
+    card_id: str | None = None,
+    local_id: str | None = None,
+    size: str = "high",
+) -> str | None:
+    """Build a remote CDN URL (ingest provenance / mid-backfill fallback)."""
+    if base:
+        if base.endswith((".webp", ".png", ".jpg", ".jpeg")):
+            return base
+        suffix = "low.webp" if size == "low" else "high.webp"
+        return f"{base}/{suffix}"
+    return _pokemontcg_image_fallback(card_id, local_id)
+
+
+def _local_image_urls(card_id: str) -> tuple[str, str]:
+    return (
+        f"/media/cards/{card_id}/low.webp",
+        f"/media/cards/{card_id}/high.webp",
+    )
+
+
 def _image_url(
     base: str | None,
     *,
     card_id: str | None = None,
     local_id: str | None = None,
+    image_local: bool = False,
+    size: str = "low",
 ) -> str | None:
-    if base:
-        if base.endswith((".webp", ".png", ".jpg", ".jpeg")):
-            return base
-        return f"{base}/high.webp"
-    return _pokemontcg_image_fallback(card_id, local_id)
+    """Public image URL: local /media when mirrored, else remote CDN."""
+    if image_local and card_id:
+        low, high = _local_image_urls(str(card_id))
+        return low if size == "low" else high
+    return _remote_image_url(base, card_id=card_id, local_id=local_id, size=size)
+
+
+def _attach_card_images(row: dict[str, Any], raw: dict[str, Any]) -> None:
+    local = bool(raw.get("image_local"))
+    card_id = raw.get("id")
+    base = raw.get("image_url")
+    local_id = raw.get("local_id")
+    row["image_local"] = local
+    row["image_url"] = _image_url(
+        base, card_id=card_id, local_id=local_id, image_local=local, size="low"
+    )
+    row["image_url_high"] = _image_url(
+        base, card_id=card_id, local_id=local_id, image_local=local, size="high"
+    )
 
 
 def _parse_search_query(
@@ -435,11 +474,6 @@ def _card_row(raw: dict[str, Any]) -> dict[str, Any]:
         "regulation_mark": raw["regulation_mark"],
         "legal_standard": raw["legal_standard"],
         "legal_expanded": raw["legal_expanded"],
-        "image_url": _image_url(
-            raw.get("image_url"),
-            card_id=raw.get("id"),
-            local_id=raw.get("local_id"),
-        ),
         "oracle_id": raw.get("oracle_id"),
         "illustration_id": raw.get("illustration_id"),
         "is_oracle_representative": bool(raw.get("is_oracle_representative")),
@@ -450,6 +484,7 @@ def _card_row(raw: dict[str, Any]) -> dict[str, Any]:
         "tcgplayer_product_id": raw.get("tcgplayer_product_id"),
         "oracle_tags": raw.get("oracle_tags") or [],
     }
+    _attach_card_images(row, raw)
     _attach_tcg_urls(row)
     return row
 
@@ -789,7 +824,7 @@ def search_pokemon_cards(
         c.id, c.name, c.set_id, s.name AS set_name, c.local_id, c.category,
         c.rarity, c.hp, c.types, c.subtypes, c.tags, c.stage, c.evolve_from, c.dex_ids,
         c.illustrator, c.retreat, c.regulation_mark, c.legal_standard,
-        c.legal_expanded, c.image_url, c.oracle_id, c.illustration_id,
+        c.legal_expanded, c.image_url, c.image_local, c.oracle_id, c.illustration_id,
         c.is_oracle_representative, c.attacks, c.abilities, c.tcgplayer_product_id,
         COALESCE(o.printing_count, 1) AS printing_count,
         COALESCE(o.art_variant_count, 1) AS art_variant_count
@@ -873,7 +908,7 @@ def get_pokemon_card(card_id: str) -> dict[str, Any]:
                     """
                     SELECT
                         c.id, c.name, c.set_id, s.name AS set_name, c.local_id,
-                        c.rarity, c.illustrator, c.image_url, c.retreat,
+                        c.rarity, c.illustrator, c.image_url, c.image_local, c.retreat,
                         c.is_oracle_representative, c.illustration_id,
                         c.tcgplayer_product_id,
                         s.release_date::text AS release_date
@@ -895,7 +930,7 @@ def get_pokemon_card(card_id: str) -> dict[str, Any]:
                     """
                     SELECT
                         c.id, c.name, c.set_id, s.name AS set_name, c.local_id,
-                        c.rarity, c.illustrator, c.image_url, c.retreat,
+                        c.rarity, c.illustrator, c.image_url, c.image_local, c.retreat,
                         c.is_oracle_representative, c.illustration_id,
                         c.tcgplayer_product_id, c.oracle_id,
                         s.release_date::text AS release_date
@@ -963,21 +998,33 @@ def get_pokemon_card(card_id: str) -> dict[str, Any]:
     )
 
     def _related_row(s: dict[str, Any]) -> dict[str, Any]:
-        return {
-            **s,
-            "image_url": _image_url(
-                s.get("image_url"),
-                card_id=s.get("id"),
-                local_id=s.get("local_id"),
-            ),
-            "tcg_url": pokemon_buy_url(
+        out = {**s}
+        local = bool(s.get("image_local"))
+        out["image_local"] = local
+        out["image_url"] = _image_url(
+            s.get("image_url"),
+            card_id=s.get("id"),
+            local_id=s.get("local_id"),
+            image_local=local,
+            size="low",
+        )
+        out["image_url_high"] = _image_url(
+            s.get("image_url"),
+            card_id=s.get("id"),
+            local_id=s.get("local_id"),
+            image_local=local,
+            size="high",
+        )
+        out["tcg_url"] = (
+            pokemon_buy_url(
                 product_id=s.get("tcgplayer_product_id"),
                 name=s.get("name") or card.get("name") or "",
                 set_name=s.get("set_name") or "",
                 local_id=str(s.get("local_id") or ""),
             )
-            or None,
-        }
+            or None
+        )
+        return out
 
     card["sibling_printings"] = [_related_row(s) for s in siblings]
     card["species_printings"] = [_related_row(s) for s in species_printings]

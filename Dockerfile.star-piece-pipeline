@@ -14,6 +14,9 @@ COPY pipeline/config.py \
      pipeline/build_pokemon_oracle.py \
      pipeline/backfill_pokemon_tcgplayer.py \
      pipeline/backfill_pokemon_images.py \
+     pipeline/download_pokemon_images.py \
+     pipeline/pokemon_image_urls.py \
+     pipeline/pokemon_card_corrections.py \
      ./pipeline/
 
 COPY migrations/025_pokemon_catalog.sql \
@@ -22,6 +25,7 @@ COPY migrations/025_pokemon_catalog.sql \
      migrations/028_pokemon_species.sql \
      migrations/029_pokemon_tcgplayer.sql \
      migrations/030_pokemon_species_groups.sql \
+     migrations/034_card_local_images.sql \
      ./migrations/
 
 COPY helper/pokemon_species.json ./helper/pokemon_species.json

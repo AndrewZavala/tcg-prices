@@ -6,6 +6,7 @@ Does not mount inventory, opportunities, collection, or other Manifest Bread rou
 
 from __future__ import annotations
 
+import mimetypes
 import os
 import secrets
 
@@ -34,6 +35,9 @@ CORS_ORIGINS = os.environ.get(
 ).split(",")
 SESSION_SECRET = os.environ.get("SPELLTAG_SESSION_SECRET", "").strip() or secrets.token_hex(32)
 
+# Ensure .webp is served with a browser-friendly type (Python slim may omit it).
+mimetypes.add_type("image/webp", ".webp")
+
 app = FastAPI(
     title="Spell Tag",
     version="0.1.0",
@@ -53,6 +57,7 @@ POKEMON_MIGRATIONS = (
     "031_spelltag_users.sql",
     "032_spelltag_collections.sql",
     "033_oracle_tags.sql",
+    "034_card_local_images.sql",
 )
 
 
@@ -152,3 +157,14 @@ def health():
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Local card art (same volume Caddy serves at /media in production).
+CARD_IMAGE_ROOT = os.environ.get("CARD_IMAGE_ROOT", "/data/card-images").strip()
+_media_cards = os.path.join(CARD_IMAGE_ROOT, "cards")
+if os.path.isdir(_media_cards) or os.path.isdir(CARD_IMAGE_ROOT):
+    os.makedirs(_media_cards, exist_ok=True)
+    app.mount(
+        "/media/cards",
+        StaticFiles(directory=_media_cards),
+        name="card-media",
+    )

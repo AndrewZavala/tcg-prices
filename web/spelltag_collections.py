@@ -157,7 +157,7 @@ def get_collection(request: Request, collection_id: str):
                 """
                 SELECT
                     pc.id, pc.name, pc.set_id, s.name AS set_name, pc.local_id,
-                    pc.image_url, pc.rarity, pc.illustrator,
+                    pc.image_url, pc.image_local, pc.rarity, pc.illustrator,
                     i.created_at::text AS saved_at
                 FROM collection_items i
                 INNER JOIN pokemon_cards pc ON pc.id = i.card_id
@@ -171,10 +171,22 @@ def get_collection(request: Request, collection_id: str):
     out = []
     for c in cards:
         row = dict(c)
+        remote_base = row.get("image_url")
+        local = bool(row.get("image_local"))
+        row["image_local"] = local
         row["image_url"] = _image_url(
-            row.get("image_url"),
+            remote_base,
             card_id=row.get("id"),
             local_id=row.get("local_id"),
+            image_local=local,
+            size="low",
+        )
+        row["image_url_high"] = _image_url(
+            remote_base,
+            card_id=row.get("id"),
+            local_id=row.get("local_id"),
+            image_local=local,
+            size="high",
         )
         out.append(row)
     return {
