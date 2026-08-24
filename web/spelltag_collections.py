@@ -144,6 +144,32 @@ def create_collection(request: Request, body: CreateCollectionBody):
     return {"collection": dict(row), "item_count": 0}
 
 
+@router.get("/api/me/collections/{collection_id}/add-context")
+def collection_add_context(request: Request, collection_id: str):
+    """Lightweight context for bulk-add search UI (name + existing card ids)."""
+    user = require_user(request)
+    assert _engine is not None
+    with _engine.connect() as conn:
+        coll = _owned_collection(conn, user["id"], collection_id)
+        if not coll:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        card_ids = conn.execute(
+            text(
+                """
+                SELECT card_id
+                FROM collection_items
+                WHERE collection_id = CAST(:cid AS uuid)
+                """
+            ),
+            {"cid": collection_id},
+        ).scalars().all()
+    return {
+        "collection": coll,
+        "card_ids": list(card_ids),
+        "item_count": len(card_ids),
+    }
+
+
 @router.get("/api/me/collections/{collection_id}")
 def get_collection(request: Request, collection_id: str):
     user = require_user(request)
@@ -207,7 +233,7 @@ def add_item(request: Request, collection_id: str, body: AddItemBody):
             raise HTTPException(status_code=404, detail="Collection not found")
         if not _card_exists(conn, card_id):
             raise HTTPException(status_code=404, detail="Card not found")
-        conn.execute(
+        result = conn.execute(
             text(
                 """
                 INSERT INTO collection_items (collection_id, card_id)
@@ -217,16 +243,23 @@ def add_item(request: Request, collection_id: str, body: AddItemBody):
             ),
             {"cid": collection_id, "card_id": card_id},
         )
-        conn.execute(
-            text(
-                """
-                UPDATE collections SET updated_at = NOW()
-                WHERE id = CAST(:cid AS uuid)
-                """
-            ),
-            {"cid": collection_id},
-        )
-    return {"ok": True, "collection_id": collection_id, "card_id": card_id}
+        added = bool(result.rowcount)
+        if added:
+            conn.execute(
+                text(
+                    """
+                    UPDATE collections SET updated_at = NOW()
+                    WHERE id = CAST(:cid AS uuid)
+                    """
+                ),
+                {"cid": collection_id},
+            )
+    return {
+        "ok": True,
+        "added": added,
+        "collection_id": collection_id,
+        "card_id": card_id,
+    }
 
 
 @router.delete("/api/me/collections/{collection_id}/items/{card_id:path}")

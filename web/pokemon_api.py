@@ -7,9 +7,11 @@ import re
 from typing import Any, Literal
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import text
+
+META_CACHE_CONTROL = "public, max-age=3600"
 
 from tcgplayer_links import pokemon_buy_url
 
@@ -453,6 +455,24 @@ def _attach_tcg_urls(card: dict[str, Any]) -> None:
     ) or None
 
 
+def _grid_card_row(raw: dict[str, Any]) -> dict[str, Any]:
+    """Minimal fields for search grid (detail modal loads /cards/{id})."""
+    card_id = raw.get("id")
+    return {
+        "id": raw["id"],
+        "name": raw["name"],
+        "set_name": raw["set_name"],
+        "local_id": raw["local_id"],
+        "image_url": _image_url(
+            raw.get("image_url"),
+            card_id=card_id,
+            local_id=raw.get("local_id"),
+            image_local=bool(raw.get("image_local")),
+            size="low",
+        ),
+    }
+
+
 def _card_row(raw: dict[str, Any]) -> dict[str, Any]:
     row = {
         "id": raw["id"],
@@ -490,7 +510,8 @@ def _card_row(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/api/pokemon/meta", response_model=PokemonMetaResponse)
-def pokemon_meta() -> PokemonMetaResponse:
+def pokemon_meta(response: Response) -> PokemonMetaResponse:
+    response.headers["Cache-Control"] = META_CACHE_CONTROL
     assert _engine is not None
     with _engine.connect() as conn:
         sets = conn.execute(
@@ -821,13 +842,7 @@ def search_pokemon_cards(
         """
 
     select_cols = """
-        c.id, c.name, c.set_id, s.name AS set_name, c.local_id, c.category,
-        c.rarity, c.hp, c.types, c.subtypes, c.tags, c.stage, c.evolve_from, c.dex_ids,
-        c.illustrator, c.retreat, c.regulation_mark, c.legal_standard,
-        c.legal_expanded, c.image_url, c.image_local, c.oracle_id, c.illustration_id,
-        c.is_oracle_representative, c.attacks, c.abilities, c.tcgplayer_product_id,
-        COALESCE(o.printing_count, 1) AS printing_count,
-        COALESCE(o.art_variant_count, 1) AS art_variant_count
+        c.id, c.name, s.name AS set_name, c.local_id, c.image_url, c.image_local
     """
 
     count_sql = f"SELECT COUNT(*) {core_from}"
@@ -841,18 +856,7 @@ def search_pokemon_cards(
     with _engine.connect() as conn:
         total = conn.execute(text(count_sql), params).scalar() or 0
         rows = conn.execute(text(data_sql), params).mappings().all()
-        cards = [_card_row(dict(r)) for r in rows]
-        try:
-            from spelltag_oracle_tags import fetch_oracle_tags_for_oracles
-
-            oids = [c.get("oracle_id") for c in cards if c.get("oracle_id")]
-            by_oid = fetch_oracle_tags_for_oracles(conn, oids)
-            for card in cards:
-                oid = card.get("oracle_id")
-                card["oracle_tags"] = by_oid.get(oid, []) if oid else []
-        except Exception:
-            for card in cards:
-                card["oracle_tags"] = card.get("oracle_tags") or []
+        cards = [_grid_card_row(dict(r)) for r in rows]
 
     return {
         "unique": unique,

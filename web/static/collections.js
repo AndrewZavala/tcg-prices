@@ -121,6 +121,9 @@
             ? "Card arts you’ve hearted from Search."
             : "Cards you’ve saved to this list."
         } · ${cards.length} saved</p>
+        <p class="sp-collections-actions">
+          <a class="sp-add-cards-btn" href="/collections/${esc(id)}/add">+ Add cards</a>
+        </p>
       </div>
       ${
         cards.length
@@ -129,8 +132,8 @@
             </div>`
           : `<p class="sp-empty">${
               isFav
-                ? "No favorites yet. Open a card on Search and tap ♡ Favorite."
-                : "No cards yet. Open a card on Search and choose Add to collection."
+                ? "No favorites yet. Open a card on Search and tap ♡ Favorite, or use Add cards."
+                : "No cards yet. Use Add cards to search and tap printings to save them here."
             }</p>`
       }`;
 

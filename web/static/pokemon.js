@@ -38,7 +38,21 @@
   const CARD_ZOOM_STEP = 20;
   const CARD_ZOOM_DEFAULT = 130;
   const CARD_ZOOM_MOBILE_DEFAULT = 100;
+  const META_CACHE_KEY = "sp-pokemon-meta-v1";
+  const META_CACHE_TTL_MS = 60 * 60 * 1000;
   let cardZoomPx = CARD_ZOOM_DEFAULT;
+
+  function addCollectionIdFromPath() {
+    const m = location.pathname.match(/^\/collections\/([^/]+)\/add\/?$/);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  const addCollectionId = addCollectionIdFromPath();
+  let addModeActive = false;
+  let addCollectionMeta = null;
+  let collectionItemIds = new Set();
+  let addSessionAdded = 0;
+  let addModeAuthed = false;
 
   function defaultCardZoom() {
     return window.matchMedia("(max-width: 720px)").matches
@@ -92,8 +106,15 @@
 
   function renderCard(card) {
     const label = `${card.name} — ${card.set_name} #${card.local_id}`;
+    const collected = addModeActive && collectionItemIds.has(card.id);
+    const cardCls = collected ? "sp-card is-collected" : "sp-card";
+    const hint = addModeActive
+      ? collected
+        ? "Already in collection"
+        : "Add to collection"
+      : label;
     return `
-      <article class="sp-card" data-id="${esc(card.id)}" tabindex="0" aria-label="${esc(label)}" title="${esc(label)}">
+      <article class="${cardCls}" data-id="${esc(card.id)}" tabindex="0" aria-label="${esc(label)}" title="${esc(hint)}">
         ${cardImg(card.image_url, label)}
       </article>`;
   }
@@ -629,8 +650,161 @@
     return `<div class="sp-subtypes sp-pokemon-meta-row" aria-label="Pokémon metadata">${pills.join("")}</div>`;
   }
 
+  function showAddToast(message) {
+    let toast = document.getElementById("spAddToast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "spAddToast";
+      toast.className = "sp-add-toast";
+      toast.setAttribute("role", "status");
+      toast.setAttribute("aria-live", "polite");
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.classList.add("is-visible");
+    clearTimeout(showAddToast._timer);
+    showAddToast._timer = setTimeout(() => toast.classList.remove("is-visible"), 1600);
+  }
+
+  function updateAddBanner() {
+    const banner = document.getElementById("addCollectionBanner");
+    if (!banner || !addCollectionMeta) return;
+    const countEl = banner.querySelector(".sp-add-banner-count");
+    if (!countEl) return;
+    const total = collectionItemIds.size;
+    const session = addSessionAdded;
+    countEl.textContent =
+      session > 0
+        ? `${total} in collection · +${session} added now`
+        : `${total} in collection`;
+  }
+
+  function ensureAddBanner() {
+    let banner = document.getElementById("addCollectionBanner");
+    if (banner) return banner;
+    banner = document.createElement("section");
+    banner.id = "addCollectionBanner";
+    banner.className = "sp-add-collection-banner";
+    const main = document.querySelector(".sp-main");
+    if (main) main.insertBefore(banner, main.firstChild);
+    return banner;
+  }
+
+  async function initAddMode() {
+    if (!addCollectionId) return;
+
+    const banner = ensureAddBanner();
+    banner.hidden = false;
+    banner.innerHTML = `<p class="sp-empty">Loading collection…</p>`;
+
+    if (window.__spelltagAuthReady) {
+      try {
+        await window.__spelltagAuthReady;
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    const resp = await fetch(
+      `/api/me/collections/${encodeURIComponent(addCollectionId)}/add-context`,
+      { credentials: "same-origin" }
+    );
+    if (resp.status === 401) {
+      banner.innerHTML = `
+        <p class="sp-add-banner-title">Sign in to add cards</p>
+        <p class="sp-hint"><a class="sp-topbar-login" href="/auth/google/login">Sign in with Google</a></p>`;
+      return;
+    }
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      const msg = typeof err.detail === "string" ? err.detail : "Collection not found";
+      banner.innerHTML = `<p class="sp-empty">${esc(msg)} · <a href="/collections">Back to collections</a></p>`;
+      return;
+    }
+
+    const data = await resp.json();
+    addCollectionMeta = data.collection;
+    collectionItemIds = new Set(data.card_ids || []);
+    addModeActive = true;
+    addModeAuthed = true;
+
+    const collName = esc(addCollectionMeta.name || "Collection");
+    const backHref = `/collections/${encodeURIComponent(addCollectionId)}`;
+    banner.innerHTML = `
+      <div class="sp-add-banner-row">
+        <a class="sp-add-banner-back" href="${backHref}">← ${collName}</a>
+        <span class="sp-add-banner-mode">Tap cards to add</span>
+        <span class="sp-add-banner-count"></span>
+      </div>
+      <p class="sp-hint sp-add-banner-hint">Same search as home — each tap saves that printing. Cards already saved show a checkmark.</p>`;
+
+    document.title = `Add to ${addCollectionMeta.name || "collection"} — Spell Tag`;
+    const tagline = document.querySelector(".sp-tagline");
+    if (tagline) tagline.textContent = "Add to collection";
+    updateAddBanner();
+  }
+
+  async function addCardToCollection(cardId, el) {
+    if (!addModeActive || !addModeAuthed || !addCollectionId || !cardId) return;
+    if (el.classList.contains("is-adding")) return;
+
+    if (collectionItemIds.has(cardId)) {
+      showAddToast("Already in collection");
+      return;
+    }
+
+    el.classList.add("is-adding");
+    try {
+      const resp = await fetch(
+        `/api/me/collections/${encodeURIComponent(addCollectionId)}/items`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ card_id: cardId }),
+        }
+      );
+      if (resp.status === 401) {
+        showAddToast("Sign in to add cards");
+        return;
+      }
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(typeof err.detail === "string" ? err.detail : "Could not add");
+      }
+      const data = await resp.json();
+      if (data.added) {
+        collectionItemIds.add(cardId);
+        el.classList.add("is-collected");
+        el.title = "Already in collection";
+        addSessionAdded += 1;
+        showAddToast("Added");
+      } else {
+        collectionItemIds.add(cardId);
+        el.classList.add("is-collected");
+        showAddToast("Already in collection");
+      }
+      updateAddBanner();
+    } catch (err) {
+      showAddToast(err.message || "Could not add");
+    } finally {
+      el.classList.remove("is-adding");
+    }
+  }
+
   function bindCardClicks() {
     gridEl.querySelectorAll(".sp-card").forEach((el) => {
+      if (addModeActive) {
+        const add = () => addCardToCollection(el.dataset.id, el);
+        el.addEventListener("click", add);
+        el.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            add();
+          }
+        });
+        return;
+      }
       const open = () => openCard(el.dataset.id);
       el.addEventListener("click", open);
       el.addEventListener("keydown", (e) => {
@@ -996,11 +1170,33 @@
   }
 
   async function loadMeta() {
+    try {
+      const raw = localStorage.getItem(META_CACHE_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (cached?.data && Date.now() - (cached.at || 0) < META_CACHE_TTL_MS) {
+          applyMeta(cached.data);
+          return;
+        }
+      }
+    } catch (_) {
+      /* ignore corrupt cache */
+    }
+
     const resp = await fetch("/api/pokemon/meta");
     if (!resp.ok) {
       return;
     }
     const meta = await resp.json();
+    applyMeta(meta);
+    try {
+      localStorage.setItem(META_CACHE_KEY, JSON.stringify({ at: Date.now(), data: meta }));
+    } catch (_) {
+      /* private mode / quota */
+    }
+  }
+
+  function applyMeta(meta) {
     catalogSets = meta.sets || [];
     catalogFacets = meta.facets || {};
 
@@ -1408,5 +1604,5 @@
     modal.addEventListener("close", reset);
   })();
 
-  loadMeta().then(resetOffsetAndSearch);
+  initAddMode().then(() => loadMeta()).then(resetOffsetAndSearch);
 })();

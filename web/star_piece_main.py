@@ -34,6 +34,8 @@ CORS_ORIGINS = os.environ.get(
     "http://localhost:8001,http://127.0.0.1:8001",
 ).split(",")
 SESSION_SECRET = os.environ.get("SPELLTAG_SESSION_SECRET", "").strip() or secrets.token_hex(32)
+# Production when public HTTPS URL is configured (see deploy/.env.production.example).
+SPELLTAG_PROD = os.environ.get("SPELLTAG_PUBLIC_URL", "").strip().lower().startswith("https://")
 
 # Ensure .webp is served with a browser-friendly type (Python slim may omit it).
 mimetypes.add_type("image/webp", ".webp")
@@ -61,18 +63,26 @@ POKEMON_MIGRATIONS = (
 )
 
 
-class DevNoCacheMiddleware(BaseHTTPMiddleware):
-    """Avoid stale HTML/JS/CSS while iterating locally."""
+_HTML_PATHS = frozenset({"/", "/pokemon", "/spell-tag", "/collections"})
+
+
+class SpellTagCacheMiddleware(BaseHTTPMiddleware):
+    """Local dev: no-cache. Production: long-lived static, short HTML shell."""
 
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
         path = request.url.path
-        if path.startswith("/static/") or path in (
-            "/",
-            "/pokemon",
-            "/spell-tag",
-            "/collections",
-        ) or path.startswith("/collections/"):
+        is_html = path in _HTML_PATHS or path.startswith("/collections/")
+        is_static = path.startswith("/static/")
+        if not is_static and not is_html:
+            return response
+
+        if SPELLTAG_PROD:
+            if is_static:
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                response.headers["Cache-Control"] = "public, max-age=60, must-revalidate"
+        else:
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
@@ -80,7 +90,7 @@ class DevNoCacheMiddleware(BaseHTTPMiddleware):
 
 
 # SessionMiddleware is required for Authlib OAuth state (innermost of these runs first on request)
-app.add_middleware(DevNoCacheMiddleware)
+app.add_middleware(SpellTagCacheMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in CORS_ORIGINS if o.strip()],
@@ -144,6 +154,11 @@ def spell_tag_page():
 @app.get("/collections")
 def collections_page():
     return _page("collections.html")
+
+
+@app.get("/collections/{collection_id}/add")
+def collection_add_page(collection_id: str):
+    return _page("spell-tag.html")
 
 
 @app.get("/collections/{collection_id}")

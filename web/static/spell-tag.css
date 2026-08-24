@@ -746,3 +746,120 @@
   color: var(--sp-pink-soft);
   border-color: rgba(196, 168, 232, 0.4);
 }
+
+.st-body .sp-collections-actions {
+  margin: 0.75rem 0 0;
+}
+
+.st-body .sp-add-cards-btn {
+  display: inline-block;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--sp-ink);
+  background: linear-gradient(135deg, rgba(196, 168, 232, 0.35), rgba(255, 182, 193, 0.25));
+  border: 1px solid rgba(196, 168, 232, 0.45);
+  border-radius: 8px;
+  padding: 0.45rem 0.85rem;
+  text-decoration: none;
+}
+
+.st-body .sp-add-cards-btn:hover {
+  border-color: rgba(196, 168, 232, 0.75);
+  color: #fff;
+}
+
+.st-body .sp-add-collection-banner {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: rgba(20, 16, 40, 0.72);
+  border: 1px solid rgba(196, 168, 232, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.st-body .sp-add-banner-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+}
+
+.st-body .sp-add-banner-back {
+  font-weight: 700;
+  color: var(--sp-pink-soft);
+  text-decoration: none;
+}
+
+.st-body .sp-add-banner-back:hover {
+  text-decoration: underline;
+}
+
+.st-body .sp-add-banner-mode {
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--sp-ink);
+}
+
+.st-body .sp-add-banner-count {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--sp-muted);
+}
+
+.st-body .sp-add-banner-hint {
+  margin: 0.45rem 0 0;
+}
+
+.st-body .sp-card.is-collected {
+  position: relative;
+  outline: 2px solid rgba(144, 238, 144, 0.75);
+  outline-offset: 2px;
+}
+
+.st-body .sp-card.is-collected::after {
+  content: "✓";
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 900;
+  color: #0d1a0d;
+  background: rgba(144, 238, 144, 0.95);
+  border-radius: 999px;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.st-body .sp-card.is-adding {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.st-body .sp-add-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%) translateY(12px);
+  z-index: 200;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #fff;
+  background: rgba(30, 24, 55, 0.92);
+  border: 1px solid rgba(196, 168, 232, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.st-body .sp-add-toast.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
