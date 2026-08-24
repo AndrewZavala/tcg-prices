@@ -39,7 +39,7 @@ STAR_PIECE_CORS_ORIGINS=http://localhost:8001
 | Pipeline | `pipeline/refresh_tcgdex.py`, `*pokemon*`, `run_pokemon_pipeline.ps1` |
 | Schema | `migrations/025`–`030`, `migrations/star_piece_init/` |
 | Images | `Dockerfile.star-piece`, `Dockerfile.star-piece-pipeline`, volume `card_images` |
-| Local art | `pipeline/download_pokemon_images.py` → `/media/cards/{id}/{low,high}.webp` |
+| Local art | `pipeline/download_pokemon_images.py` → `/media/cards/{id}/{grid,high}.webp` |
 
 ## Card images (self-hosted)
 
@@ -49,10 +49,11 @@ docker compose --profile manual run --rm star-piece-pipeline \
 ```
 
 Files land in Docker volume `card_images` (`CARD_IMAGE_ROOT=/data/card-images`).
-API returns `/media/cards/{id}/low.webp` once `image_local` is true.
+API returns `/media/cards/{id}/grid.webp` once `image_local` is true.
 
-- **`low.webp`** — ~512px wide (search grid; derived from high so Retina zoom stays sharp)
+- **`grid.webp`** — ~512px wide (search grid; derived from high so Retina zoom stays sharp)
 - **`high.webp`** — full art (card modal)
+- **`low.webp`** — same bytes as grid (legacy path)
 
 Rewrite grid tiles from existing full art (no re-download):
 

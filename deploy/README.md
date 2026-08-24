@@ -183,7 +183,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
 ### Self-hosted card images
 
 Card art is mirrored onto the VPS (`card_images` Docker volume) and served at
-`https://spelltag.com/media/cards/{id}/low.webp` (grid, ~512px) and `.../high.webp` (detail).
+`https://spelltag.com/media/cards/{id}/grid.webp` (search, ~512px) and `.../high.webp` (detail).
 Remote TCGdex / pokemontcg URLs stay in `pokemon_cards.image_url` for re-download only.
 
 After deploy (rebuild pipeline image for Pillow + new scripts):

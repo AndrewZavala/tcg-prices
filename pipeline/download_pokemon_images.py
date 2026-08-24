@@ -2,11 +2,12 @@
 """Download card art into local CARD_IMAGE_ROOT for first-party serving.
 
 Layout:
-  {CARD_IMAGE_ROOT}/cards/{card_id}/low.webp   — ~512px wide (search grid)
+  {CARD_IMAGE_ROOT}/cards/{card_id}/grid.webp  — ~512px wide (search grid)
   {CARD_IMAGE_ROOT}/cards/{card_id}/high.webp  — full art (modal)
+  {CARD_IMAGE_ROOT}/cards/{card_id}/low.webp   — same as grid (legacy path)
 
 Public URLs (via Caddy or FastAPI):
-  /media/cards/{card_id}/low.webp
+  /media/cards/{card_id}/grid.webp
   /media/cards/{card_id}/high.webp
 
 Remote image_url in Postgres stays as provenance; image_local marks readiness.
@@ -135,21 +136,27 @@ def card_dir(card_id: str) -> Path:
 
 def files_ready(card_id: str) -> bool:
     d = card_dir(card_id)
-    return (d / "low.webp").is_file() and (d / "high.webp").is_file()
+    grid_ok = (d / "grid.webp").is_file() or (d / "low.webp").is_file()
+    return grid_ok and (d / "high.webp").is_file()
+
+
+def _write_grid_files(dest: Path, grid_bytes: bytes) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "grid.webp").write_bytes(grid_bytes)
+    # Keep low.webp in sync for older bookmarks / caches during transition.
+    (dest / "low.webp").write_bytes(grid_bytes)
 
 
 def write_grid_from_high(card_id: str) -> bool:
-    """Rewrite low.webp from existing high.webp. Returns True if written."""
+    """Rewrite grid.webp (and low.webp) from existing high.webp. Returns True if written."""
     high_path = card_dir(card_id) / "high.webp"
     if not high_path.is_file():
         return False
     high_bytes = high_path.read_bytes()
     if not high_bytes:
         return False
-    low_bytes = _grid_webp_from_high(high_bytes)
-    dest = card_dir(card_id)
-    dest.mkdir(parents=True, exist_ok=True)
-    (dest / "low.webp").write_bytes(low_bytes)
+    grid_bytes = _grid_webp_from_high(high_bytes)
+    _write_grid_files(card_dir(card_id), grid_bytes)
     return True
 
 
@@ -181,8 +188,8 @@ def download_one(
 
     dest = card_dir(card_id)
     dest.mkdir(parents=True, exist_ok=True)
-    (dest / "low.webp").write_bytes(low)
     (dest / "high.webp").write_bytes(high)
+    _write_grid_files(dest, low)
     return True
 
 
@@ -249,7 +256,7 @@ def main() -> int:
     parser.add_argument(
         "--regen-grid",
         action="store_true",
-        help=f"Rewrite low.webp from high.webp at {GRID_MAX_WIDTH}px (no download)",
+        help=f"Rewrite grid.webp from high.webp at {GRID_MAX_WIDTH}px (no download)",
     )
     args = parser.parse_args()
 

@@ -220,8 +220,9 @@ def _remote_image_url(
 
 
 def _local_image_urls(card_id: str) -> tuple[str, str]:
+    # grid.webp = ~512px search tile; high.webp = full art for modal.
     return (
-        f"/media/cards/{card_id}/low.webp",
+        f"/media/cards/{card_id}/grid.webp",
         f"/media/cards/{card_id}/high.webp",
     )
 
