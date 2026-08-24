@@ -545,6 +545,18 @@
   min-height: 2.5rem;
 }
 
+@media (min-width: 721px) {
+  /* Larger card art in detail modal — desktop only; mobile stays stacked 1-col */
+  .st-body .sp-modal {
+    max-width: min(1040px, 96vw);
+  }
+
+  .st-body .sp-detail {
+    grid-template-columns: minmax(280px, 400px) 1fr;
+    gap: 1.6rem;
+  }
+}
+
 @media (max-width: 720px) {
   .st-body .sp-fav-btn,
   .st-body .sp-buy-btn,
