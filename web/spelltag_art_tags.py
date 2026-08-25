@@ -118,7 +118,7 @@ def _resolve_slug_and_label(
         )
 
     if raw_label and not _looks_like_slug(raw_label):
-        out_label = raw_label
+        out_label = _title_case_label(raw_label)
     else:
         out_label = _label_from_slug(out_slug)
 
