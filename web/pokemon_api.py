@@ -259,23 +259,40 @@ def _attach_card_images(row: dict[str, Any], raw: dict[str, Any]) -> None:
 def _parse_search_query(
     q: str | None,
 ) -> dict[str, Any]:
-    """Parse pkmncards-style query tokens (t:, is:, set:, e:, has:, etc.)."""
+    """Parse pkmncards-style query tokens (t:, is:, set:, e:, has:, etc.).
+
+    Leading ``-`` negates a token (Scryfall-style), e.g. ``t:trainer -t:stadium``.
+    """
     result: dict[str, Any] = {
         "name_q": None,
         "tags": [],
+        "exclude_tags": [],
         "oracle_tags": [],
+        "exclude_oracle_tags": [],
         "art_tags": [],
+        "exclude_art_tags": [],
         "generation": None,
+        "exclude_generation": None,
         "pokemon_special": None,
+        "exclude_pokemon_special": None,
         "species_groups": [],
+        "exclude_species_groups": [],
         "has_ability": False,
+        "exclude_has_ability": False,
         "category": None,
+        "exclude_categories": [],
         "set_id": None,
+        "exclude_set_ids": [],
         "series_id": None,
+        "exclude_series_ids": [],
         "rarity": None,
+        "exclude_rarities": [],
         "card_type": None,
+        "exclude_card_types": [],
         "dex_id": None,
+        "exclude_dex_ids": [],
         "stage": None,
+        "exclude_stages": [],
     }
     if not q or not q.strip():
         return result
@@ -330,65 +347,143 @@ def _parse_search_query(
 
         prefix, raw_val = token.split(":", 1)
         prefix = prefix.lower()
+        negated = False
+        if prefix.startswith("-"):
+            negated = True
+            prefix = prefix[1:]
         val = raw_val.strip()
         val_lower = val.lower()
-        if not val:
+        if not val or not prefix:
             continue
 
         if prefix == "t":
             if val_lower in category_aliases:
-                result["category"] = category_aliases[val_lower]
-            elif val_lower in trainer_subtype_aliases:
-                result["tags"].append(trainer_subtype_aliases[val_lower])
+                cat = category_aliases[val_lower]
+                if negated:
+                    result["exclude_categories"].append(cat)
+                else:
+                    result["category"] = cat
             else:
-                result["tags"].append(val_lower.replace("_", "-"))
+                tag = trainer_subtype_aliases.get(
+                    val_lower, val_lower.replace("_", "-")
+                )
+                if negated:
+                    result["exclude_tags"].append(tag)
+                else:
+                    result["tags"].append(tag)
         elif prefix == "is":
             if val_lower == "legendary":
-                result["pokemon_special"] = "legendary"
+                if negated:
+                    result["exclude_pokemon_special"] = "legendary"
+                else:
+                    result["pokemon_special"] = "legendary"
             elif val_lower == "mythical":
-                result["pokemon_special"] = "mythical"
+                if negated:
+                    result["exclude_pokemon_special"] = "mythical"
+                else:
+                    result["pokemon_special"] = "mythical"
             elif val_lower in ("notable", "legendary-mythical"):
-                result["pokemon_special"] = "notable"
+                if negated:
+                    result["exclude_pokemon_special"] = "notable"
+                else:
+                    result["pokemon_special"] = "notable"
             elif val_lower.startswith("gen") and val_lower[3:].isdigit():
-                result["generation"] = int(val_lower[3:])
+                gen = int(val_lower[3:])
+                if negated:
+                    result["exclude_generation"] = gen
+                else:
+                    result["generation"] = gen
             elif val_lower in SPECIES_GROUP_ALIASES:
-                result["species_groups"].append(SPECIES_GROUP_ALIASES[val_lower])
+                group = SPECIES_GROUP_ALIASES[val_lower]
+                if negated:
+                    result["exclude_species_groups"].append(group)
+                else:
+                    result["species_groups"].append(group)
             else:
-                result["tags"].append(val_lower)
+                tag = val_lower
+                if negated:
+                    result["exclude_tags"].append(tag)
+                else:
+                    result["tags"].append(tag)
         elif prefix == "has":
             if val_lower == "ability":
-                result["has_ability"] = True
+                if negated:
+                    result["exclude_has_ability"] = True
+                else:
+                    result["has_ability"] = True
             else:
                 name_parts.append(token)
         elif prefix == "set":
-            result["set_id"] = val_lower
+            if negated:
+                result["exclude_set_ids"].append(val_lower)
+            else:
+                result["set_id"] = val_lower
         elif prefix in ("s", "series"):
-            result["series_id"] = val_lower
+            if negated:
+                result["exclude_series_ids"].append(val_lower)
+            else:
+                result["series_id"] = val_lower
         elif prefix == "r":
-            result["rarity"] = rarity_aliases.get(val_lower, val)
+            rarity = rarity_aliases.get(val_lower, val)
+            if negated:
+                result["exclude_rarities"].append(rarity)
+            else:
+                result["rarity"] = rarity
         elif prefix in ("e", "type"):
-            result["card_type"] = type_names.get(val_lower, val.title())
+            ctype = type_names.get(val_lower, val.title())
+            if negated:
+                result["exclude_card_types"].append(ctype)
+            else:
+                result["card_type"] = ctype
         elif prefix == "dex":
             if val.isdigit():
-                result["dex_id"] = int(val)
+                dex = int(val)
+                if negated:
+                    result["exclude_dex_ids"].append(dex)
+                else:
+                    result["dex_id"] = dex
         elif prefix == "stage":
-            result["stage"] = stage_aliases.get(val_lower, val)
+            stage = stage_aliases.get(val_lower, val)
+            if negated:
+                result["exclude_stages"].append(stage)
+            else:
+                result["stage"] = stage
         elif prefix == "otag":
             slug = val_lower.replace("_", "-")
             if slug:
-                result["oracle_tags"].append(slug)
+                if negated:
+                    result["exclude_oracle_tags"].append(slug)
+                else:
+                    result["oracle_tags"].append(slug)
         elif prefix == "art":
             slug = val_lower.replace("_", "-")
             if slug:
-                result["art_tags"].append(slug)
+                if negated:
+                    result["exclude_art_tags"].append(slug)
+                else:
+                    result["art_tags"].append(slug)
         else:
             name_parts.append(token)
 
     result["name_q"] = " ".join(name_parts).strip() or None
-    result["tags"] = list(dict.fromkeys(result["tags"]))
-    result["oracle_tags"] = list(dict.fromkeys(result["oracle_tags"]))
-    result["art_tags"] = list(dict.fromkeys(result["art_tags"]))
-    result["species_groups"] = list(dict.fromkeys(result["species_groups"]))
+    for key in (
+        "tags",
+        "exclude_tags",
+        "oracle_tags",
+        "exclude_oracle_tags",
+        "art_tags",
+        "exclude_art_tags",
+        "species_groups",
+        "exclude_species_groups",
+        "exclude_categories",
+        "exclude_set_ids",
+        "exclude_series_ids",
+        "exclude_rarities",
+        "exclude_card_types",
+        "exclude_dex_ids",
+        "exclude_stages",
+    ):
+        result[key] = list(dict.fromkeys(result[key]))
     return result
 
 
@@ -727,6 +822,10 @@ def search_pokemon_cards(
         key = f"tag_{idx}"
         filters.append(f":{key} = ANY(c.tags)")
         params[key] = t
+    for idx, t in enumerate(parsed.get("exclude_tags") or []):
+        key = f"xtag_{idx}"
+        filters.append(f"NOT (:{key} = ANY(COALESCE(c.tags, ARRAY[]::text[])))")
+        params[key] = t
 
     explicit_otags = [t.strip().lower().replace("_", "-") for t in (otag or "").split(",") if t.strip()]
     all_otags = list(dict.fromkeys(parsed["oracle_tags"] + explicit_otags))
@@ -743,6 +842,26 @@ def search_pokemon_cards(
         key = f"otags_{idx}"
         filters.append(
             f"""EXISTS (
+                SELECT 1 FROM oracle_tags ot
+                INNER JOIN oracle_tag_defs otd ON otd.slug = ot.tag_slug
+                WHERE ot.oracle_id = c.oracle_id
+                  AND ot.tag_slug = ANY(:{key})
+                  AND otd.active = TRUE
+            )"""
+        )
+        params[key] = expanded
+    for idx, slug in enumerate(parsed.get("exclude_oracle_tags") or []):
+        expanded = [slug]
+        try:
+            from spelltag_oracle_tags import expand_oracle_search_slugs
+
+            with _engine.connect() as _c:
+                expanded = expand_oracle_search_slugs(_c, [slug])
+        except Exception:
+            pass
+        key = f"xotags_{idx}"
+        filters.append(
+            f"""NOT EXISTS (
                 SELECT 1 FROM oracle_tags ot
                 INNER JOIN oracle_tag_defs otd ON otd.slug = ot.tag_slug
                 WHERE ot.oracle_id = c.oracle_id
@@ -774,6 +893,26 @@ def search_pokemon_cards(
             )"""
         )
         params[key] = expanded
+    for idx, slug in enumerate(parsed.get("exclude_art_tags") or []):
+        expanded = [slug]
+        try:
+            from spelltag_art_tags import expand_art_search_slugs
+
+            with _engine.connect() as _c:
+                expanded = expand_art_search_slugs(_c, [slug])
+        except Exception:
+            pass
+        key = f"xartags_{idx}"
+        filters.append(
+            f"""NOT EXISTS (
+                SELECT 1 FROM art_tags at
+                INNER JOIN art_tag_defs atd ON atd.slug = at.tag_slug
+                WHERE at.illustration_id = c.illustration_id
+                  AND at.tag_slug = ANY(:{key})
+                  AND atd.active = TRUE
+            )"""
+        )
+        params[key] = expanded
 
     gen = generation if generation is not None else parsed["generation"]
     special = (pokemon_special or "").strip().lower() or parsed["pokemon_special"]
@@ -792,12 +931,49 @@ def search_pokemon_cards(
         pokemon_special=special,
         species_groups=group_vals,
     )
+    # Negated species filters (simple NOT EXISTS / NOT conditions)
+    excl_gen = parsed.get("exclude_generation")
+    excl_special = parsed.get("exclude_pokemon_special")
+    excl_groups = list(parsed.get("exclude_species_groups") or [])
+    if excl_gen is not None or excl_special or excl_groups:
+        excl_clauses = ["ps.dex_id = c.dex_ids[1]"]
+        if excl_gen is not None:
+            excl_clauses.append("ps.generation_id = :xgeneration")
+            params["xgeneration"] = excl_gen
+        if excl_special == "legendary":
+            excl_clauses.append("ps.is_legendary = TRUE")
+        elif excl_special == "mythical":
+            excl_clauses.append("ps.is_mythical = TRUE")
+        elif excl_special == "notable":
+            excl_clauses.append("(ps.is_legendary = TRUE OR ps.is_mythical = TRUE)")
+        for idx, group in enumerate(excl_groups):
+            if group == "regional":
+                filters.append(f"NOT ({REGIONAL_NAME_SQL})")
+                continue
+            if group == "baby":
+                excl_clauses.append("ps.is_baby = TRUE")
+                continue
+            key = f"xspecies_group_{idx}"
+            excl_clauses.append(f":{key} = ANY(ps.species_groups)")
+            params[key] = group
+        # Only add species EXISTS-not if we still have species table predicates
+        species_preds = [c for c in excl_clauses if c != "ps.dex_id = c.dex_ids[1]"]
+        if species_preds:
+            filters.append(
+                "NOT (c.dex_ids IS NOT NULL AND cardinality(c.dex_ids) > 0 AND EXISTS ("
+                f"SELECT 1 FROM pokemon_species ps WHERE {' AND '.join(excl_clauses)}))"
+            )
 
     has_vals = {(h.strip().lower()) for h in (has or "").split(",") if h.strip()}
     if parsed["has_ability"] or "ability" in has_vals:
         filters.append(
             "c.abilities IS NOT NULL AND jsonb_typeof(c.abilities) = 'array' "
             "AND jsonb_array_length(c.abilities) > 0"
+        )
+    if parsed.get("exclude_has_ability"):
+        filters.append(
+            "NOT (c.abilities IS NOT NULL AND jsonb_typeof(c.abilities) = 'array' "
+            "AND jsonb_array_length(c.abilities) > 0)"
         )
 
     eff_set = (set_id or parsed["set_id"] or "").strip().lower() or None
@@ -808,16 +984,32 @@ def search_pokemon_cards(
     elif eff_series:
         filters.append("s.series_id = :series_id")
         params["series_id"] = eff_series
+    for idx, sid in enumerate(parsed.get("exclude_set_ids") or []):
+        key = f"xset_{idx}"
+        filters.append(f"c.set_id <> :{key}")
+        params[key] = sid
+    for idx, sid in enumerate(parsed.get("exclude_series_ids") or []):
+        key = f"xseries_{idx}"
+        filters.append(f"s.series_id IS DISTINCT FROM :{key}")
+        params[key] = sid
 
     eff_dex = dex_id if dex_id is not None else parsed["dex_id"]
     if eff_dex is not None:
         filters.append(":dex_id = ANY(c.dex_ids)")
         params["dex_id"] = eff_dex
+    for idx, dex in enumerate(parsed.get("exclude_dex_ids") or []):
+        key = f"xdex_{idx}"
+        filters.append(f"NOT (:{key} = ANY(COALESCE(c.dex_ids, ARRAY[]::int[])))")
+        params[key] = dex
 
     eff_rarity = (rarity or parsed["rarity"] or "").strip() or None
     if eff_rarity:
         filters.append("c.rarity = :rarity")
         params["rarity"] = eff_rarity
+    for idx, rar in enumerate(parsed.get("exclude_rarities") or []):
+        key = f"xrarity_{idx}"
+        filters.append(f"c.rarity IS DISTINCT FROM :{key}")
+        params[key] = rar
 
     eff_category = (category or parsed["category"] or "").strip() or None
     if unique == "pokemon":
@@ -827,16 +1019,28 @@ def search_pokemon_cards(
     elif eff_category:
         filters.append("c.category = :category")
         params["category"] = eff_category
+    for idx, cat in enumerate(parsed.get("exclude_categories") or []):
+        key = f"xcat_{idx}"
+        filters.append(f"c.category IS DISTINCT FROM :{key}")
+        params[key] = cat
 
     eff_type = (type or parsed["card_type"] or "").strip() or None
     if eff_type:
         filters.append(":card_type = ANY(c.types)")
         params["card_type"] = eff_type
+    for idx, ctype in enumerate(parsed.get("exclude_card_types") or []):
+        key = f"xtype_{idx}"
+        filters.append(f"NOT (:{key} = ANY(COALESCE(c.types, ARRAY[]::text[])))")
+        params[key] = ctype
 
     eff_stage = (stage or parsed["stage"] or "").strip() or None
     if eff_stage:
         filters.append("c.stage = :stage")
         params["stage"] = eff_stage
+    for idx, stg in enumerate(parsed.get("exclude_stages") or []):
+        key = f"xstage_{idx}"
+        filters.append(f"c.stage IS DISTINCT FROM :{key}")
+        params[key] = stg
 
     where_sql = " AND ".join(filters)
 

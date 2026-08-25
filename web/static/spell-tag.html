@@ -48,7 +48,7 @@
       <div class="sp-search-row">
         <label class="sp-field sp-field-grow">
           <span class="sp-label">Search</span>
-          <input type="search" id="q" placeholder="Name… t:trainer t:supporter is:team-plasma" autocomplete="off" />
+          <input type="search" id="q" placeholder="Name… t:trainer -t:stadium is:team-plasma" autocomplete="off" />
         </label>
         <button type="button" class="sp-adv-toggle" id="advToggle" aria-expanded="false" aria-controls="advPanel">
           Advanced
@@ -183,6 +183,13 @@
               <li><button type="button" class="sp-linkish" data-quick="has:ability">has:ability</button> — cards with an Ability</li>
             </ul>
 
+            <h4>Negation <code>-</code></h4>
+            <ul>
+              <li><button type="button" class="sp-linkish" data-quick="t:trainer -t:stadium">t:trainer -t:stadium</button> — trainers that aren’t Stadiums</li>
+              <li><button type="button" class="sp-linkish" data-quick="t:pokemon -e:fire">t:pokemon -e:fire</button> — Pokémon that aren’t Fire-type</li>
+              <li>Works with most filters: <code>-t:</code> <code>-is:</code> <code>-e:</code> <code>-otag:</code> <code>-art:</code> <code>-set:</code></li>
+            </ul>
+
             <p class="sp-syntax-note">Example: <code>t:trainer t:supporter N</code> finds Supporter cards with “N” in the name. Click subtype pills on a card to filter instantly.</p>
           </div>
         </details>
@@ -239,7 +246,7 @@
     </div>
   </dialog>
 
-  <script src="/static/pokemon.js?v=nest4"></script>
+  <script src="/static/pokemon.js?v=neg1"></script>
   <script src="/static/spelltag-auth.js?v=3"></script>
 </body>
 </html>
