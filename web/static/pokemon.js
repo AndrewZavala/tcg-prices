@@ -316,7 +316,12 @@
             <span class="sp-otag-status" id="${cfg.idPrefix}Status" aria-live="polite"></span>
           </div>
           <div class="sp-otag-admin" id="${cfg.idPrefix}Admin">
-            <p class="sp-hint">Create a top-level tag, or expand a tag and use <em>+ Subtag</em>.</p>
+            <p class="sp-hint">
+              <strong>New parent tag:</strong> type a name below and click Create (e.g. <em>Status</em>).<br />
+              <strong>New subtag:</strong> open the dropdown → click <em>▸</em> beside the parent →
+              click <em>+ Subtag</em> → type a name (e.g. <em>Sleep</em>) → Add.
+              That creates <code>status-sleep</code> under Status.
+            </p>
             <div class="sp-otag-admin-row">
               <input type="text" id="${cfg.idPrefix}NewName" placeholder="Status or rain-dance" maxlength="80" />
               <button type="button" class="sp-otag-save" id="${cfg.idPrefix}CreateBtn">Create</button>
@@ -342,7 +347,7 @@
       searchPrefix: "otag",
       dataAttr: "otag",
       shareHint:
-        "Select oracle tags for this card (all printings share them). Subtags inherit their parent when searching.",
+        "Check tags to apply them to this card. Expand ▸ a parent to see or add subtags (+ Subtag). Searching a parent also matches its subtags.",
       chipClass: "",
       blockClass: "",
     });
@@ -358,7 +363,7 @@
       chipClass: "sp-artag",
       blockClass: "sp-artag-block",
       shareHint:
-        "Select art tags for this artwork (shared by same-art printings). Subtags inherit their parent when searching.",
+        "Check tags to apply them to this artwork. Expand ▸ a parent to see or add subtags (+ Subtag). Searching a parent also matches its subtags.",
     });
   }
 
