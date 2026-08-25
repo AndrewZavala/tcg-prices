@@ -81,6 +81,11 @@ def _label_from_slug(slug: str) -> str:
     return " ".join(part.capitalize() for part in slug.split("-") if part)
 
 
+def _title_case_label(raw: str) -> str:
+    parts = re.split(r"[\s_-]+", (raw or "").strip())
+    return " ".join(p[:1].upper() + p[1:].lower() for p in parts if p)
+
+
 def _looks_like_slug(raw: str) -> bool:
     """True for kebab-case like rain-dance (no spaces, mostly lowercase)."""
     s = (raw or "").strip()
@@ -128,7 +133,7 @@ def _resolve_slug_and_label(
         )
 
     if raw_label and not _looks_like_slug(raw_label):
-        out_label = raw_label
+        out_label = _title_case_label(raw_label)
     else:
         out_label = _label_from_slug(out_slug)
 

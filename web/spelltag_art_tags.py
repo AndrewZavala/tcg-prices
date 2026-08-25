@@ -74,6 +74,11 @@ def _label_from_slug(slug: str) -> str:
     return " ".join(part.capitalize() for part in slug.split("-") if part)
 
 
+def _title_case_label(raw: str) -> str:
+    parts = re.split(r"[\s_-]+", (raw or "").strip())
+    return " ".join(p[:1].upper() + p[1:].lower() for p in parts if p)
+
+
 def _looks_like_slug(raw: str) -> bool:
     s = (raw or "").strip()
     if not s or " " in s:

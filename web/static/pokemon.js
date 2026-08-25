@@ -91,7 +91,19 @@
   }
 
   function tagLabel(tag) {
-    return String(tag).replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    return String(tag ?? "")
+      .replace(/[-_]+/g, " ")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  /** Prefer stored label, but always Title Case for display (Scoop Up). */
+  function displayTagLabel(tagOrLabel, slug) {
+    const raw = (tagOrLabel && String(tagOrLabel).trim()) || slug || "";
+    return tagLabel(raw);
   }
 
   const CARD_IMG_FALLBACK = "/static/empty-pokeball.png?v=rembg";
@@ -290,7 +302,7 @@
           inherited ? " is-inherited" : ""
         }" data-${cfg.dataAttr}="${esc(t.slug)}" title="Search ${cfg.searchPrefix}:${esc(t.slug)}${
           inherited ? " (inherited)" : ""
-        }">${esc(t.label || t.slug)}</button>`;
+        }">${esc(displayTagLabel(t.label, t.slug))}</button>`;
       })
       .join("");
 
@@ -382,7 +394,7 @@
           inherited ? " is-inherited" : ""
         }" data-${cfg.dataAttr}="${esc(t.slug)}" title="Search ${cfg.searchPrefix}:${esc(t.slug)}${
           inherited ? " (inherited)" : ""
-        }">${esc(t.label || t.slug)}</button>`;
+        }">${esc(displayTagLabel(t.label, t.slug))}</button>`;
       })
       .join("");
     list.querySelectorAll(`[data-${cfg.dataAttr}]`).forEach((el) => {
@@ -437,7 +449,7 @@
 
     const labelFor = (slug) => {
       const hit = bySlug.get(slug);
-      return (hit && hit.label) || slug;
+      return displayTagLabel((hit && hit.label) || slug, slug);
     };
 
     const syncValue = () => {
@@ -573,7 +585,7 @@
             <button type="button" class="sp-otag-ms-option${on ? " is-on" : ""}" role="option"
                     aria-selected="${on ? "true" : "false"}" data-slug="${esc(node.slug)}">
               <span class="sp-otag-ms-check" aria-hidden="true">${on ? "✓" : ""}</span>
-              <span class="sp-otag-ms-label">${esc(node.label || node.slug)}</span>
+              <span class="sp-otag-ms-label">${esc(displayTagLabel(node.label, node.slug))}</span>
             </button>
           </div>`;
         if (open) {
@@ -582,7 +594,7 @@
             html += `
               <div class="sp-otag-subtag-draft" style="padding-left:${pad + 0.85}rem" data-parent="${esc(node.slug)}">
                 <input type="text" class="sp-otag-subtag-input" maxlength="80"
-                       placeholder="Subtag under ${esc(node.label || node.slug)}" />
+                       placeholder="Subtag under ${esc(displayTagLabel(node.label, node.slug))}" />
                 <button type="button" class="sp-otag-save sp-otag-subtag-save">Add</button>
               </div>`;
           } else {
