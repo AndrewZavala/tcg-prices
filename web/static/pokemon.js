@@ -40,6 +40,23 @@
   const CARD_ZOOM_MOBILE_DEFAULT = 100;
   const META_CACHE_KEY = "sp-pokemon-meta-v3";
   const META_CACHE_TTL_MS = 60 * 60 * 1000;
+
+  function clearMetaCache() {
+    try {
+      localStorage.removeItem(META_CACHE_KEY);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  function upsertFacetTag(facetsKey, tag) {
+    if (!tag || !tag.slug) return;
+    const rows = [...(catalogFacets[facetsKey] || [])];
+    const i = rows.findIndex((t) => t && t.slug === tag.slug);
+    if (i >= 0) rows[i] = { ...rows[i], ...tag };
+    else rows.push(tag);
+    catalogFacets[facetsKey] = rows;
+  }
   let cardZoomPx = CARD_ZOOM_DEFAULT;
 
   function addCollectionIdFromPath() {
@@ -359,7 +376,7 @@
       searchPrefix: "otag",
       dataAttr: "otag",
       shareHint:
-        "Check tags to apply them to this card. Expand ▸ a parent to see or add subtags (+ Subtag). Searching a parent also matches its subtags.",
+        "Check tags in the dropdown to apply them. Creating a tag only adds it to the list — you still need to check it. Search otag:… finds cards that already have that tag.",
       chipClass: "",
       blockClass: "",
     });
@@ -375,7 +392,7 @@
       chipClass: "sp-artag",
       blockClass: "sp-artag-block",
       shareHint:
-        "Check tags to apply them to this artwork. Expand ▸ a parent to see or add subtags (+ Subtag). Searching a parent also matches its subtags.",
+        "Check tags in the dropdown to apply them. Creating a tag only adds it to the list — you still need to check it. Search art:… finds cards that already have that tag.",
     });
   }
 
@@ -544,7 +561,8 @@
         });
         if (!resp.ok) throw new Error(await apiErrorMessage(resp));
         const created = await resp.json();
-        catalogFacets[cfg.facetsKey] = [...(catalogFacets[cfg.facetsKey] || []), created];
+        clearMetaCache();
+        upsertFacetTag(cfg.facetsKey, created);
         bySlug.set(created.slug, {
           slug: created.slug,
           label: created.label || created.slug,
@@ -552,7 +570,12 @@
         });
         expandedParents.add(parentSlug);
         subtagDraftParent.slug = null;
-        if (status) status.textContent = `Created ${created.label} (${created.slug}).`;
+        const shown = displayTagLabel(created.label, created.slug);
+        if (status) {
+          status.textContent = created.already_existed
+            ? `${shown} already exists — check it in the list.`
+            : `Created ${shown}. Check it in the list to apply.`;
+        }
         renderMenu(searchEl ? searchEl.value : "");
       } catch (err) {
         if (status) status.textContent = err.message || "Create failed";
@@ -732,8 +755,15 @@
           });
           if (!resp.ok) throw new Error(await apiErrorMessage(resp));
           const created = await resp.json();
-          catalogFacets[cfg.facetsKey] = [...(catalogFacets[cfg.facetsKey] || []), created];
-          if (createStatus) createStatus.textContent = `Created ${created.label} (${created.slug}).`;
+          clearMetaCache();
+          upsertFacetTag(cfg.facetsKey, created);
+          const shown = displayTagLabel(created.label, created.slug);
+          if (createStatus) {
+            createStatus.textContent = created.already_existed
+              ? `${shown} already exists — open the dropdown and check it to apply.`
+              : `Created ${shown}. Open the dropdown and check it to apply.`;
+          }
+          // Keep modal open; refresh editor so the new tag appears in the list.
           openCard(card.id);
         } catch (err) {
           if (createStatus) createStatus.textContent = err.message || "Create failed";

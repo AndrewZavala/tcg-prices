@@ -239,11 +239,34 @@ def create_art_tag_def(request: Request, body: CreateTagDefBody) -> dict[str, An
             if SLUG_RE.match(candidate) and len(candidate) <= 80:
                 slug = candidate
         existing = conn.execute(
-            text("SELECT 1 FROM art_tag_defs WHERE slug = :slug"),
+            text(
+                """
+                SELECT slug, label, description, parent_slug, active,
+                       created_at::text AS created_at
+                FROM art_tag_defs WHERE slug = :slug
+                """
+            ),
             {"slug": slug},
-        ).first()
+        ).mappings().first()
         if existing:
-            raise HTTPException(status_code=409, detail="Tag already exists")
+            if not existing["active"]:
+                existing = conn.execute(
+                    text(
+                        """
+                        UPDATE art_tag_defs
+                        SET active = TRUE,
+                            label = COALESCE(NULLIF(:label, ''), label),
+                            parent_slug = COALESCE(:parent, parent_slug)
+                        WHERE slug = :slug
+                        RETURNING slug, label, description, parent_slug, active,
+                                  created_at::text AS created_at
+                        """
+                    ),
+                    {"slug": slug, "label": label, "parent": parent},
+                ).mappings().one()
+            out = dict(existing)
+            out["already_existed"] = True
+            return out
         row = conn.execute(
             text(
                 """
@@ -267,7 +290,9 @@ def create_art_tag_def(request: Request, body: CreateTagDefBody) -> dict[str, An
                 "parent": parent,
             },
         ).mappings().one()
-    return dict(row)
+    out = dict(row)
+    out["already_existed"] = False
+    return out
 
 
 @router.patch("/api/art-tags/{slug}")
