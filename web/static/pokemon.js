@@ -22,10 +22,7 @@
   const activeFiltersEl = document.getElementById("activeFilters");
   const gridEl = document.getElementById("cardGrid");
   const resultCount = document.getElementById("resultCount");
-  const paginationEl = document.getElementById("pagination");
-  const pagePrev = document.getElementById("pagePrev");
-  const pageNext = document.getElementById("pageNext");
-  const pageInfo = document.getElementById("pageInfo");
+  const paginationEls = Array.from(document.querySelectorAll("[data-pagination]"));
   const modal = document.getElementById("cardModal");
   const modalBody = document.getElementById("modalBody");
   const modalClose = document.getElementById("modalClose");
@@ -40,6 +37,7 @@
   const CARD_ZOOM_MOBILE_DEFAULT = 100;
   const META_CACHE_KEY = "sp-pokemon-meta-v3";
   const META_CACHE_TTL_MS = 60 * 60 * 1000;
+  let lastPageCount = 1;
 
   function clearMetaCache() {
     try {
@@ -1485,22 +1483,35 @@
   }
 
   function updatePagination(total, currentOffset, limit) {
-    const pageCount = Math.max(1, Math.ceil(total / limit));
-    const page = Math.floor(currentOffset / limit) + 1;
+    const pageCount = Math.max(1, Math.ceil(total / Math.max(limit, 1)));
+    const page = Math.floor(currentOffset / Math.max(limit, 1)) + 1;
     const showingFrom = total === 0 ? 0 : currentOffset + 1;
     const showingTo = Math.min(currentOffset + limit, total);
+    lastPageCount = pageCount;
 
-    paginationEl.hidden = total <= limit;
-    pageInfo.textContent =
+    const infoText =
       total === 0
         ? "No results"
         : `Page ${page} of ${pageCount} · ${showingFrom}–${showingTo} of ${total}`;
-    pagePrev.disabled = page <= 1;
-    pageNext.disabled = page >= pageCount;
+    const show = total > limit;
+
+    paginationEls.forEach((nav) => {
+      nav.hidden = !show;
+      const info = nav.querySelector("[data-page-info]");
+      const prev = nav.querySelector("[data-page-prev]");
+      const next = nav.querySelector("[data-page-next]");
+      const jump = nav.querySelector("[data-page-jump]");
+      if (info) info.textContent = infoText;
+      if (prev) prev.disabled = page <= 1;
+      if (next) next.disabled = page >= pageCount;
+      if (jump) {
+        jump.max = String(pageCount);
+        jump.value = String(page);
+      }
+    });
   }
 
-  async function search() {
-    syncPageSize();
+  function buildSearchParams() {
     const params = new URLSearchParams();
     params.set("unique", unique);
     params.set("sort", sortEl.value);
@@ -1519,11 +1530,110 @@
     if (pokemonSpecialEl.value) params.set("pokemon_special", pokemonSpecialEl.value);
     if (speciesGroupEl.value) params.set("species_group", speciesGroupEl.value);
     if (hasFilterEl.value) params.set("has", hasFilterEl.value);
+    return params;
+  }
+
+  function writeSearchToUrl() {
+    if (addCollectionId) return; // keep collection add URLs clean
+    const params = new URLSearchParams();
+    if (qEl.value.trim()) params.set("q", qEl.value.trim());
+    if (unique && unique !== "cards") params.set("unique", unique);
+    if (sortEl.value && sortEl.value !== "name") params.set("sort", sortEl.value);
+    if (setEl.value) params.set("set", setEl.value);
+    else if (seriesEl.value) params.set("series", seriesEl.value);
+    if (dexEl.value) params.set("dex", dexEl.value);
+    if (rarityEl.value) params.set("rarity", rarityEl.value);
+    if (categoryEl.value) params.set("category", categoryEl.value);
+    if (typeEl.value) params.set("type", typeEl.value);
+    if (stageEl.value) params.set("stage", stageEl.value);
+    if (subtypeEl.value) params.set("tag", subtypeEl.value);
+    if (generationEl.value) params.set("generation", generationEl.value);
+    if (pokemonSpecialEl.value) params.set("special", pokemonSpecialEl.value);
+    if (speciesGroupEl.value) params.set("group", speciesGroupEl.value);
+    if (hasFilterEl.value) params.set("has", hasFilterEl.value);
+    const page = Math.floor(offset / Math.max(pageSize, 1)) + 1;
+    if (page > 1) params.set("page", String(page));
+
+    const qs = params.toString();
+    const next = qs ? `${location.pathname}?${qs}` : location.pathname;
+    const cur = `${location.pathname}${location.search}`;
+    if (next !== cur) {
+      history.replaceState(null, "", next);
+    }
+  }
+
+  function applySearchFromUrl() {
+    const params = new URLSearchParams(location.search);
+    if (params.has("q")) qEl.value = params.get("q") || "";
+    if (params.has("unique")) {
+      const u = params.get("unique");
+      if (u === "pokemon" || u === "cards" || u === "art") {
+        unique = u;
+        segmentBtns.forEach((b) => {
+          const on = b.dataset.unique === unique;
+          b.classList.toggle("active", on);
+          b.setAttribute("aria-selected", on ? "true" : "false");
+        });
+      }
+    }
+    if (params.has("sort")) {
+      const sortVal = params.get("sort") || "";
+      if ([...sortEl.options].some((o) => o.value === sortVal)) sortEl.value = sortVal;
+    }
+    if (params.has("series")) seriesEl.value = params.get("series") || "";
+    populateSetOptions();
+    if (params.has("set")) setEl.value = params.get("set") || "";
+    if (params.has("dex")) dexEl.value = params.get("dex") || "";
+    if (params.has("rarity")) rarityEl.value = params.get("rarity") || "";
+    if (params.has("category")) categoryEl.value = params.get("category") || "";
+    if (params.has("type")) typeEl.value = params.get("type") || "";
+    if (params.has("stage")) stageEl.value = params.get("stage") || "";
+    if (params.has("tag")) subtypeEl.value = params.get("tag") || "";
+    if (params.has("generation")) generationEl.value = params.get("generation") || "";
+    if (params.has("special")) pokemonSpecialEl.value = params.get("special") || "";
+    if (params.has("group")) speciesGroupEl.value = params.get("group") || "";
+    if (params.has("has")) hasFilterEl.value = params.get("has") || "";
+
+    const hasAdvanced =
+      !!(
+        seriesEl.value ||
+        setEl.value ||
+        dexEl.value ||
+        rarityEl.value ||
+        categoryEl.value ||
+        typeEl.value ||
+        stageEl.value ||
+        subtypeEl.value ||
+        generationEl.value ||
+        pokemonSpecialEl.value ||
+        speciesGroupEl.value ||
+        hasFilterEl.value
+      );
+    if (hasAdvanced) openAdvanced();
+
+    syncPageSize();
+    const pageRaw = parseInt(params.get("page") || "1", 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 1 ? pageRaw : 1;
+    offset = (page - 1) * pageSize;
+  }
+
+  function goToPage(pageNum) {
+    const page = Math.min(Math.max(1, Math.floor(Number(pageNum) || 1)), lastPageCount || 1);
+    offset = (page - 1) * pageSize;
+    search();
+  }
+
+  async function search() {
+    syncPageSize();
+    const params = buildSearchParams();
 
     updateActiveFilters();
+    writeSearchToUrl();
 
     gridEl.innerHTML = '<p class="sp-empty">Scanning the cosmos…</p>';
-    paginationEl.hidden = true;
+    paginationEls.forEach((nav) => {
+      nav.hidden = true;
+    });
 
     const resp = await fetch(`/api/pokemon/cards?${params}`);
     if (!resp.ok) {
@@ -1531,6 +1641,12 @@
       return;
     }
     const data = await resp.json();
+    const maxOffset = Math.max(0, Math.floor(Math.max(data.total - 1, 0) / Math.max(data.limit, 1)) * data.limit);
+    if (offset > maxOffset) {
+      offset = maxOffset;
+      writeSearchToUrl();
+      return search();
+    }
     resultCount.textContent = `${data.total} result${data.total === 1 ? "" : "s"}`;
     updatePagination(data.total, data.offset, data.limit);
 
@@ -1733,14 +1849,34 @@
     });
   });
 
-  pagePrev.addEventListener("click", () => {
-    offset = Math.max(0, offset - pageSize);
-    search();
+  document.querySelectorAll("[data-page-prev]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      offset = Math.max(0, offset - pageSize);
+      search();
+    });
   });
 
-  pageNext.addEventListener("click", () => {
-    offset += pageSize;
-    search();
+  document.querySelectorAll("[data-page-next]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      offset += pageSize;
+      search();
+    });
+  });
+
+  document.querySelectorAll("[data-page-go]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const nav = btn.closest("[data-pagination]");
+      const input = nav?.querySelector("[data-page-jump]");
+      goToPage(input?.value);
+    });
+  });
+
+  document.querySelectorAll("[data-page-jump]").forEach((input) => {
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      goToPage(input.value);
+    });
   });
 
   let resizePageTimer = null;
@@ -1844,5 +1980,10 @@
     modal.addEventListener("close", reset);
   })();
 
-  initAddMode().then(() => loadMeta()).then(resetOffsetAndSearch);
+  initAddMode()
+    .then(() => loadMeta())
+    .then(() => {
+      applySearchFromUrl();
+      search();
+    });
 })();

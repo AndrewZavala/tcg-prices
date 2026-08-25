@@ -1167,6 +1167,52 @@ body {
   text-align: center;
 }
 
+.sp-page-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--sp-muted, rgba(240, 244, 255, 0.75));
+}
+
+.sp-page-jump-input {
+  width: 3.25rem;
+  padding: 0.4rem 0.35rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(255, 110, 180, 0.35);
+  background: rgba(7, 11, 31, 0.65);
+  color: var(--sp-text);
+  font-family: var(--sp-display);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.sp-page-jump-input:focus {
+  outline: none;
+  border-color: var(--sp-pink);
+}
+
+.sp-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sp-pagination + .sp-grid {
+  margin-top: 0.25rem;
+}
+
+.sp-grid + .sp-pagination {
+  margin-top: 1.25rem;
+}
+
 .sp-siblings {
   margin-top: 1rem;
   padding-top: 1rem;
