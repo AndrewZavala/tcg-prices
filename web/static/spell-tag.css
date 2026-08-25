@@ -351,6 +351,74 @@
   background: rgba(103, 232, 249, 0.2);
 }
 
+.st-body .sp-otag.is-inherited {
+  opacity: 0.72;
+  font-weight: 600;
+  border-style: dashed;
+}
+
+.st-body .sp-otag-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding-right: 0.35rem;
+}
+
+.st-body .sp-otag-tree-toggle {
+  flex: 0 0 1.35rem;
+  width: 1.35rem;
+  height: 1.6rem;
+  border: none;
+  background: transparent;
+  color: var(--sp-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.st-body .sp-otag-tree-row .sp-otag-ms-option {
+  flex: 1;
+  min-width: 0;
+}
+
+.st-body .sp-otag-add-sub {
+  display: block;
+  width: calc(100% - 0.5rem);
+  text-align: left;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--sp-muted);
+  background: transparent;
+  border: none;
+  padding: 0.25rem 0.4rem 0.45rem;
+  cursor: pointer;
+}
+
+.st-body .sp-otag-add-sub:hover {
+  color: var(--sp-pink-soft);
+}
+
+.st-body .sp-otag-subtag-draft {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.25rem 0.5rem 0.55rem 0;
+}
+
+.st-body .sp-otag-subtag-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--sp-text);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(200, 200, 210, 0.25);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+}
+
 .st-body .sp-otag-editor,
 .st-body .sp-otag-admin {
   margin-top: 0.65rem;

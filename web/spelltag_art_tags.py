@@ -11,10 +11,16 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from spelltag_auth import require_admin, require_tagger
+from spelltag_tag_tree import (
+    assert_valid_parent,
+    enrich_tags_with_inheritance,
+    expand_search_slugs,
+)
 
 router = APIRouter(tags=["art-tags"])
 
 _engine: Engine | None = None
+DEFS_TABLE = "art_tag_defs"
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
@@ -35,12 +41,22 @@ class CreateTagDefBody(BaseModel):
         description="Either 'Night Sky' or 'night-sky' — slug/label derived automatically",
     )
     description: str | None = Field(default=None, max_length=400)
+    parent_slug: str | None = Field(
+        default=None,
+        max_length=80,
+        description="Optional parent tag slug (subtag under that parent)",
+    )
 
 
 class PatchTagDefBody(BaseModel):
     label: str | None = Field(default=None, max_length=80)
     description: str | None = Field(default=None, max_length=400)
     active: bool | None = None
+    parent_slug: str | None = Field(
+        default=None,
+        max_length=80,
+        description="Set parent; empty string clears parent",
+    )
 
 
 class SetArtTagsBody(BaseModel):
@@ -107,16 +123,16 @@ def _resolve_slug_and_label(
 
 
 def fetch_art_tags_for_illustrations(
-    conn, illustration_ids: list[str]
-) -> dict[str, list[dict[str, str]]]:
-    """Return {illustration_id: [{slug, label}, ...]} for active tags only."""
+    conn, illustration_ids: list[str], *, with_inherited: bool = True
+) -> dict[str, list[dict[str, Any]]]:
+    """Return {illustration_id: [{slug, label, inherited?}, ...]} for active tags only."""
     ids = [iid for iid in dict.fromkeys(illustration_ids) if iid]
     if not ids:
         return {}
     rows = conn.execute(
         text(
             """
-            SELECT at.illustration_id, d.slug, d.label
+            SELECT at.illustration_id, d.slug, d.label, d.parent_slug
             FROM art_tags at
             INNER JOIN art_tag_defs d ON d.slug = at.tag_slug
             WHERE at.illustration_id = ANY(:iids)
@@ -126,12 +142,23 @@ def fetch_art_tags_for_illustrations(
         ),
         {"iids": ids},
     ).mappings().all()
-    out: dict[str, list[dict[str, str]]] = {iid: [] for iid in ids}
+    explicit: dict[str, list[dict[str, str]]] = {iid: [] for iid in ids}
     for row in rows:
-        out.setdefault(str(row["illustration_id"]), []).append(
+        explicit.setdefault(str(row["illustration_id"]), []).append(
             {"slug": str(row["slug"]), "label": str(row["label"])}
         )
+    if not with_inherited:
+        return explicit  # type: ignore[return-value]
+    out: dict[str, list[dict[str, Any]]] = {}
+    for iid, tags in explicit.items():
+        out[iid] = enrich_tags_with_inheritance(
+            conn, tags, defs_table=DEFS_TABLE
+        )
     return out
+
+
+def expand_art_search_slugs(conn, slugs: list[str]) -> list[str]:
+    return expand_search_slugs(conn, slugs, defs_table=DEFS_TABLE)
 
 
 def _card_illustration_id(conn, card_id: str) -> tuple[str, str]:
@@ -164,7 +191,8 @@ def list_art_tag_defs(active_only: bool = True) -> dict[str, Any]:
             rows = conn.execute(
                 text(
                     """
-                    SELECT slug, label, description, active, created_at::text AS created_at
+                    SELECT slug, label, description, parent_slug, active,
+                           created_at::text AS created_at
                     FROM art_tag_defs
                     WHERE active = TRUE
                     ORDER BY label, slug
@@ -175,7 +203,8 @@ def list_art_tag_defs(active_only: bool = True) -> dict[str, Any]:
             rows = conn.execute(
                 text(
                     """
-                    SELECT slug, label, description, active, created_at::text AS created_at
+                    SELECT slug, label, description, parent_slug, active,
+                           created_at::text AS created_at
                     FROM art_tag_defs
                     ORDER BY active DESC, label, slug
                     """
@@ -194,6 +223,16 @@ def create_art_tag_def(request: Request, body: CreateTagDefBody) -> dict[str, An
     )
     assert _engine is not None
     with _engine.begin() as conn:
+        parent = assert_valid_parent(
+            conn,
+            defs_table=DEFS_TABLE,
+            parent_slug=body.parent_slug,
+            child_slug=slug,
+        )
+        if parent and not slug.startswith(parent + "-") and slug != parent:
+            candidate = f"{parent}-{slug}"
+            if SLUG_RE.match(candidate) and len(candidate) <= 80:
+                slug = candidate
         existing = conn.execute(
             text("SELECT 1 FROM art_tag_defs WHERE slug = :slug"),
             {"slug": slug},
@@ -203,14 +242,16 @@ def create_art_tag_def(request: Request, body: CreateTagDefBody) -> dict[str, An
         row = conn.execute(
             text(
                 """
-                INSERT INTO art_tag_defs (slug, label, description, created_by)
+                INSERT INTO art_tag_defs (slug, label, description, created_by, parent_slug)
                 VALUES (
                     :slug,
                     :label,
                     :description,
-                    CAST(:uid AS uuid)
+                    CAST(:uid AS uuid),
+                    :parent
                 )
-                RETURNING slug, label, description, active, created_at::text AS created_at
+                RETURNING slug, label, description, parent_slug, active,
+                          created_at::text AS created_at
                 """
             ),
             {
@@ -218,6 +259,7 @@ def create_art_tag_def(request: Request, body: CreateTagDefBody) -> dict[str, An
                 "label": label,
                 "description": (body.description or "").strip() or None,
                 "uid": user["id"],
+                "parent": parent,
             },
         ).mappings().one()
     return dict(row)
@@ -234,7 +276,7 @@ def patch_art_tag_def(
         current = conn.execute(
             text(
                 """
-                SELECT slug, label, description, active
+                SELECT slug, label, description, active, parent_slug
                 FROM art_tag_defs WHERE slug = :slug
                 """
             ),
@@ -251,15 +293,28 @@ def patch_art_tag_def(
             else ((body.description or "").strip() or None)
         )
         active = current["active"] if body.active is None else bool(body.active)
+        if body.parent_slug is None:
+            parent = current.get("parent_slug")
+        elif body.parent_slug.strip() == "":
+            parent = None
+        else:
+            parent = assert_valid_parent(
+                conn,
+                defs_table=DEFS_TABLE,
+                parent_slug=body.parent_slug,
+                child_slug=slug_n,
+            )
         row = conn.execute(
             text(
                 """
                 UPDATE art_tag_defs
                 SET label = :label,
                     description = :description,
-                    active = :active
+                    active = :active,
+                    parent_slug = :parent
                 WHERE slug = :slug
-                RETURNING slug, label, description, active, created_at::text AS created_at
+                RETURNING slug, label, description, parent_slug, active,
+                          created_at::text AS created_at
                 """
             ),
             {
@@ -267,6 +322,7 @@ def patch_art_tag_def(
                 "label": label,
                 "description": description,
                 "active": active,
+                "parent": parent,
             },
         ).mappings().one()
     return dict(row)

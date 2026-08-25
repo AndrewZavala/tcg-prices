@@ -616,7 +616,7 @@ def pokemon_meta(response: Response) -> PokemonMetaResponse:
             oracle_tag_defs = conn.execute(
                 text(
                     """
-                    SELECT slug, label
+                    SELECT slug, label, parent_slug
                     FROM oracle_tag_defs
                     WHERE active = TRUE
                     ORDER BY label, slug
@@ -629,7 +629,7 @@ def pokemon_meta(response: Response) -> PokemonMetaResponse:
             art_tag_defs = conn.execute(
                 text(
                     """
-                    SELECT slug, label
+                    SELECT slug, label, parent_slug
                     FROM art_tag_defs
                     WHERE active = TRUE
                     ORDER BY label, slug
@@ -730,33 +730,50 @@ def search_pokemon_cards(
 
     explicit_otags = [t.strip().lower().replace("_", "-") for t in (otag or "").split(",") if t.strip()]
     all_otags = list(dict.fromkeys(parsed["oracle_tags"] + explicit_otags))
+    # Each requested tag is AND'd; within a tag, parent matches any descendant (OR).
     for idx, slug in enumerate(all_otags):
-        key = f"otag_{idx}"
+        expanded = [slug]
+        try:
+            from spelltag_oracle_tags import expand_oracle_search_slugs
+
+            with _engine.connect() as _c:
+                expanded = expand_oracle_search_slugs(_c, [slug])
+        except Exception:
+            pass
+        key = f"otags_{idx}"
         filters.append(
             f"""EXISTS (
                 SELECT 1 FROM oracle_tags ot
                 INNER JOIN oracle_tag_defs otd ON otd.slug = ot.tag_slug
                 WHERE ot.oracle_id = c.oracle_id
-                  AND ot.tag_slug = :{key}
+                  AND ot.tag_slug = ANY(:{key})
                   AND otd.active = TRUE
             )"""
         )
-        params[key] = slug
+        params[key] = expanded
 
     explicit_artags = [t.strip().lower().replace("_", "-") for t in (art or "").split(",") if t.strip()]
     all_artags = list(dict.fromkeys(parsed["art_tags"] + explicit_artags))
     for idx, slug in enumerate(all_artags):
-        key = f"artag_{idx}"
+        expanded = [slug]
+        try:
+            from spelltag_art_tags import expand_art_search_slugs
+
+            with _engine.connect() as _c:
+                expanded = expand_art_search_slugs(_c, [slug])
+        except Exception:
+            pass
+        key = f"artags_{idx}"
         filters.append(
             f"""EXISTS (
                 SELECT 1 FROM art_tags at
                 INNER JOIN art_tag_defs atd ON atd.slug = at.tag_slug
                 WHERE at.illustration_id = c.illustration_id
-                  AND at.tag_slug = :{key}
+                  AND at.tag_slug = ANY(:{key})
                   AND atd.active = TRUE
             )"""
         )
-        params[key] = slug
+        params[key] = expanded
 
     gen = generation if generation is not None else parsed["generation"]
     special = (pokemon_special or "").strip().lower() or parsed["pokemon_special"]

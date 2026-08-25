@@ -38,7 +38,7 @@
   const CARD_ZOOM_STEP = 20;
   const CARD_ZOOM_DEFAULT = 130;
   const CARD_ZOOM_MOBILE_DEFAULT = 100;
-  const META_CACHE_KEY = "sp-pokemon-meta-v2";
+  const META_CACHE_KEY = "sp-pokemon-meta-v3";
   const META_CACHE_TTL_MS = 60 * 60 * 1000;
   let cardZoomPx = CARD_ZOOM_DEFAULT;
 
@@ -253,322 +253,473 @@
     resetOffsetAndSearch();
   }
 
-  function oracleTagsBlock(card) {
-    const applied = Array.isArray(card.oracle_tags) ? card.oracle_tags : [];
-    const defs = (catalogFacets.oracle_tags || []).slice();
-    const bySlug = new Map(defs.map((d) => [d.slug, d]));
-    for (const t of applied) {
-      if (t && t.slug && !bySlug.has(t.slug)) bySlug.set(t.slug, t);
+  function explicitTagsOnly(tags) {
+    return (Array.isArray(tags) ? tags : []).filter((t) => t && t.slug && !t.inherited);
+  }
+
+  function buildTagTree(defs) {
+    const bySlug = new Map();
+    for (const d of defs || []) {
+      if (d && d.slug) bySlug.set(d.slug, { ...d, children: [] });
     }
+    const roots = [];
+    for (const d of bySlug.values()) {
+      const parent = d.parent_slug && bySlug.get(d.parent_slug);
+      if (parent) parent.children.push(d);
+      else roots.push(d);
+    }
+    const sortFn = (a, b) => String(a.label || a.slug).localeCompare(String(b.label || b.slug));
+    const sortTree = (nodes) => {
+      nodes.sort(sortFn);
+      for (const n of nodes) sortTree(n.children || []);
+    };
+    sortTree(roots);
+    return { roots, bySlug };
+  }
+
+  function tagBlockHtml(card, cfg) {
+    const applied = Array.isArray(card[cfg.cardField]) ? card[cfg.cardField] : [];
     const user = window.__spelltagUser;
     const canTag = !!(user && user.is_tagger);
     if (!applied.length && !canTag) return "";
 
     const chips = applied
-      .map(
-        (t) =>
-          `<button type="button" class="sp-otag" data-otag="${esc(t.slug)}" title="Search otag:${esc(t.slug)}">${esc(
-            t.label || t.slug
-          )}</button>`
-      )
+      .map((t) => {
+        const inherited = !!t.inherited;
+        return `<button type="button" class="sp-otag${cfg.chipClass ? ` ${cfg.chipClass}` : ""}${
+          inherited ? " is-inherited" : ""
+        }" data-${cfg.dataAttr}="${esc(t.slug)}" title="Search ${cfg.searchPrefix}:${esc(t.slug)}${
+          inherited ? " (inherited)" : ""
+        }">${esc(t.label || t.slug)}</button>`;
+      })
       .join("");
 
     let editor = "";
     if (canTag) {
-      const selectedSlugs = applied.map((t) => t.slug).filter(Boolean);
+      const selectedSlugs = explicitTagsOnly(applied)
+        .map((t) => t.slug)
+        .filter(Boolean);
       editor = `
-        <div class="sp-otag-editor" id="otagEditor">
-          <p class="sp-hint">Select oracle tags for this card (all printings share them). Changes save automatically.</p>
-          <div class="sp-otag-ms" id="otagMulti">
-            <div class="sp-otag-ms-control" id="otagMsControl">
-              <div class="sp-otag-ms-chips" id="otagMsChips"></div>
-              <input type="search" class="sp-otag-ms-search" id="otagMsSearch"
-                     placeholder="Search tags…" autocomplete="off" aria-label="Search oracle tags" />
+        <div class="sp-otag-editor" id="${cfg.idPrefix}Editor">
+          <p class="sp-hint">${esc(cfg.shareHint)}</p>
+          <div class="sp-otag-ms" id="${cfg.idPrefix}Multi">
+            <div class="sp-otag-ms-control" id="${cfg.idPrefix}MsControl">
+              <div class="sp-otag-ms-chips" id="${cfg.idPrefix}MsChips"></div>
+              <input type="search" class="sp-otag-ms-search" id="${cfg.idPrefix}MsSearch"
+                     placeholder="Search tags…" autocomplete="off" aria-label="Search ${esc(cfg.title)} tags" />
               <span class="sp-otag-ms-caret" aria-hidden="true">▾</span>
             </div>
-            <div class="sp-otag-ms-menu" id="otagMsMenu" hidden role="listbox"></div>
-            <input type="hidden" id="otagMsValue" value="${esc(selectedSlugs.join(","))}" />
+            <div class="sp-otag-ms-menu" id="${cfg.idPrefix}MsMenu" hidden role="listbox"></div>
+            <input type="hidden" id="${cfg.idPrefix}MsValue" value="${esc(selectedSlugs.join(","))}" />
           </div>
           <div class="sp-otag-actions">
-            <span class="sp-otag-status" id="otagStatus" aria-live="polite"></span>
+            <span class="sp-otag-status" id="${cfg.idPrefix}Status" aria-live="polite"></span>
           </div>
-          <div class="sp-otag-admin" id="otagAdmin">
-            <p class="sp-hint">Create a tag — use <em>Rain Dance</em> or <em>rain-dance</em>.</p>
+          <div class="sp-otag-admin" id="${cfg.idPrefix}Admin">
+            <p class="sp-hint">Create a top-level tag, or expand a tag and use <em>+ Subtag</em>.</p>
             <div class="sp-otag-admin-row">
-              <input type="text" id="otagNewName" placeholder="Rain Dance or rain-dance" maxlength="80" />
-              <button type="button" class="sp-otag-save" id="otagCreateBtn">Create</button>
+              <input type="text" id="${cfg.idPrefix}NewName" placeholder="Status or rain-dance" maxlength="80" />
+              <button type="button" class="sp-otag-save" id="${cfg.idPrefix}CreateBtn">Create</button>
             </div>
-            <span class="sp-otag-status" id="otagCreateStatus" aria-live="polite"></span>
+            <span class="sp-otag-status" id="${cfg.idPrefix}CreateStatus" aria-live="polite"></span>
           </div>
         </div>`;
     }
 
     return `
-      <div class="sp-otag-block" id="otagBlock">
-        <h3>Oracle tags</h3>
-        <div class="sp-otag-list">${chips || '<span class="sp-hint">No oracle tags yet.</span>'}</div>
+      <div class="sp-otag-block${cfg.blockClass ? ` ${cfg.blockClass}` : ""}" id="${cfg.idPrefix}Block">
+        <h3>${esc(cfg.title)}</h3>
+        <div class="sp-otag-list">${chips || `<span class="sp-hint">No ${esc(cfg.title.toLowerCase())} yet.</span>`}</div>
         ${editor}
       </div>`;
   }
 
-  function renderOracleTagDisplayList(tags) {
-    const list = document.querySelector("#otagBlock .sp-otag-list");
-    if (!list) return;
-    const rows = Array.isArray(tags) ? tags : [];
-    if (!rows.length) {
-      list.innerHTML = '<span class="sp-hint">No oracle tags yet.</span>';
-      return;
-    }
-    list.innerHTML = rows
-      .map(
-        (t) =>
-          `<button type="button" class="sp-otag" data-otag="${esc(t.slug)}" title="Search otag:${esc(t.slug)}">${esc(
-            t.label || t.slug
-          )}</button>`
-      )
-      .join("");
-    list.querySelectorAll(".sp-otag[data-otag]").forEach((el) => {
-      el.addEventListener("click", () => searchByOtag(el.dataset.otag));
+  function oracleTagsBlock(card) {
+    return tagBlockHtml(card, {
+      idPrefix: "otag",
+      cardField: "oracle_tags",
+      title: "Oracle tags",
+      searchPrefix: "otag",
+      dataAttr: "otag",
+      shareHint:
+        "Select oracle tags for this card (all printings share them). Subtags inherit their parent when searching.",
+      chipClass: "",
+      blockClass: "",
     });
   }
 
-  async function wireOracleTagControls(card) {
-    const block = document.getElementById("otagBlock");
+  function artTagsBlock(card) {
+    return tagBlockHtml(card, {
+      idPrefix: "artag",
+      cardField: "art_tags",
+      title: "Art tags",
+      searchPrefix: "art",
+      dataAttr: "artag",
+      chipClass: "sp-artag",
+      blockClass: "sp-artag-block",
+      shareHint:
+        "Select art tags for this artwork (shared by same-art printings). Subtags inherit their parent when searching.",
+    });
+  }
+
+  function renderTagDisplayList(cfg, tags) {
+    const list = document.querySelector(`#${cfg.idPrefix}Block .sp-otag-list`);
+    if (!list) return;
+    const rows = Array.isArray(tags) ? tags : [];
+    if (!rows.length) {
+      list.innerHTML = `<span class="sp-hint">No ${esc(cfg.title.toLowerCase())} yet.</span>`;
+      return;
+    }
+    list.innerHTML = rows
+      .map((t) => {
+        const inherited = !!t.inherited;
+        return `<button type="button" class="sp-otag${cfg.chipClass ? ` ${cfg.chipClass}` : ""}${
+          inherited ? " is-inherited" : ""
+        }" data-${cfg.dataAttr}="${esc(t.slug)}" title="Search ${cfg.searchPrefix}:${esc(t.slug)}${
+          inherited ? " (inherited)" : ""
+        }">${esc(t.label || t.slug)}</button>`;
+      })
+      .join("");
+    list.querySelectorAll(`[data-${cfg.dataAttr}]`).forEach((el) => {
+      el.addEventListener("click", () => cfg.onSearch(el.getAttribute(`data-${cfg.dataAttr}`)));
+    });
+  }
+
+  async function wireTagControls(card, cfg) {
+    const block = document.getElementById(`${cfg.idPrefix}Block`);
     if (!block) return;
 
-    block.querySelectorAll(".sp-otag[data-otag]").forEach((el) => {
-      el.addEventListener("click", () => searchByOtag(el.dataset.otag));
+    block.querySelectorAll(`[data-${cfg.dataAttr}]`).forEach((el) => {
+      el.addEventListener("click", () => cfg.onSearch(el.getAttribute(`data-${cfg.dataAttr}`)));
     });
 
-    const editor = document.getElementById("otagEditor");
-    const multi = document.getElementById("otagMulti");
-    if (editor && multi) {
-      const bySlug = new Map();
-      for (const d of catalogFacets.oracle_tags || []) {
-        if (d && d.slug) bySlug.set(d.slug, { slug: d.slug, label: d.label || d.slug });
+    const multi = document.getElementById(`${cfg.idPrefix}Multi`);
+    if (!multi) return;
+
+    const expandedParents = new Set();
+    const subtagDraftParent = { slug: null };
+
+    const bySlug = new Map();
+    for (const d of catalogFacets[cfg.facetsKey] || []) {
+      if (d && d.slug) bySlug.set(d.slug, { slug: d.slug, label: d.label || d.slug, parent_slug: d.parent_slug || null });
+    }
+    for (const t of card[cfg.cardField] || []) {
+      if (t && t.slug && !bySlug.has(t.slug)) {
+        bySlug.set(t.slug, {
+          slug: t.slug,
+          label: t.label || t.slug,
+          parent_slug: t.parent_slug || null,
+        });
       }
-      for (const t of card.oracle_tags || []) {
-        if (t && t.slug && !bySlug.has(t.slug)) {
-          bySlug.set(t.slug, { slug: t.slug, label: t.label || t.slug });
-        }
+    }
+
+    const valueEl = document.getElementById(`${cfg.idPrefix}MsValue`);
+    const chipsEl = document.getElementById(`${cfg.idPrefix}MsChips`);
+    const searchEl = document.getElementById(`${cfg.idPrefix}MsSearch`);
+    const menuEl = document.getElementById(`${cfg.idPrefix}MsMenu`);
+    const controlEl = document.getElementById(`${cfg.idPrefix}MsControl`);
+    const status = document.getElementById(`${cfg.idPrefix}Status`);
+
+    const selected = new Set(
+      String((valueEl && valueEl.value) || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+
+    let saveSeq = 0;
+    let saving = false;
+
+    const labelFor = (slug) => {
+      const hit = bySlug.get(slug);
+      return (hit && hit.label) || slug;
+    };
+
+    const syncValue = () => {
+      if (valueEl) valueEl.value = [...selected].join(",");
+    };
+
+    const applySavedTags = (tags) => {
+      const rows = Array.isArray(tags) ? tags : [];
+      card[cfg.cardField] = rows;
+      selected.clear();
+      for (const t of explicitTagsOnly(rows)) selected.add(t.slug);
+      syncValue();
+      renderChips();
+      renderTagDisplayList(cfg, rows);
+    };
+
+    const apiErrorMessage = async (resp) => {
+      const err = await resp.json().catch(() => ({}));
+      const detail = err.detail;
+      if (Array.isArray(detail)) {
+        return detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
       }
-      const defs = [...bySlug.values()].sort((a, b) =>
-        String(a.label).localeCompare(String(b.label))
-      );
-      const valueEl = document.getElementById("otagMsValue");
-      const chipsEl = document.getElementById("otagMsChips");
-      const searchEl = document.getElementById("otagMsSearch");
-      const menuEl = document.getElementById("otagMsMenu");
-      const controlEl = document.getElementById("otagMsControl");
-      const status = document.getElementById("otagStatus");
+      return detail || `Request failed (${resp.status})`;
+    };
 
-      const selected = new Set(
-        String((valueEl && valueEl.value) || "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      );
+    const persistTagChange = async (slug, action) => {
+      const seq = ++saveSeq;
+      saving = true;
+      if (status) status.textContent = "Saving…";
+      try {
+        const url = `${cfg.cardTagBase}/${encodeURIComponent(card.id)}/${cfg.tagPath}/${encodeURIComponent(slug)}`;
+        const resp = await fetch(url, {
+          method: action === "add" ? "POST" : "DELETE",
+          credentials: "same-origin",
+        });
+        if (!resp.ok) throw new Error(await apiErrorMessage(resp));
+        const data = await resp.json();
+        if (seq !== saveSeq) return;
+        applySavedTags(data.tags || []);
+        if (status) status.textContent = "Saved.";
+      } catch (err) {
+        if (seq !== saveSeq) return;
+        if (status) status.textContent = err.message || "Save failed";
+        applySavedTags(card[cfg.cardField] || []);
+      } finally {
+        if (seq === saveSeq) saving = false;
+      }
+    };
 
-      let saveSeq = 0;
-      let saving = false;
-
-      const labelFor = (slug) => {
-        const hit = defs.find((d) => d.slug === slug);
-        return (hit && hit.label) || slug;
-      };
-
-      const syncValue = () => {
-        if (valueEl) valueEl.value = [...selected].join(",");
-      };
-
-      const applySavedTags = (tags) => {
-        const rows = Array.isArray(tags) ? tags : [];
-        card.oracle_tags = rows;
-        selected.clear();
-        for (const t of rows) {
-          if (t && t.slug) selected.add(t.slug);
-        }
-        syncValue();
-        renderChips();
-        renderOracleTagDisplayList(rows);
-      };
-
-      const apiErrorMessage = async (resp) => {
-        const err = await resp.json().catch(() => ({}));
-        const detail = err.detail;
-        if (Array.isArray(detail)) {
-          return detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
-        }
-        return detail || `Request failed (${resp.status})`;
-      };
-
-      const persistTagChange = async (slug, action) => {
-        const seq = ++saveSeq;
-        saving = true;
-        if (status) status.textContent = "Saving…";
-        try {
-          const url = `/api/pokemon/cards/${encodeURIComponent(card.id)}/oracle-tags/${encodeURIComponent(slug)}`;
-          const resp = await fetch(url, {
-            method: action === "add" ? "POST" : "DELETE",
-            credentials: "same-origin",
-          });
-          if (!resp.ok) throw new Error(await apiErrorMessage(resp));
-          const data = await resp.json();
-          if (seq !== saveSeq) return;
-          applySavedTags(data.tags || []);
-          if (status) status.textContent = "Saved.";
-        } catch (err) {
-          if (seq !== saveSeq) return;
-          if (status) status.textContent = err.message || "Save failed";
-          // Re-sync UI from last known good card state
-          applySavedTags(card.oracle_tags || []);
-        } finally {
-          if (seq === saveSeq) saving = false;
-        }
-      };
-
-      const renderChips = () => {
-        if (!chipsEl) return;
-        chipsEl.innerHTML = [...selected]
-          .map(
-            (slug) => `
+    const renderChips = () => {
+      if (!chipsEl) return;
+      chipsEl.innerHTML = [...selected]
+        .map(
+          (slug) => `
             <button type="button" class="sp-otag-ms-chip" data-remove="${esc(slug)}" title="Remove ${esc(labelFor(slug))}">
               ${esc(labelFor(slug))}
               <span aria-hidden="true">×</span>
             </button>`
-          )
-          .join("");
-        chipsEl.querySelectorAll("[data-remove]").forEach((btn) => {
-          btn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (saving) return;
-            const slug = btn.dataset.remove;
-            selected.delete(slug);
-            syncValue();
-            renderChips();
-            persistTagChange(slug, "remove");
-          });
+        )
+        .join("");
+      chipsEl.querySelectorAll("[data-remove]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (saving) return;
+          const slug = btn.dataset.remove;
+          selected.delete(slug);
+          syncValue();
+          renderChips();
+          persistTagChange(slug, "remove");
         });
+      });
+    };
+
+    const matchesQuery = (d, q) => {
+      if (!q) return true;
+      return (
+        String(d.label || "").toLowerCase().includes(q) ||
+        String(d.slug || "").toLowerCase().includes(q)
+      );
+    };
+
+    const createSubtag = async (parentSlug, name) => {
+      const trimmed = String(name || "").trim();
+      if (!trimmed) return;
+      if (status) status.textContent = "Creating subtag…";
+      try {
+        const resp = await fetch(cfg.defsApi, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: trimmed, parent_slug: parentSlug }),
+        });
+        if (!resp.ok) throw new Error(await apiErrorMessage(resp));
+        const created = await resp.json();
+        catalogFacets[cfg.facetsKey] = [...(catalogFacets[cfg.facetsKey] || []), created];
+        bySlug.set(created.slug, {
+          slug: created.slug,
+          label: created.label || created.slug,
+          parent_slug: created.parent_slug || parentSlug,
+        });
+        expandedParents.add(parentSlug);
+        subtagDraftParent.slug = null;
+        if (status) status.textContent = `Created ${created.label} (${created.slug}).`;
+        renderMenu(searchEl ? searchEl.value : "");
+      } catch (err) {
+        if (status) status.textContent = err.message || "Create failed";
+      }
+    };
+
+    const renderMenu = (query) => {
+      if (!menuEl) return;
+      const q = String(query || "").trim().toLowerCase();
+      const defs = [...bySlug.values()];
+      const { roots } = buildTagTree(defs);
+
+      const nodeVisible = (node) => {
+        if (matchesQuery(node, q)) return true;
+        return (node.children || []).some(nodeVisible);
       };
 
-      const renderMenu = (query) => {
-        if (!menuEl) return;
-        const q = String(query || "").trim().toLowerCase();
-        const rows = defs.filter((d) => {
-          if (!q) return true;
-          return (
-            String(d.label || "").toLowerCase().includes(q) ||
-            String(d.slug || "").toLowerCase().includes(q)
-          );
-        });
-        if (!rows.length) {
-          menuEl.innerHTML = '<div class="sp-otag-ms-empty">No matching tags</div>';
-          return;
+      const renderNode = (node, depth) => {
+        if (q && !nodeVisible(node)) return "";
+        const kids = node.children || [];
+        const forceOpen = !!q;
+        const open = forceOpen || expandedParents.has(node.slug) || subtagDraftParent.slug === node.slug;
+        const on = selected.has(node.slug);
+        const pad = 0.55 + depth * 0.85;
+        let html = `
+          <div class="sp-otag-tree-row" style="padding-left:${pad}rem">
+            <button type="button" class="sp-otag-tree-toggle"
+                    data-toggle="${esc(node.slug)}" aria-expanded="${open ? "true" : "false"}"
+                    title="Expand / collapse">${open ? "▾" : "▸"}</button>
+            <button type="button" class="sp-otag-ms-option${on ? " is-on" : ""}" role="option"
+                    aria-selected="${on ? "true" : "false"}" data-slug="${esc(node.slug)}">
+              <span class="sp-otag-ms-check" aria-hidden="true">${on ? "✓" : ""}</span>
+              <span class="sp-otag-ms-label">${esc(node.label || node.slug)}</span>
+            </button>
+          </div>`;
+        if (open) {
+          for (const child of kids) html += renderNode(child, depth + 1);
+          if (subtagDraftParent.slug === node.slug) {
+            html += `
+              <div class="sp-otag-subtag-draft" style="padding-left:${pad + 0.85}rem" data-parent="${esc(node.slug)}">
+                <input type="text" class="sp-otag-subtag-input" maxlength="80"
+                       placeholder="Subtag under ${esc(node.label || node.slug)}" />
+                <button type="button" class="sp-otag-save sp-otag-subtag-save">Add</button>
+              </div>`;
+          } else {
+            html += `
+              <button type="button" class="sp-otag-add-sub" style="padding-left:${pad + 0.85}rem"
+                      data-add-sub="${esc(node.slug)}">+ Subtag</button>`;
+          }
         }
-        menuEl.innerHTML = rows
-          .map((d) => {
-            const on = selected.has(d.slug);
-            return `
-              <button type="button" class="sp-otag-ms-option${on ? " is-on" : ""}" role="option"
-                      aria-selected="${on ? "true" : "false"}" data-slug="${esc(d.slug)}">
-                <span class="sp-otag-ms-check" aria-hidden="true">${on ? "✓" : ""}</span>
-                <span class="sp-otag-ms-label">${esc(d.label || d.slug)}</span>
-              </button>`;
-          })
-          .join("");
-        menuEl.querySelectorAll("[data-slug]").forEach((btn) => {
-          btn.addEventListener("click", (e) => {
+        return html;
+      };
+
+      const visibleRoots = roots.filter((n) => !q || nodeVisible(n));
+      if (!visibleRoots.length) {
+        menuEl.innerHTML = '<div class="sp-otag-ms-empty">No matching tags</div>';
+        return;
+      }
+      menuEl.innerHTML = visibleRoots.map((n) => renderNode(n, 0)).join("");
+
+      menuEl.querySelectorAll("[data-toggle]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const slug = btn.dataset.toggle;
+          if (expandedParents.has(slug)) expandedParents.delete(slug);
+          else expandedParents.add(slug);
+          renderMenu(searchEl ? searchEl.value : "");
+        });
+      });
+
+      menuEl.querySelectorAll("[data-slug]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (saving) return;
+          const slug = btn.dataset.slug;
+          const adding = !selected.has(slug);
+          if (adding) selected.add(slug);
+          else selected.delete(slug);
+          syncValue();
+          renderChips();
+          renderMenu(searchEl ? searchEl.value : "");
+          persistTagChange(slug, adding ? "add" : "remove");
+        });
+      });
+
+      menuEl.querySelectorAll("[data-add-sub]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          subtagDraftParent.slug = btn.dataset.addSub;
+          expandedParents.add(btn.dataset.addSub);
+          renderMenu(searchEl ? searchEl.value : "");
+          const input = menuEl.querySelector(".sp-otag-subtag-input");
+          if (input) input.focus();
+        });
+      });
+
+      const draft = menuEl.querySelector(".sp-otag-subtag-draft");
+      if (draft) {
+        const input = draft.querySelector(".sp-otag-subtag-input");
+        const saveBtn = draft.querySelector(".sp-otag-subtag-save");
+        const parentSlug = draft.dataset.parent;
+        const submit = () => createSubtag(parentSlug, input && input.value);
+        if (saveBtn) saveBtn.addEventListener("click", (e) => { e.stopPropagation(); submit(); });
+        if (input) {
+          input.addEventListener("click", (e) => e.stopPropagation());
+          input.addEventListener("keydown", (e) => {
             e.stopPropagation();
-            if (saving) return;
-            const slug = btn.dataset.slug;
-            const adding = !selected.has(slug);
-            if (adding) selected.add(slug);
-            else selected.delete(slug);
-            syncValue();
-            renderChips();
-            if (adding) {
-              if (searchEl) searchEl.value = "";
-              closeMenu();
-            } else {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+            if (e.key === "Escape") {
+              subtagDraftParent.slug = null;
               renderMenu(searchEl ? searchEl.value : "");
             }
-            persistTagChange(slug, adding ? "add" : "remove");
           });
-        });
-      };
-
-      const openMenu = () => {
-        if (!menuEl) return;
-        menuEl.hidden = false;
-        multi.classList.add("is-open");
-        renderMenu(searchEl ? searchEl.value : "");
-      };
-
-      const closeMenu = () => {
-        if (!menuEl) return;
-        menuEl.hidden = true;
-        multi.classList.remove("is-open");
-      };
-
-      renderChips();
-      syncValue();
-
-      if (controlEl) {
-        controlEl.addEventListener("click", () => {
-          openMenu();
-          if (searchEl) searchEl.focus();
-        });
+        }
       }
-      if (searchEl) {
-        searchEl.addEventListener("focus", openMenu);
-        searchEl.addEventListener("input", () => {
-          openMenu();
-          renderMenu(searchEl.value);
-        });
-        searchEl.addEventListener("keydown", (e) => {
-          if (e.key === "Escape") {
-            closeMenu();
-            searchEl.blur();
-          }
-        });
-      }
-      if (multi._otagOutsideClick) {
-        document.removeEventListener("click", multi._otagOutsideClick, true);
-      }
-      multi._otagOutsideClick = (e) => {
-        if (!multi.contains(e.target)) closeMenu();
-      };
-      document.addEventListener("click", multi._otagOutsideClick, true);
+    };
+
+    const openMenu = () => {
+      if (!menuEl) return;
+      menuEl.hidden = false;
+      multi.classList.add("is-open");
+      renderMenu(searchEl ? searchEl.value : "");
+    };
+
+    const closeMenu = () => {
+      if (!menuEl) return;
+      menuEl.hidden = true;
+      multi.classList.remove("is-open");
+      subtagDraftParent.slug = null;
+    };
+
+    renderChips();
+    syncValue();
+
+    if (controlEl) {
+      controlEl.addEventListener("click", () => {
+        openMenu();
+        if (searchEl) searchEl.focus();
+      });
     }
+    if (searchEl) {
+      searchEl.addEventListener("focus", openMenu);
+      searchEl.addEventListener("input", () => {
+        openMenu();
+        renderMenu(searchEl.value);
+      });
+      searchEl.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          closeMenu();
+          searchEl.blur();
+        }
+      });
+    }
+    const outsideKey = `_${cfg.idPrefix}OutsideClick`;
+    if (multi[outsideKey]) document.removeEventListener("click", multi[outsideKey], true);
+    multi[outsideKey] = (e) => {
+      if (!multi.contains(e.target)) closeMenu();
+    };
+    document.addEventListener("click", multi[outsideKey], true);
 
-    const createBtn = document.getElementById("otagCreateBtn");
+    const createBtn = document.getElementById(`${cfg.idPrefix}CreateBtn`);
     if (createBtn) {
       createBtn.addEventListener("click", async () => {
-        const status = document.getElementById("otagCreateStatus");
-        const name = ((document.getElementById("otagNewName") || {}).value || "").trim();
+        const createStatus = document.getElementById(`${cfg.idPrefix}CreateStatus`);
+        const name = ((document.getElementById(`${cfg.idPrefix}NewName`) || {}).value || "").trim();
         createBtn.disabled = true;
-        if (status) status.textContent = "Creating…";
+        if (createStatus) createStatus.textContent = "Creating…";
         try {
-          const resp = await fetch("/api/oracle-tags", {
+          const resp = await fetch(cfg.defsApi, {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name }),
           });
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            const detail = err.detail;
-            const msg = Array.isArray(detail)
-              ? detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
-              : detail || "Create failed";
-            throw new Error(msg);
-          }
+          if (!resp.ok) throw new Error(await apiErrorMessage(resp));
           const created = await resp.json();
-          catalogFacets.oracle_tags = [...(catalogFacets.oracle_tags || []), created];
-          if (status) status.textContent = `Created ${created.label} (${created.slug}).`;
+          catalogFacets[cfg.facetsKey] = [...(catalogFacets[cfg.facetsKey] || []), created];
+          if (createStatus) createStatus.textContent = `Created ${created.label} (${created.slug}).`;
           openCard(card.id);
         } catch (err) {
-          if (status) status.textContent = err.message || "Create failed";
+          if (createStatus) createStatus.textContent = err.message || "Create failed";
         } finally {
           createBtn.disabled = false;
         }
@@ -576,326 +727,36 @@
     }
   }
 
-  function artTagsBlock(card) {
-    const applied = Array.isArray(card.art_tags) ? card.art_tags : [];
-    const defs = (catalogFacets.art_tags || []).slice();
-    const bySlug = new Map(defs.map((d) => [d.slug, d]));
-    for (const t of applied) {
-      if (t && t.slug && !bySlug.has(t.slug)) bySlug.set(t.slug, t);
-    }
-    const user = window.__spelltagUser;
-    const canTag = !!(user && user.is_tagger);
-    if (!applied.length && !canTag) return "";
-
-    const chips = applied
-      .map(
-        (t) =>
-          `<button type="button" class="sp-otag sp-artag" data-artag="${esc(t.slug)}" title="Search art:${esc(t.slug)}">${esc(
-            t.label || t.slug
-          )}</button>`
-      )
-      .join("");
-
-    let editor = "";
-    if (canTag) {
-      const selectedSlugs = applied.map((t) => t.slug).filter(Boolean);
-      editor = `
-        <div class="sp-otag-editor" id="artagEditor">
-          <p class="sp-hint">Select art tags for this artwork (shared by all printings with the same art). Changes save automatically.</p>
-          <div class="sp-otag-ms" id="artagMulti">
-            <div class="sp-otag-ms-control" id="artagMsControl">
-              <div class="sp-otag-ms-chips" id="artagMsChips"></div>
-              <input type="search" class="sp-otag-ms-search" id="artagMsSearch"
-                     placeholder="Search tags…" autocomplete="off" aria-label="Search art tags" />
-              <span class="sp-otag-ms-caret" aria-hidden="true">▾</span>
-            </div>
-            <div class="sp-otag-ms-menu" id="artagMsMenu" hidden role="listbox"></div>
-            <input type="hidden" id="artagMsValue" value="${esc(selectedSlugs.join(","))}" />
-          </div>
-          <div class="sp-otag-actions">
-            <span class="sp-otag-status" id="artagStatus" aria-live="polite"></span>
-          </div>
-          <div class="sp-otag-admin" id="artagAdmin">
-            <p class="sp-hint">Create a tag — use <em>Night Sky</em> or <em>night-sky</em>.</p>
-            <div class="sp-otag-admin-row">
-              <input type="text" id="artagNewName" placeholder="Night Sky or night-sky" maxlength="80" />
-              <button type="button" class="sp-otag-save" id="artagCreateBtn">Create</button>
-            </div>
-            <span class="sp-otag-status" id="artagCreateStatus" aria-live="polite"></span>
-          </div>
-        </div>`;
-    }
-
-    return `
-      <div class="sp-otag-block sp-artag-block" id="artagBlock">
-        <h3>Art tags</h3>
-        <div class="sp-otag-list">${chips || '<span class="sp-hint">No art tags yet.</span>'}</div>
-        ${editor}
-      </div>`;
-  }
-
-  function renderArtTagDisplayList(tags) {
-    const list = document.querySelector("#artagBlock .sp-otag-list");
-    if (!list) return;
-    const rows = Array.isArray(tags) ? tags : [];
-    if (!rows.length) {
-      list.innerHTML = '<span class="sp-hint">No art tags yet.</span>';
-      return;
-    }
-    list.innerHTML = rows
-      .map(
-        (t) =>
-          `<button type="button" class="sp-otag sp-artag" data-artag="${esc(t.slug)}" title="Search art:${esc(t.slug)}">${esc(
-            t.label || t.slug
-          )}</button>`
-      )
-      .join("");
-    list.querySelectorAll(".sp-artag[data-artag]").forEach((el) => {
-      el.addEventListener("click", () => searchByArtag(el.dataset.artag));
+  async function wireOracleTagControls(card) {
+    await wireTagControls(card, {
+      idPrefix: "otag",
+      facetsKey: "oracle_tags",
+      cardField: "oracle_tags",
+      title: "Oracle tags",
+      searchPrefix: "otag",
+      dataAttr: "otag",
+      chipClass: "",
+      defsApi: "/api/oracle-tags",
+      cardTagBase: "/api/pokemon/cards",
+      tagPath: "oracle-tags",
+      onSearch: searchByOtag,
     });
   }
 
   async function wireArtTagControls(card) {
-    const block = document.getElementById("artagBlock");
-    if (!block) return;
-
-    block.querySelectorAll(".sp-artag[data-artag]").forEach((el) => {
-      el.addEventListener("click", () => searchByArtag(el.dataset.artag));
+    await wireTagControls(card, {
+      idPrefix: "artag",
+      facetsKey: "art_tags",
+      cardField: "art_tags",
+      title: "Art tags",
+      searchPrefix: "art",
+      dataAttr: "artag",
+      chipClass: "sp-artag",
+      defsApi: "/api/art-tags",
+      cardTagBase: "/api/pokemon/cards",
+      tagPath: "art-tags",
+      onSearch: searchByArtag,
     });
-
-    const editor = document.getElementById("artagEditor");
-    const multi = document.getElementById("artagMulti");
-    if (editor && multi) {
-      const bySlug = new Map();
-      for (const d of catalogFacets.art_tags || []) {
-        if (d && d.slug) bySlug.set(d.slug, { slug: d.slug, label: d.label || d.slug });
-      }
-      for (const t of card.art_tags || []) {
-        if (t && t.slug && !bySlug.has(t.slug)) {
-          bySlug.set(t.slug, { slug: t.slug, label: t.label || t.slug });
-        }
-      }
-      const defs = [...bySlug.values()].sort((a, b) =>
-        String(a.label).localeCompare(String(b.label))
-      );
-      const valueEl = document.getElementById("artagMsValue");
-      const chipsEl = document.getElementById("artagMsChips");
-      const searchEl = document.getElementById("artagMsSearch");
-      const menuEl = document.getElementById("artagMsMenu");
-      const controlEl = document.getElementById("artagMsControl");
-      const status = document.getElementById("artagStatus");
-
-      const selected = new Set(
-        String((valueEl && valueEl.value) || "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      );
-
-      let saveSeq = 0;
-      let saving = false;
-
-      const labelFor = (slug) => {
-        const hit = defs.find((d) => d.slug === slug);
-        return (hit && hit.label) || slug;
-      };
-
-      const syncValue = () => {
-        if (valueEl) valueEl.value = [...selected].join(",");
-      };
-
-      const applySavedTags = (tags) => {
-        const rows = Array.isArray(tags) ? tags : [];
-        card.art_tags = rows;
-        selected.clear();
-        for (const t of rows) {
-          if (t && t.slug) selected.add(t.slug);
-        }
-        syncValue();
-        renderChips();
-        renderArtTagDisplayList(rows);
-      };
-
-      const apiErrorMessage = async (resp) => {
-        const err = await resp.json().catch(() => ({}));
-        const detail = err.detail;
-        if (Array.isArray(detail)) {
-          return detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
-        }
-        return detail || `Request failed (${resp.status})`;
-      };
-
-      const persistTagChange = async (slug, action) => {
-        const seq = ++saveSeq;
-        saving = true;
-        if (status) status.textContent = "Saving…";
-        try {
-          const url = `/api/pokemon/cards/${encodeURIComponent(card.id)}/art-tags/${encodeURIComponent(slug)}`;
-          const resp = await fetch(url, {
-            method: action === "add" ? "POST" : "DELETE",
-            credentials: "same-origin",
-          });
-          if (!resp.ok) throw new Error(await apiErrorMessage(resp));
-          const data = await resp.json();
-          if (seq !== saveSeq) return;
-          applySavedTags(data.tags || []);
-          if (status) status.textContent = "Saved.";
-        } catch (err) {
-          if (seq !== saveSeq) return;
-          if (status) status.textContent = err.message || "Save failed";
-          applySavedTags(card.art_tags || []);
-        } finally {
-          if (seq === saveSeq) saving = false;
-        }
-      };
-
-      const renderChips = () => {
-        if (!chipsEl) return;
-        chipsEl.innerHTML = [...selected]
-          .map(
-            (slug) => `
-            <button type="button" class="sp-otag-ms-chip" data-remove="${esc(slug)}" title="Remove ${esc(labelFor(slug))}">
-              ${esc(labelFor(slug))}
-              <span aria-hidden="true">×</span>
-            </button>`
-          )
-          .join("");
-        chipsEl.querySelectorAll("[data-remove]").forEach((btn) => {
-          btn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (saving) return;
-            const slug = btn.dataset.remove;
-            selected.delete(slug);
-            syncValue();
-            renderChips();
-            persistTagChange(slug, "remove");
-          });
-        });
-      };
-
-      const renderMenu = (query) => {
-        if (!menuEl) return;
-        const q = String(query || "").trim().toLowerCase();
-        const rows = defs.filter((d) => {
-          if (!q) return true;
-          return (
-            String(d.label || "").toLowerCase().includes(q) ||
-            String(d.slug || "").toLowerCase().includes(q)
-          );
-        });
-        if (!rows.length) {
-          menuEl.innerHTML = '<div class="sp-otag-ms-empty">No matching tags</div>';
-          return;
-        }
-        menuEl.innerHTML = rows
-          .map((d) => {
-            const on = selected.has(d.slug);
-            return `
-              <button type="button" class="sp-otag-ms-option${on ? " is-on" : ""}" role="option"
-                      aria-selected="${on ? "true" : "false"}" data-slug="${esc(d.slug)}">
-                <span class="sp-otag-ms-check" aria-hidden="true">${on ? "✓" : ""}</span>
-                <span class="sp-otag-ms-label">${esc(d.label || d.slug)}</span>
-              </button>`;
-          })
-          .join("");
-        menuEl.querySelectorAll("[data-slug]").forEach((btn) => {
-          btn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (saving) return;
-            const slug = btn.dataset.slug;
-            const adding = !selected.has(slug);
-            if (adding) selected.add(slug);
-            else selected.delete(slug);
-            syncValue();
-            renderChips();
-            if (adding) {
-              if (searchEl) searchEl.value = "";
-              closeMenu();
-            } else {
-              renderMenu(searchEl ? searchEl.value : "");
-            }
-            persistTagChange(slug, adding ? "add" : "remove");
-          });
-        });
-      };
-
-      const openMenu = () => {
-        if (!menuEl) return;
-        menuEl.hidden = false;
-        multi.classList.add("is-open");
-        renderMenu(searchEl ? searchEl.value : "");
-      };
-
-      const closeMenu = () => {
-        if (!menuEl) return;
-        menuEl.hidden = true;
-        multi.classList.remove("is-open");
-      };
-
-      renderChips();
-      syncValue();
-
-      if (controlEl) {
-        controlEl.addEventListener("click", () => {
-          openMenu();
-          if (searchEl) searchEl.focus();
-        });
-      }
-      if (searchEl) {
-        searchEl.addEventListener("focus", openMenu);
-        searchEl.addEventListener("input", () => {
-          openMenu();
-          renderMenu(searchEl.value);
-        });
-        searchEl.addEventListener("keydown", (e) => {
-          if (e.key === "Escape") {
-            closeMenu();
-            searchEl.blur();
-          }
-        });
-      }
-      if (multi._artagOutsideClick) {
-        document.removeEventListener("click", multi._artagOutsideClick, true);
-      }
-      multi._artagOutsideClick = (e) => {
-        if (!multi.contains(e.target)) closeMenu();
-      };
-      document.addEventListener("click", multi._artagOutsideClick, true);
-    }
-
-    const createBtn = document.getElementById("artagCreateBtn");
-    if (createBtn) {
-      createBtn.addEventListener("click", async () => {
-        const status = document.getElementById("artagCreateStatus");
-        const name = ((document.getElementById("artagNewName") || {}).value || "").trim();
-        createBtn.disabled = true;
-        if (status) status.textContent = "Creating…";
-        try {
-          const resp = await fetch("/api/art-tags", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name }),
-          });
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            const detail = err.detail;
-            const msg = Array.isArray(detail)
-              ? detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
-              : detail || "Create failed";
-            throw new Error(msg);
-          }
-          const created = await resp.json();
-          catalogFacets.art_tags = [...(catalogFacets.art_tags || []), created];
-          if (status) status.textContent = `Created ${created.label} (${created.slug}).`;
-          openCard(card.id);
-        } catch (err) {
-          if (status) status.textContent = err.message || "Create failed";
-        } finally {
-          createBtn.disabled = false;
-        }
-      });
-    }
   }
 
   function searchByGeneration(genId) {

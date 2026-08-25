@@ -11,10 +11,16 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from spelltag_auth import require_admin, require_tagger
+from spelltag_tag_tree import (
+    assert_valid_parent,
+    enrich_tags_with_inheritance,
+    expand_search_slugs,
+)
 
 router = APIRouter(tags=["oracle-tags"])
 
 _engine: Engine | None = None
+DEFS_TABLE = "oracle_tag_defs"
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
@@ -35,12 +41,22 @@ class CreateTagDefBody(BaseModel):
         description="Either 'Rain Dance' or 'rain-dance' — slug/label derived automatically",
     )
     description: str | None = Field(default=None, max_length=400)
+    parent_slug: str | None = Field(
+        default=None,
+        max_length=80,
+        description="Optional parent tag slug (subtag under that parent)",
+    )
 
 
 class PatchTagDefBody(BaseModel):
     label: str | None = Field(default=None, max_length=80)
     description: str | None = Field(default=None, max_length=400)
     active: bool | None = None
+    parent_slug: str | None = Field(
+        default=None,
+        max_length=80,
+        description="Set parent; empty string clears parent",
+    )
 
 
 class SetOracleTagsBody(BaseModel):
@@ -122,16 +138,16 @@ def _resolve_slug_and_label(
 
 
 def fetch_oracle_tags_for_oracles(
-    conn, oracle_ids: list[str]
-) -> dict[str, list[dict[str, str]]]:
-    """Return {oracle_id: [{slug, label}, ...]} for active tags only."""
+    conn, oracle_ids: list[str], *, with_inherited: bool = True
+) -> dict[str, list[dict[str, Any]]]:
+    """Return {oracle_id: [{slug, label, inherited?}, ...]} for active tags only."""
     ids = [oid for oid in dict.fromkeys(oracle_ids) if oid]
     if not ids:
         return {}
     rows = conn.execute(
         text(
             """
-            SELECT ot.oracle_id, d.slug, d.label
+            SELECT ot.oracle_id, d.slug, d.label, d.parent_slug
             FROM oracle_tags ot
             INNER JOIN oracle_tag_defs d ON d.slug = ot.tag_slug
             WHERE ot.oracle_id = ANY(:oids)
@@ -141,12 +157,23 @@ def fetch_oracle_tags_for_oracles(
         ),
         {"oids": ids},
     ).mappings().all()
-    out: dict[str, list[dict[str, str]]] = {oid: [] for oid in ids}
+    explicit: dict[str, list[dict[str, str]]] = {oid: [] for oid in ids}
     for row in rows:
-        out.setdefault(str(row["oracle_id"]), []).append(
+        explicit.setdefault(str(row["oracle_id"]), []).append(
             {"slug": str(row["slug"]), "label": str(row["label"])}
         )
+    if not with_inherited:
+        return explicit  # type: ignore[return-value]
+    out: dict[str, list[dict[str, Any]]] = {}
+    for oid, tags in explicit.items():
+        out[oid] = enrich_tags_with_inheritance(
+            conn, tags, defs_table=DEFS_TABLE
+        )
     return out
+
+
+def expand_oracle_search_slugs(conn, slugs: list[str]) -> list[str]:
+    return expand_search_slugs(conn, slugs, defs_table=DEFS_TABLE)
 
 
 def _card_oracle_id(conn, card_id: str) -> tuple[str, str]:
@@ -295,7 +322,8 @@ def list_oracle_tag_defs(active_only: bool = True) -> dict[str, Any]:
             rows = conn.execute(
                 text(
                     """
-                    SELECT slug, label, description, active, created_at::text AS created_at
+                    SELECT slug, label, description, parent_slug, active,
+                           created_at::text AS created_at
                     FROM oracle_tag_defs
                     WHERE active = TRUE
                     ORDER BY label, slug
@@ -306,7 +334,8 @@ def list_oracle_tag_defs(active_only: bool = True) -> dict[str, Any]:
             rows = conn.execute(
                 text(
                     """
-                    SELECT slug, label, description, active, created_at::text AS created_at
+                    SELECT slug, label, description, parent_slug, active,
+                           created_at::text AS created_at
                     FROM oracle_tag_defs
                     ORDER BY active DESC, label, slug
                     """
@@ -325,6 +354,19 @@ def create_oracle_tag_def(request: Request, body: CreateTagDefBody) -> dict[str,
     )
     assert _engine is not None
     with _engine.begin() as conn:
+        parent = assert_valid_parent(
+            conn,
+            defs_table=DEFS_TABLE,
+            parent_slug=body.parent_slug,
+            child_slug=slug,
+        )
+        # Prefix child slug with parent when creating a short subtag name
+        if parent and not slug.startswith(parent + "-") and slug != parent:
+            # Keep user slug if already hierarchical; else status + sleep → status-sleep
+            if "-" not in slug or not slug.startswith(parent):
+                candidate = f"{parent}-{slug}"
+                if SLUG_RE.match(candidate) and len(candidate) <= 80:
+                    slug = candidate
         existing = conn.execute(
             text("SELECT 1 FROM oracle_tag_defs WHERE slug = :slug"),
             {"slug": slug},
@@ -334,14 +376,16 @@ def create_oracle_tag_def(request: Request, body: CreateTagDefBody) -> dict[str,
         row = conn.execute(
             text(
                 """
-                INSERT INTO oracle_tag_defs (slug, label, description, created_by)
+                INSERT INTO oracle_tag_defs (slug, label, description, created_by, parent_slug)
                 VALUES (
                     :slug,
                     :label,
                     :description,
-                    CAST(:uid AS uuid)
+                    CAST(:uid AS uuid),
+                    :parent
                 )
-                RETURNING slug, label, description, active, created_at::text AS created_at
+                RETURNING slug, label, description, parent_slug, active,
+                          created_at::text AS created_at
                 """
             ),
             {
@@ -349,6 +393,7 @@ def create_oracle_tag_def(request: Request, body: CreateTagDefBody) -> dict[str,
                 "label": label,
                 "description": (body.description or "").strip() or None,
                 "uid": user["id"],
+                "parent": parent,
             },
         ).mappings().one()
     return dict(row)
@@ -365,7 +410,7 @@ def patch_oracle_tag_def(
         current = conn.execute(
             text(
                 """
-                SELECT slug, label, description, active
+                SELECT slug, label, description, active, parent_slug
                 FROM oracle_tag_defs WHERE slug = :slug
                 """
             ),
@@ -382,15 +427,28 @@ def patch_oracle_tag_def(
             else ((body.description or "").strip() or None)
         )
         active = current["active"] if body.active is None else bool(body.active)
+        if body.parent_slug is None:
+            parent = current.get("parent_slug")
+        elif body.parent_slug.strip() == "":
+            parent = None
+        else:
+            parent = assert_valid_parent(
+                conn,
+                defs_table=DEFS_TABLE,
+                parent_slug=body.parent_slug,
+                child_slug=slug_n,
+            )
         row = conn.execute(
             text(
                 """
                 UPDATE oracle_tag_defs
                 SET label = :label,
                     description = :description,
-                    active = :active
+                    active = :active,
+                    parent_slug = :parent
                 WHERE slug = :slug
-                RETURNING slug, label, description, active, created_at::text AS created_at
+                RETURNING slug, label, description, parent_slug, active,
+                          created_at::text AS created_at
                 """
             ),
             {
@@ -398,6 +456,7 @@ def patch_oracle_tag_def(
                 "label": label,
                 "description": description,
                 "active": active,
+                "parent": parent,
             },
         ).mappings().one()
     return dict(row)
