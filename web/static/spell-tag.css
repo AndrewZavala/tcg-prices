@@ -830,6 +830,107 @@
   height: auto;
 }
 
+.st-body .sp-collection-list-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin: 0.85rem 0 0;
+}
+
+.st-body .sp-collection-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 9rem;
+}
+
+.st-body .sp-collection-control select,
+.st-body .sp-collection-list-controls .sp-collection-search-input {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--sp-text);
+  background: rgba(12, 12, 14, 0.85);
+  border: 1px solid rgba(200, 200, 210, 0.28);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+}
+
+.st-body .sp-collection-list-controls .sp-collection-search {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+.st-body .sp-collection-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.st-body .sp-collection-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.st-body .sp-collection-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--sp-text);
+  background: rgba(196, 168, 232, 0.15);
+  border: 1px solid rgba(196, 168, 232, 0.35);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  text-decoration: none;
+}
+
+.st-body a.sp-collection-tag:hover {
+  border-color: rgba(196, 168, 232, 0.65);
+  color: #fff;
+}
+
+.st-body .sp-collection-tag-removable {
+  font: inherit;
+  cursor: pointer;
+}
+
+.st-body .sp-collection-tag-removable:hover {
+  border-color: rgba(255, 182, 193, 0.55);
+  color: var(--sp-pink-soft);
+}
+
+.st-body .sp-collection-tags-panel {
+  margin-top: 0.85rem;
+}
+
+.st-body .sp-collection-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.5rem;
+}
+
+.st-body .sp-collection-tag-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.st-body .sp-collection-tag-form input {
+  flex: 1 1 10rem;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--sp-text);
+  background: rgba(12, 12, 14, 0.85);
+  border: 1px solid rgba(200, 200, 210, 0.28);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+}
+
 .st-body .sp-collection-search {
   display: flex;
   flex-wrap: wrap;

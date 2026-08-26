@@ -63,6 +63,7 @@ POKEMON_MIGRATIONS = (
     "034_card_local_images.sql",
     "035_art_tags.sql",
     "036_tag_hierarchy.sql",
+    "037_collection_tags.sql",
 )
 
 

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -44,6 +45,92 @@ class CubeImportBody(BaseModel):
     cube: dict[str, Any]
     collection_id: str | None = None
     new_collection_name: str | None = Field(default=None, max_length=80)
+
+
+class UpdateCollectionTagsBody(BaseModel):
+    tags: list[str] = Field(default_factory=list, max_length=20)
+
+
+_TAG_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def _normalize_collection_tag(raw: str) -> str:
+    s = (raw or "").strip().lower()
+    s = re.sub(r"[^a-z0-9_-]+", "-", s)
+    s = re.sub(r"-+", "-", s).strip("-")
+    if not s or len(s) > 32 or not _TAG_SLUG_RE.match(s):
+        raise HTTPException(
+            status_code=400,
+            detail="Tags must be 1–32 characters: lowercase letters, numbers, hyphens",
+        )
+    return s
+
+
+def _normalize_collection_tags(raw_tags: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in raw_tags:
+        slug = _normalize_collection_tag(str(raw))
+        if slug not in seen:
+            seen.add(slug)
+            out.append(slug)
+    if len(out) > 20:
+        raise HTTPException(status_code=400, detail="At most 20 tags per collection")
+    return out
+
+
+def _fetch_collection_tags(conn, collection_ids: list[str]) -> dict[str, list[str]]:
+    if not collection_ids:
+        return {}
+    rows = conn.execute(
+        text(
+            """
+            SELECT collection_id::text AS collection_id, tag_slug
+            FROM collection_tags
+            WHERE collection_id::text = ANY(:ids)
+            ORDER BY tag_slug ASC
+            """
+        ),
+        {"ids": collection_ids},
+    ).mappings().all()
+    out: dict[str, list[str]] = {}
+    for row in rows:
+        out.setdefault(str(row["collection_id"]), []).append(str(row["tag_slug"]))
+    return out
+
+
+def _replace_collection_tags(conn, collection_id: str, tags: list[str]) -> list[str]:
+    conn.execute(
+        text("DELETE FROM collection_tags WHERE collection_id = CAST(:cid AS uuid)"),
+        {"cid": collection_id},
+    )
+    for slug in tags:
+        conn.execute(
+            text(
+                """
+                INSERT INTO collection_tags (collection_id, tag_slug)
+                VALUES (CAST(:cid AS uuid), :slug)
+                """
+            ),
+            {"cid": collection_id, "slug": slug},
+        )
+    if tags:
+        conn.execute(
+            text("UPDATE collections SET updated_at = NOW() WHERE id = CAST(:cid AS uuid)"),
+            {"cid": collection_id},
+        )
+    return tags
+
+
+def _card_sort_clause(sort: str) -> str:
+    key = (sort or "saved").lower()
+    if key == "name":
+        return "pc.name ASC, pc.id ASC"
+    if key == "set":
+        return "s.name ASC, pc.local_id ASC, pc.id ASC"
+    if key == "number":
+        return "pc.local_id ASC, pc.name ASC, pc.id ASC"
+    return "i.created_at DESC, pc.id ASC"
 
 
 def _parse_cube_payload(cube: dict[str, Any]) -> list[dict[str, Any]]:
@@ -94,7 +181,12 @@ def _owned_collection(conn, user_id: str, collection_id: str) -> dict[str, Any] 
     row = conn.execute(
         text(
             """
-            SELECT id::text AS id, name, kind, created_at::text AS created_at
+            SELECT
+                id::text AS id,
+                name,
+                kind,
+                created_at::text AS created_at,
+                updated_at::text AS updated_at
             FROM collections
             WHERE id = CAST(:cid AS uuid) AND user_id = CAST(:uid AS uuid)
             """
@@ -113,33 +205,86 @@ def _card_exists(conn, card_id: str) -> bool:
     )
 
 
-@router.get("/api/me/collections")
-def list_collections(request: Request):
+@router.get("/api/me/collection-tags")
+def list_collection_tags(request: Request):
     user = require_user(request)
     assert _engine is not None
-    with _engine.begin() as conn:
-        _ensure_favorites(conn, user["id"])
+    with _engine.connect() as conn:
         rows = conn.execute(
             text(
                 """
+                SELECT DISTINCT ct.tag_slug AS slug
+                FROM collection_tags ct
+                INNER JOIN collections c ON c.id = ct.collection_id
+                WHERE c.user_id = CAST(:uid AS uuid)
+                ORDER BY ct.tag_slug ASC
+                """
+            ),
+            {"uid": user["id"]},
+        ).scalars().all()
+    return {"tags": list(rows)}
+
+
+@router.get("/api/me/collections")
+def list_collections(
+    request: Request,
+    tag: str | None = Query(None, description="Filter to collections with this tag"),
+    sort: str = Query("name", description="name | count | updated"),
+):
+    user = require_user(request)
+    tag_slug = None
+    if tag:
+        tag_slug = _normalize_collection_tag(tag)
+    sort_key = (sort or "name").lower()
+    if sort_key not in ("name", "count", "updated"):
+        raise HTTPException(status_code=400, detail="sort must be name, count, or updated")
+
+    assert _engine is not None
+    with _engine.begin() as conn:
+        _ensure_favorites(conn, user["id"])
+        order_sql = {
+            "name": "CASE WHEN c.kind = 'favorites' THEN 0 ELSE 1 END, c.name ASC",
+            "count": "CASE WHEN c.kind = 'favorites' THEN 0 ELSE 1 END, item_count DESC, c.name ASC",
+            "updated": "CASE WHEN c.kind = 'favorites' THEN 0 ELSE 1 END, c.updated_at DESC, c.name ASC",
+        }[sort_key]
+        params: dict[str, Any] = {"uid": user["id"]}
+        tag_filter = ""
+        if tag_slug:
+            tag_filter = """
+                AND EXISTS (
+                    SELECT 1 FROM collection_tags ct
+                    WHERE ct.collection_id = c.id AND ct.tag_slug = :tag
+                )
+            """
+            params["tag"] = tag_slug
+        rows = conn.execute(
+            text(
+                f"""
                 SELECT
                     c.id::text AS id,
                     c.name,
                     c.kind,
                     c.created_at::text AS created_at,
+                    c.updated_at::text AS updated_at,
                     COUNT(i.id)::int AS item_count
                 FROM collections c
                 LEFT JOIN collection_items i ON i.collection_id = c.id
                 WHERE c.user_id = CAST(:uid AS uuid)
-                GROUP BY c.id, c.name, c.kind, c.created_at
-                ORDER BY
-                    CASE WHEN c.kind = 'favorites' THEN 0 ELSE 1 END,
-                    c.name ASC
+                {tag_filter}
+                GROUP BY c.id, c.name, c.kind, c.created_at, c.updated_at
+                ORDER BY {order_sql}
                 """
             ),
-            {"uid": user["id"]},
+            params,
         ).mappings().all()
-    return {"collections": [dict(r) for r in rows]}
+        ids = [str(r["id"]) for r in rows]
+        tags_by_id = _fetch_collection_tags(conn, ids)
+    out = []
+    for row in rows:
+        item = dict(row)
+        item["tags"] = tags_by_id.get(str(item["id"]), [])
+        out.append(item)
+    return {"collections": out, "sort": sort_key, "tag": tag_slug}
 
 
 @router.post("/api/me/collections")
@@ -195,26 +340,53 @@ def collection_add_context(request: Request, collection_id: str):
     }
 
 
-@router.get("/api/me/collections/{collection_id}")
-def get_collection(request: Request, collection_id: str):
+@router.put("/api/me/collections/{collection_id}/tags")
+def update_collection_tags(
+    request: Request, collection_id: str, body: UpdateCollectionTagsBody
+):
     user = require_user(request)
+    tags = _normalize_collection_tags(body.tags)
+    assert _engine is not None
+    with _engine.begin() as conn:
+        coll = _owned_collection(conn, user["id"], collection_id)
+        if not coll:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        saved = _replace_collection_tags(conn, collection_id, tags)
+    return {"ok": True, "collection_id": collection_id, "tags": saved}
+
+
+@router.get("/api/me/collections/{collection_id}")
+def get_collection(
+    request: Request,
+    collection_id: str,
+    sort: str = Query("saved", description="saved | name | set | number"),
+):
+    user = require_user(request)
+    sort_key = (sort or "saved").lower()
+    if sort_key not in ("saved", "name", "set", "number"):
+        raise HTTPException(status_code=400, detail="sort must be saved, name, set, or number")
+    order_by = _card_sort_clause(sort_key)
+
     assert _engine is not None
     with _engine.connect() as conn:
         coll = _owned_collection(conn, user["id"], collection_id)
         if not coll:
             raise HTTPException(status_code=404, detail="Collection not found")
+        tags = _fetch_collection_tags(conn, [collection_id]).get(collection_id, [])
+        coll["tags"] = tags
         cards = conn.execute(
             text(
-                """
+                f"""
                 SELECT
                     pc.id, pc.name, pc.set_id, s.name AS set_name, pc.local_id,
                     pc.image_url, pc.image_local, pc.rarity, pc.illustrator,
+                    s.release_date::text AS release_date,
                     i.created_at::text AS saved_at
                 FROM collection_items i
                 INNER JOIN pokemon_cards pc ON pc.id = i.card_id
                 INNER JOIN pokemon_sets s ON s.id = pc.set_id
                 WHERE i.collection_id = CAST(:cid AS uuid)
-                ORDER BY i.created_at DESC
+                ORDER BY {order_by}
                 """
             ),
             {"cid": collection_id},
@@ -244,6 +416,7 @@ def get_collection(request: Request, collection_id: str):
         "collection": coll,
         "cards": out,
         "total": len(out),
+        "sort": sort_key,
     }
 
 

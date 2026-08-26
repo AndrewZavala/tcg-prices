@@ -25,6 +25,10 @@
   let detailColl = null;
   let detailCards = [];
   let detailQuery = "";
+  let detailSort = "saved";
+  let listTagFilter = "";
+  let listSort = "name";
+  let allCollectionTags = [];
 
   function esc(s) {
     return String(s ?? "")
@@ -43,16 +47,112 @@
     return new URLSearchParams(location.search).get("q") || "";
   }
 
-  function writeCollectionSearchToUrl(query) {
-    const params = new URLSearchParams(location.search);
-    const q = String(query || "").trim();
-    if (q) params.set("q", q);
-    else params.delete("q");
+  function collectionSortFromUrl() {
+    return new URLSearchParams(location.search).get("sort") || "";
+  }
+
+  function collectionTagFromUrl() {
+    return new URLSearchParams(location.search).get("tag") || "";
+  }
+
+  function writeCollectionListToUrl() {
+    const params = new URLSearchParams();
+    if (listTagFilter) params.set("tag", listTagFilter);
+    if (listSort && listSort !== "name") params.set("sort", listSort);
     const qs = params.toString();
     const next = qs ? `${location.pathname}?${qs}` : location.pathname;
     if (next !== `${location.pathname}${location.search}`) {
       history.replaceState(null, "", next);
     }
+  }
+
+  function writeCollectionDetailToUrl() {
+    const params = new URLSearchParams();
+    const q = String(detailQuery || "").trim();
+    if (q) params.set("q", q);
+    if (detailSort && detailSort !== "saved") params.set("sort", detailSort);
+    const qs = params.toString();
+    const next = qs ? `${location.pathname}?${qs}` : location.pathname;
+    if (next !== `${location.pathname}${location.search}`) {
+      history.replaceState(null, "", next);
+    }
+  }
+
+  function renderTagPills(tags, { linkFilter = false } = {}) {
+    if (!tags?.length) return "";
+    return `<span class="sp-collection-tag-row">${tags
+      .map((tag) =>
+        linkFilter
+          ? `<a class="sp-collection-tag" href="/collections?tag=${encodeURIComponent(tag)}">${esc(tag)}</a>`
+          : `<span class="sp-collection-tag">${esc(tag)}</span>`
+      )
+      .join("")}</span>`;
+  }
+
+  function normalizeTagInput(raw) {
+    return String(raw || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+  }
+
+  async function saveCollectionTags(collectionId, tags) {
+    const data = await api(`/api/me/collections/${encodeURIComponent(collectionId)}/tags`, {
+      method: "PUT",
+      body: JSON.stringify({ tags }),
+    });
+    return data.tags || [];
+  }
+
+  function bindTagEditor(collectionId, tags) {
+    const listEl = document.getElementById("collectionTagList");
+    const form = document.getElementById("collectionTagForm");
+    const input = document.getElementById("collectionTagInput");
+    if (!listEl || !form || !input) return;
+
+    const renderTags = () => {
+      const current = detailColl?.tags || tags || [];
+      listEl.innerHTML = current.length
+        ? current
+            .map(
+              (tag) =>
+                `<button type="button" class="sp-collection-tag sp-collection-tag-removable" data-tag="${esc(
+                  tag
+                )}" title="Remove tag">${esc(tag)} ×</button>`
+            )
+            .join("")
+        : `<span class="sp-hint">No tags yet — add labels like cube, draft, trade.</span>`;
+      listEl.querySelectorAll("[data-tag]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const next = (detailColl.tags || []).filter((t) => t !== btn.dataset.tag);
+          try {
+            const saved = await saveCollectionTags(collectionId, next);
+            detailColl.tags = saved;
+            renderTags();
+          } catch (err) {
+            alert(err.message || "Could not update tags");
+          }
+        });
+      });
+    };
+
+    renderTags();
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const slug = normalizeTagInput(input.value);
+      if (!slug) return;
+      const next = [...new Set([...(detailColl.tags || []), slug])].sort();
+      try {
+        const saved = await saveCollectionTags(collectionId, next);
+        detailColl.tags = saved;
+        input.value = "";
+        renderTags();
+      } catch (err) {
+        alert(err.message || "Could not add tag");
+      }
+    });
   }
 
   function cardMatchesQuery(card, query) {
@@ -418,13 +518,47 @@
   }
 
   async function renderList() {
-    const data = await api("/api/me/collections");
+    listTagFilter = collectionTagFromUrl();
+    listSort = collectionSortFromUrl() || "name";
+    const params = new URLSearchParams();
+    if (listTagFilter) params.set("tag", listTagFilter);
+    if (listSort && listSort !== "name") params.set("sort", listSort);
+    const qs = params.toString();
+    const [data, tagData] = await Promise.all([
+      api(`/api/me/collections${qs ? `?${qs}` : ""}`),
+      api("/api/me/collection-tags").catch(() => ({ tags: [] })),
+    ]);
     if (!data) return;
+    allCollectionTags = tagData?.tags || [];
+    if (listTagFilter && !allCollectionTags.includes(listTagFilter)) {
+      allCollectionTags = [...allCollectionTags, listTagFilter].sort();
+    }
     const rows = data.collections || [];
+    const tagOptions = [
+      '<option value="">All tags</option>',
+      ...allCollectionTags.map(
+        (tag) =>
+          `<option value="${esc(tag)}"${tag === listTagFilter ? " selected" : ""}>${esc(tag)}</option>`
+      ),
+    ].join("");
     root.innerHTML = `
       <div class="sp-collections-head">
         <h1 class="sp-collections-title">My Collections</h1>
         <p class="sp-hint">Save favorite arts from Search, then browse them here.</p>
+        <div class="sp-collection-list-controls">
+          <label class="sp-collection-control">
+            <span class="sp-label">Tag</span>
+            <select id="listTagFilter">${tagOptions}</select>
+          </label>
+          <label class="sp-collection-control">
+            <span class="sp-label">Sort</span>
+            <select id="listSort">
+              <option value="name"${listSort === "name" ? " selected" : ""}>Name</option>
+              <option value="count"${listSort === "count" ? " selected" : ""}>Card count</option>
+              <option value="updated"${listSort === "updated" ? " selected" : ""}>Recently updated</option>
+            </select>
+          </label>
+        </div>
         <div class="sp-collections-toolbar">
           <form class="sp-new-collection" id="newCollectionForm">
             <input type="text" name="name" maxlength="80" placeholder="New collection name" required />
@@ -434,20 +568,38 @@
         </div>
       </div>
       <ul class="sp-collection-list">
-        ${rows
-          .map(
-            (c) => `
+        ${
+          rows.length
+            ? rows
+                .map(
+                  (c) => `
           <li>
             <a class="sp-collection-row" href="/collections/${esc(c.id)}">
-              <span class="sp-collection-name">${esc(c.name)}${
-                c.kind === "favorites" ? ' <span class="sp-collection-badge">♥</span>' : ""
-              }</span>
+              <span class="sp-collection-row-main">
+                <span class="sp-collection-name">${esc(c.name)}${
+                    c.kind === "favorites" ? ' <span class="sp-collection-badge">♥</span>' : ""
+                  }</span>
+                ${renderTagPills(c.tags, { linkFilter: true })}
+              </span>
               <span class="sp-collection-count">${c.item_count} card${c.item_count === 1 ? "" : "s"}</span>
             </a>
           </li>`
-          )
-          .join("")}
+                )
+                .join("")
+            : `<li class="sp-empty">No collections match${listTagFilter ? ` tag “${esc(listTagFilter)}”` : ""}.</li>`
+        }
       </ul>`;
+
+    document.getElementById("listTagFilter")?.addEventListener("change", (e) => {
+      listTagFilter = e.target.value;
+      writeCollectionListToUrl();
+      renderList();
+    });
+    document.getElementById("listSort")?.addEventListener("change", (e) => {
+      listSort = e.target.value;
+      writeCollectionListToUrl();
+      renderList();
+    });
 
     document.getElementById("newCollectionForm").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -520,12 +672,15 @@
   }
 
   async function renderDetail(id) {
-    const data = await api(`/api/me/collections/${encodeURIComponent(id)}`);
+    detailSort = collectionSortFromUrl() || "saved";
+    detailQuery = collectionSearchFromUrl();
+    const sortParams = detailSort !== "saved" ? `?sort=${encodeURIComponent(detailSort)}` : "";
+    const data = await api(`/api/me/collections/${encodeURIComponent(id)}${sortParams}`);
     if (!data) return;
     detailCollectionId = id;
     detailColl = data.collection;
     detailCards = data.cards || [];
-    detailQuery = collectionSearchFromUrl();
+    if (data.sort) detailSort = data.sort;
     const coll = detailColl;
     const cards = detailCards;
     const isFav = coll.kind === "favorites";
@@ -540,17 +695,36 @@
             ? "Card arts you’ve hearted from Search."
             : "Cards you’ve saved to this list."
         }</p>
-        <div class="sp-collection-search">
-          <input
-            type="search"
-            id="collectionSearch"
-            class="sp-collection-search-input"
-            placeholder="Search this collection…"
-            value="${esc(detailQuery)}"
-            autocomplete="off"
-            spellcheck="false"
-          />
-          <span class="sp-collection-search-count" id="collectionSearchCount"></span>
+        <div class="sp-collection-tags-panel">
+          <span class="sp-label">Collection tags</span>
+          <div id="collectionTagList" class="sp-collection-tag-list"></div>
+          <form id="collectionTagForm" class="sp-collection-tag-form">
+            <input type="text" id="collectionTagInput" maxlength="32" placeholder="Add tag…" autocomplete="off" />
+            <button type="submit" class="sp-btn-primary">Add</button>
+          </form>
+        </div>
+        <div class="sp-collection-list-controls">
+          <div class="sp-collection-search">
+            <input
+              type="search"
+              id="collectionSearch"
+              class="sp-collection-search-input"
+              placeholder="Search cards…"
+              value="${esc(detailQuery)}"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <span class="sp-collection-search-count" id="collectionSearchCount"></span>
+          </div>
+          <label class="sp-collection-control">
+            <span class="sp-label">Sort cards</span>
+            <select id="detailSort">
+              <option value="saved"${detailSort === "saved" ? " selected" : ""}>Date saved</option>
+              <option value="name"${detailSort === "name" ? " selected" : ""}>Name</option>
+              <option value="set"${detailSort === "set" ? " selected" : ""}>Set</option>
+              <option value="number"${detailSort === "number" ? " selected" : ""}>Number</option>
+            </select>
+          </label>
         </div>
         <p class="sp-collections-actions">
           <a class="sp-add-cards-btn" href="/collections/${esc(id)}/add">+ Add cards</a>
@@ -568,14 +742,21 @@
             }</p>`
       }`;
 
+    bindTagEditor(id, coll.tags || []);
+
     const searchInput = document.getElementById("collectionSearch");
     if (searchInput) {
       searchInput.addEventListener("input", () => {
         detailQuery = searchInput.value;
-        writeCollectionSearchToUrl(detailQuery);
+        writeCollectionDetailToUrl();
         renderDetailGrid(id);
       });
     }
+    document.getElementById("detailSort")?.addEventListener("change", async (e) => {
+      detailSort = e.target.value;
+      writeCollectionDetailToUrl();
+      await renderDetail(id);
+    });
     if (cards.length) renderDetailGrid(id);
   }
 
