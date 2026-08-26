@@ -13,11 +13,18 @@
   const importSubmit = document.getElementById("importSubmit");
   const importClose = document.getElementById("importClose");
   const importCancel = document.getElementById("importCancel");
+  const cardModal = document.getElementById("cardModal");
+  const modalBody = document.getElementById("modalBody");
+  const modalClose = document.getElementById("modalClose");
 
   let importCubeData = null;
   let importPreviewData = null;
   let importPreselectId = null;
   let importUiBound = false;
+  let detailCollectionId = null;
+  let detailColl = null;
+  let detailCards = [];
+  let detailQuery = "";
 
   function esc(s) {
     return String(s ?? "")
@@ -32,9 +39,146 @@
     return m ? decodeURIComponent(m[1]) : null;
   }
 
-  function cardImg(src, alt) {
+  function collectionSearchFromUrl() {
+    return new URLSearchParams(location.search).get("q") || "";
+  }
+
+  function writeCollectionSearchToUrl(query) {
+    const params = new URLSearchParams(location.search);
+    const q = String(query || "").trim();
+    if (q) params.set("q", q);
+    else params.delete("q");
+    const qs = params.toString();
+    const next = qs ? `${location.pathname}?${qs}` : location.pathname;
+    if (next !== `${location.pathname}${location.search}`) {
+      history.replaceState(null, "", next);
+    }
+  }
+
+  function cardMatchesQuery(card, query) {
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return true;
+    const hay = [
+      card.name,
+      card.set_name,
+      card.set_id,
+      card.local_id,
+      card.id,
+      card.rarity,
+      card.illustrator,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return hay.includes(q);
+  }
+
+  function filteredDetailCards() {
+    return detailCards.filter((c) => cardMatchesQuery(c, detailQuery));
+  }
+
+  function bindModalUi() {
+    modalClose?.addEventListener("click", () => cardModal?.close());
+    cardModal?.addEventListener("click", (e) => {
+      if (e.target === cardModal) cardModal.close();
+    });
+  }
+
+  function renderCardText(card) {
+    const text = card.description || card.card_text;
+    if (!text) return "";
+    return `<div class="sp-block"><h3>Card text</h3><p class="sp-card-text">${esc(text)}</p></div>`;
+  }
+
+  function renderAbilities(card) {
+    const abilities = card.abilities || [];
+    if (!abilities.length) return "";
+    return `<div class="sp-block"><h3>Abilities</h3>${abilities
+      .map(
+        (a) =>
+          `<div class="sp-ability"><strong>${esc(a.name || "Ability")}</strong>${
+            a.type ? ` <span class="sp-hint">(${esc(a.type)})</span>` : ""
+          }${a.effect ? `<p>${esc(a.effect)}</p>` : ""}</div>`
+      )
+      .join("")}</div>`;
+  }
+
+  function renderAttacks(card) {
+    const attacks = card.attacks || [];
+    if (!attacks.length) return "";
+    return `<div class="sp-block"><h3>Attacks</h3>${attacks
+      .map((a) => {
+        const cost = Array.isArray(a.cost) ? a.cost.join(" ") : "";
+        const dmg = a.damage ? ` — ${esc(a.damage)}` : "";
+        return `<div class="sp-attack"><strong>${esc(a.name || "Attack")}</strong>${
+          cost ? ` <span class="sp-hint">[${esc(cost)}]</span>` : ""
+        }${dmg}${a.effect ? `<p>${esc(a.effect)}</p>` : ""}</div>`;
+      })
+      .join("")}</div>`;
+  }
+
+  function cardImg(src, alt, extraClass) {
     const url = src || CARD_IMG_FALLBACK;
-    return `<img src="${esc(url)}" alt="${esc(alt || "")}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${CARD_IMG_FALLBACK}';this.classList.add('is-fallback')" />`;
+    const cls = ["sp-card-img", extraClass].filter(Boolean).join(" ");
+    return `<img class="${cls}" src="${esc(url)}" alt="${esc(alt || "")}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${CARD_IMG_FALLBACK}';this.classList.add('is-fallback')" />`;
+  }
+
+  async function openCardDetail(cardId, collectionId) {
+    if (!cardModal || !modalBody) return;
+    modalBody.innerHTML = `<p class="sp-empty">Loading…</p>`;
+    cardModal.showModal();
+    try {
+      const card = await api(`/api/pokemon/cards/${encodeURIComponent(cardId)}`);
+      const label = `${card.name} — ${card.set_name} #${card.local_id}`;
+      modalBody.innerHTML = `
+        <div class="sp-detail">
+          <div class="sp-detail-art">
+            ${cardImg(card.image_url_high || card.image_url, label, "sp-detail-img")}
+          </div>
+          <div class="sp-detail-body">
+            <h2>${esc(card.name)}</h2>
+            <p class="sp-detail-meta">
+              ${esc(card.series_name || "—")} · ${esc(card.set_name)} · #${esc(card.local_id)} · ${esc(
+                card.rarity || "—"
+              )}
+              · ${esc(card.illustrator || "Unknown artist")}
+            </p>
+            <div class="sp-detail-sticky-actions">
+              <p class="sp-buy-row">
+                <a class="sp-buy-btn" href="/?q=${encodeURIComponent(card.id)}">Open in Search</a>
+                ${
+                  collectionId
+                    ? `<button type="button" class="sp-collection-remove sp-collection-remove-modal" data-card-id="${esc(
+                        card.id
+                      )}">Remove from collection</button>`
+                    : ""
+                }
+              </p>
+            </div>
+            ${card.evolve_from ? `<p class="sp-hint">Evolves from ${esc(card.evolve_from)}</p>` : ""}
+            ${renderCardText(card)}
+            ${renderAbilities(card)}
+            ${renderAttacks(card)}
+          </div>
+        </div>`;
+      modalBody.querySelector(".sp-collection-remove-modal")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          await api(
+            `/api/me/collections/${encodeURIComponent(collectionId)}/items/${encodeURIComponent(cardId)}`,
+            { method: "DELETE" }
+          );
+          cardModal.close();
+          await renderDetail(collectionId);
+        } catch (err) {
+          alert(err.message || "Could not remove");
+          btn.disabled = false;
+        }
+      });
+    } catch (err) {
+      modalBody.innerHTML = `<p class="sp-empty">${esc(err.message || "Could not load card")}</p>`;
+    }
   }
 
   async function api(path, opts) {
@@ -325,23 +469,65 @@
   function renderCardTile(c) {
     const label = `${c.name} — ${c.set_name} #${c.local_id}`;
     return `
-      <div class="sp-collection-item">
-        <article class="sp-card" data-id="${esc(c.id)}" title="${esc(label)}" tabindex="0" aria-label="${esc(label)}">
-          ${cardImg(c.image_url, label)}
-        </article>
-        <div class="sp-collection-caption">
-          <div class="sp-collection-card-name">${esc(c.name)}</div>
-          <div class="sp-collection-card-set">${esc(c.set_name)} · #${esc(c.local_id)}</div>
-        </div>
-        <button type="button" class="sp-collection-remove" data-card-id="${esc(c.id)}" title="Remove from collection">Remove</button>
-      </div>`;
+      <article class="sp-card sp-collection-card" data-id="${esc(c.id)}" tabindex="0" aria-label="${esc(label)}">
+        ${cardImg(c.image_url, label)}
+      </article>`;
+  }
+
+  function bindCollectionGrid(collectionId) {
+    const grid = document.getElementById("collectionGrid");
+    if (!grid) return;
+    grid.querySelectorAll(".sp-collection-card[data-id]").forEach((el) => {
+      const open = () => openCardDetail(el.dataset.id, collectionId);
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      });
+    });
+  }
+
+  function renderDetailGrid(collectionId) {
+    const grid = document.getElementById("collectionGrid");
+    const countEl = document.getElementById("collectionSearchCount");
+    const emptyEl = document.getElementById("collectionGridEmpty");
+    if (!grid) return;
+    const visible = filteredDetailCards();
+    if (countEl) {
+      const total = detailCards.length;
+      countEl.textContent =
+        detailQuery && visible.length !== total
+          ? `${visible.length} of ${total}`
+          : `${total} card${total === 1 ? "" : "s"}`;
+    }
+    if (visible.length) {
+      grid.innerHTML = visible.map((c) => renderCardTile(c)).join("");
+      grid.hidden = false;
+      if (emptyEl) emptyEl.hidden = true;
+      bindCollectionGrid(collectionId);
+    } else {
+      grid.innerHTML = "";
+      grid.hidden = true;
+      if (emptyEl) {
+        emptyEl.hidden = false;
+        emptyEl.textContent = detailQuery
+          ? `No cards match “${detailQuery}”.`
+          : "No cards in this collection.";
+      }
+    }
   }
 
   async function renderDetail(id) {
     const data = await api(`/api/me/collections/${encodeURIComponent(id)}`);
     if (!data) return;
-    const coll = data.collection;
-    const cards = data.cards || [];
+    detailCollectionId = id;
+    detailColl = data.collection;
+    detailCards = data.cards || [];
+    detailQuery = collectionSearchFromUrl();
+    const coll = detailColl;
+    const cards = detailCards;
     const isFav = coll.kind === "favorites";
     root.innerHTML = `
       <div class="sp-collections-head">
@@ -353,7 +539,19 @@
           isFav
             ? "Card arts you’ve hearted from Search."
             : "Cards you’ve saved to this list."
-        } · ${cards.length} saved</p>
+        }</p>
+        <div class="sp-collection-search">
+          <input
+            type="search"
+            id="collectionSearch"
+            class="sp-collection-search-input"
+            placeholder="Search this collection…"
+            value="${esc(detailQuery)}"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <span class="sp-collection-search-count" id="collectionSearchCount"></span>
+        </div>
         <p class="sp-collections-actions">
           <a class="sp-add-cards-btn" href="/collections/${esc(id)}/add">+ Add cards</a>
           ${isFav ? "" : importDropdownHtml(id)}
@@ -361,9 +559,8 @@
       </div>
       ${
         cards.length
-          ? `<div class="sp-grid sp-collections-grid">
-              ${cards.map((c) => renderCardTile(c)).join("")}
-            </div>`
+          ? `<div class="sp-grid sp-collections-grid" id="collectionGrid"></div>
+             <p class="sp-empty" id="collectionGridEmpty" hidden></p>`
           : `<p class="sp-empty">${
               isFav
                 ? "No favorites yet. Open a card on Search and tap ♡ Favorite, or use Add cards."
@@ -371,39 +568,20 @@
             }</p>`
       }`;
 
-    root.querySelectorAll(".sp-card[data-id]").forEach((el) => {
-      const openSearch = () => {
-        const name = el.getAttribute("aria-label")?.split(" — ")[0] || "";
-        window.location.href = `/?q=${encodeURIComponent(name)}`;
-      };
-      el.addEventListener("click", openSearch);
-      el.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          openSearch();
-        }
+    const searchInput = document.getElementById("collectionSearch");
+    if (searchInput) {
+      searchInput.addEventListener("input", () => {
+        detailQuery = searchInput.value;
+        writeCollectionSearchToUrl(detailQuery);
+        renderDetailGrid(id);
       });
-    });
-
-    root.querySelectorAll(".sp-collection-remove").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const cardId = btn.dataset.cardId;
-        try {
-          await api(
-            `/api/me/collections/${encodeURIComponent(id)}/items/${encodeURIComponent(cardId)}`,
-            { method: "DELETE" }
-          );
-          await renderDetail(id);
-        } catch (err) {
-          alert(err.message || "Could not remove");
-        }
-      });
-    });
+    }
+    if (cards.length) renderDetailGrid(id);
   }
 
   async function boot() {
     bindImportUi();
+    bindModalUi();
     if (window.__spelltagAuthReady) {
       try {
         await window.__spelltagAuthReady;

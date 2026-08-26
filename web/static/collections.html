@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/star-piece.css?v=mobile-sheet" />
-  <link rel="stylesheet" href="/static/spell-tag.css?v=20" />
+  <link rel="stylesheet" href="/static/spell-tag.css?v=21" />
   <link rel="icon" href="/static/spell-tag-logo.png?v=10" type="image/png" />
 </head>
 <body class="sp-body st-body">
@@ -75,11 +75,18 @@
     </form>
   </dialog>
 
+  <dialog id="cardModal" class="sp-modal">
+    <div class="sp-modal-inner">
+      <button type="button" class="sp-modal-close" id="modalClose" aria-label="Close">×</button>
+      <div id="modalBody"></div>
+    </div>
+  </dialog>
+
   <footer class="sp-footer">
     <p><strong>Spell Tag</strong> · Unofficial fan project · Not affiliated with Nintendo, Game Freak, or Creatures</p>
   </footer>
 
   <script src="/static/spelltag-auth.js?v=3"></script>
-  <script src="/static/collections.js?v=5"></script>
+  <script src="/static/collections.js?v=6"></script>
 </body>
 </html>

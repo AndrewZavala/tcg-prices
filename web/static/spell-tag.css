@@ -806,6 +806,64 @@
 
 .st-body .sp-collections-grid {
   align-items: start;
+  gap: 0.65rem;
+}
+
+.st-body .sp-collection-card {
+  cursor: pointer;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.st-body .sp-collection-card:hover,
+.st-body .sp-collection-card:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  outline: 2px solid rgba(196, 168, 232, 0.55);
+  outline-offset: 2px;
+}
+
+.st-body .sp-collection-card .sp-card-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.st-body .sp-collection-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.85rem 0 0;
+}
+
+.st-body .sp-collection-search-input {
+  flex: 1 1 14rem;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--sp-text);
+  background: rgba(12, 12, 14, 0.85);
+  border: 1px solid rgba(200, 200, 210, 0.28);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+}
+
+.st-body .sp-collection-search-input:focus {
+  outline: none;
+  border-color: rgba(196, 168, 232, 0.65);
+  box-shadow: 0 0 0 2px rgba(196, 168, 232, 0.2);
+}
+
+.st-body .sp-collection-search-count {
+  font-size: 0.82rem;
+  color: var(--sp-muted);
+  white-space: nowrap;
+}
+
+.st-body .sp-collection-remove-modal {
+  align-self: center;
 }
 
 .st-body .sp-collection-item {
