@@ -79,4 +79,5 @@ docker compose --profile manual run --rm star-piece-pipeline \
    docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
      python pipeline/refresh_tcgdex.py --skip-migration --series pop --enrich
    ```
+   Side-set ingests skip the full oracle rebuild (fast). Cube import only needs cards + subtypes.
 6. Optional: scheduled `star-piece-pipeline` cron; drop leftover `pokemon_*` from `tcg_buylist` after you’re happy.

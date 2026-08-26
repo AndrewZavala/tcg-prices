@@ -682,13 +682,20 @@ def main() -> int:
     if args.enrich:
         import subprocess
 
+        side_set_ids = frozenset(s.lower() for s in SIDE_BLOCK_SET_IDS)
+        skip_oracle = all(sid in side_set_ids for sid in ordered)
+
         enrich_cmd = [
             sys.executable,
             str(Path(__file__).resolve().parent / "enrich_pokemon.py"),
             "--skip-migration",
             *[arg for sid in ordered for arg in ("--set", sid)],
         ]
-        print("\nRunning post-ingest enrichment...")
+        if skip_oracle:
+            enrich_cmd.append("--skip-oracle")
+            print("\nRunning post-ingest enrichment (skipping full oracle rebuild for side sets)...")
+        else:
+            print("\nRunning post-ingest enrichment...")
         subprocess.run(enrich_cmd, check=True)
 
     return 0
