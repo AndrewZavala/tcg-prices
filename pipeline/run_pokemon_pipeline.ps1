@@ -3,8 +3,8 @@
 # Examples:
 #   .\pipeline\run_pokemon_pipeline.ps1 -Series bw
 #   .\pipeline\run_pokemon_pipeline.ps1 -Set sv1 -Set sv2
-#   .\pipeline\run_pokemon_pipeline.ps1 -SkipIngest          # re-enrich catalog only
-#   .\pipeline\run_pokemon_pipeline.ps1 -SkipIngest -Set sv1 # re-enrich one set's subtypes
+#   .\pipeline\run_pokemon_pipeline.ps1 -Series pop   # POP Series 1–9
+#   .\pipeline\run_pokemon_pipeline.ps1 -Series side  # POP + Nintendo promos + McDonald's + Trainer Kits
 
 param(
     [string[]]$Set,
@@ -23,7 +23,7 @@ Set-Location $env:TCG_ROOT
 
 function Run-DockerStep([string]$Name, [string[]]$PythonArgs) {
     Write-Host "[$(Get-Date -Format o)] $Name"
-    $cmd = @("compose", "run", "--rm", "star-piece-pipeline", "python", "pipeline/$($PythonArgs[0])") + $PythonArgs[1..($PythonArgs.Length - 1)]
+    $cmd = @("compose", "--profile", "manual", "run", "--rm", "star-piece-pipeline", "python", "pipeline/$($PythonArgs[0])") + $PythonArgs[1..($PythonArgs.Length - 1)]
     docker @cmd
     if ($LASTEXITCODE -ne 0) { throw "$Name failed with exit code $LASTEXITCODE" }
 }
@@ -91,6 +91,27 @@ if (-not $SkipIngest) {
                 "swsh4.5","swsh4.5sv","swsh5","swsh6","swsh7","cel25","cel25cc",
                 "swsh8","swsh9","swsh9.5tg","swsh10","swsh10.5tg","swsh10.5",
                 "swsh11","swsh11.5tg","swsh12","swsh12.5tg","swsh12.5","swsh12.5gg"
+            )
+        } elseif ($seriesLower -eq "pop") {
+            $enrichSets += @("pop1","pop2","pop3","pop4","pop5","pop6","pop7","pop8","pop9")
+        } elseif ($seriesLower -in @("side", "extras")) {
+            $enrichSets += @(
+                "pop1","pop2","pop3","pop4","pop5","pop6","pop7","pop8","pop9",
+                "np",
+                "2011bw","2012bw","2014xy","2015xy","2016xy","2017sm","2018sm","2019sm","2021swsh","2022swsh","2023sv","2024sv",
+                "tk-ex-latia","tk-ex-latio","tk-ex-m","tk-ex-p","tk-dp-l","tk-dp-m","tk-hs-g","tk-hs-r",
+                "tk-bw-e","tk-bw-z","tk-xy-b","tk-xy-latia","tk-xy-latio","tk-xy-n","tk-xy-p","tk-xy-su","tk-xy-sy","tk-xy-w",
+                "tk-sm-l","tk-sm-r"
+            )
+        } elseif ($seriesLower -in @("np", "nintendo")) {
+            $enrichSets += @("np")
+        } elseif ($seriesLower -in @("mcd", "mcdonalds", "mcdonald")) {
+            $enrichSets += @("2011bw","2012bw","2014xy","2015xy","2016xy","2017sm","2018sm","2019sm","2021swsh","2022swsh","2023sv","2024sv")
+        } elseif ($seriesLower -in @("tk", "trainer-kits", "trainers")) {
+            $enrichSets += @(
+                "tk-ex-latia","tk-ex-latio","tk-ex-m","tk-ex-p","tk-dp-l","tk-dp-m","tk-hs-g","tk-hs-r",
+                "tk-bw-e","tk-bw-z","tk-xy-b","tk-xy-latia","tk-xy-latio","tk-xy-n","tk-xy-p","tk-xy-su","tk-xy-sy","tk-xy-w",
+                "tk-sm-l","tk-sm-r"
             )
         } else {
             Write-Error "Unknown -Series '$Series' with -SkipIngest. Use -Set for individual sets."

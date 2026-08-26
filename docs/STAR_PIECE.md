@@ -9,6 +9,8 @@
 #
 # Ingest / enrich (writes to star-piece-db only):
 #   .\pipeline\run_pokemon_pipeline.ps1 -Series bw
+#   .\pipeline\run_pokemon_pipeline.ps1 -Series pop   # POP Series 1–9 (cube import)
+#   .\pipeline\run_pokemon_pipeline.ps1 -Series side  # POP + promos + McDonald's + Trainer Kits
 
 ## Services
 
@@ -72,4 +74,9 @@ docker compose --profile manual run --rm star-piece-pipeline \
    docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d star-piece-db star-piece caddy
    ```
 4. Manifest Bread host stays basic-auth gated; Spell Tag has **no** basic auth.
-5. Optional: scheduled `star-piece-pipeline` cron; drop leftover `pokemon_*` from `tcg_buylist` after you’re happy.
+5. **Cube import gaps** — if CubeKoga JSON references `pop*` / side sets, ingest them on the server:
+   ```bash
+   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
+     python pipeline/refresh_tcgdex.py --skip-migration --series pop --enrich
+   ```
+6. Optional: scheduled `star-piece-pipeline` cron; drop leftover `pokemon_*` from `tcg_buylist` after you’re happy.
