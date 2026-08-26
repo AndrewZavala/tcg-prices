@@ -114,6 +114,41 @@
     importPreview.hidden = false;
   }
 
+  function importDropdownHtml(preselectId) {
+    const attr = preselectId ? ` data-import-collection="${esc(preselectId)}"` : "";
+    return `
+      <div class="sp-import-menu"${attr}>
+        <button type="button" class="sp-btn-primary sp-import-trigger" aria-haspopup="menu" aria-expanded="false">
+          Import <span class="sp-import-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="sp-import-dropdown" role="menu" hidden>
+          <button type="button" role="menuitem" data-import-format="cube-json"${attr}>
+            CubeKoga / TTS JSON
+          </button>
+          <button type="button" role="menuitem" disabled title="Coming soon">CSV</button>
+        </div>
+      </div>`;
+  }
+
+  function closeAllImportDropdowns() {
+    document.querySelectorAll(".sp-import-menu").forEach((menu) => {
+      const panel = menu.querySelector(".sp-import-dropdown");
+      const trigger = menu.querySelector(".sp-import-trigger");
+      if (panel) panel.hidden = true;
+      if (trigger) trigger.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  function toggleImportDropdown(menu) {
+    const panel = menu.querySelector(".sp-import-dropdown");
+    const trigger = menu.querySelector(".sp-import-trigger");
+    if (!panel || !trigger) return;
+    const open = panel.hidden;
+    closeAllImportDropdowns();
+    panel.hidden = !open;
+    trigger.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
   async function openImportModal(preselectId) {
     if (!importDialog) return;
     resetImportModal();
@@ -191,9 +226,30 @@
     if (!importDialog || importUiBound) return;
     importUiBound = true;
     document.addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-import-cube]");
-      if (!btn) return;
-      openImportModal(btn.dataset.importCube || null);
+      const trigger = e.target.closest(".sp-import-trigger");
+      if (trigger) {
+        e.stopPropagation();
+        toggleImportDropdown(trigger.closest(".sp-import-menu"));
+        return;
+      }
+      const formatBtn = e.target.closest("[data-import-format]");
+      if (formatBtn && !formatBtn.disabled) {
+        e.stopPropagation();
+        closeAllImportDropdowns();
+        const menu = formatBtn.closest(".sp-import-menu");
+        const collectionId = formatBtn.dataset.importCollection || menu?.dataset.importCollection || "";
+        const format = formatBtn.dataset.importFormat;
+        if (format === "cube-json") {
+          openImportModal(collectionId || null);
+        }
+        return;
+      }
+      if (!e.target.closest(".sp-import-menu")) {
+        closeAllImportDropdowns();
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeAllImportDropdowns();
     });
     importFile?.addEventListener("change", () => {
       const file = importFile.files?.[0];
@@ -228,9 +284,9 @@
         <div class="sp-collections-toolbar">
           <form class="sp-new-collection" id="newCollectionForm">
             <input type="text" name="name" maxlength="80" placeholder="New collection name" required />
-            <button type="submit">Create</button>
+            <button type="submit" class="sp-btn-primary">Create</button>
           </form>
-          <button type="button" class="sp-import-btn" data-import-cube>Import cube JSON</button>
+          ${importDropdownHtml()}
         </div>
       </div>
       <ul class="sp-collection-list">
@@ -300,11 +356,7 @@
         } · ${cards.length} saved</p>
         <p class="sp-collections-actions">
           <a class="sp-add-cards-btn" href="/collections/${esc(id)}/add">+ Add cards</a>
-          ${
-            isFav
-              ? ""
-              : `<button type="button" class="sp-import-btn" data-import-cube="${esc(id)}">Import cube JSON</button>`
-          }
+          ${isFav ? "" : importDropdownHtml(id)}
         </p>
       </div>
       ${

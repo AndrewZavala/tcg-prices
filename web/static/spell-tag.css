@@ -724,14 +724,25 @@
   margin-top: 0.85rem;
 }
 
-.st-body .sp-new-collection input {
-  flex: 1 1 12rem;
+.st-body .sp-collections-toolbar .sp-new-collection {
+  margin-top: 0;
+  flex: 1 1 16rem;
+}
+
+.st-body .sp-btn-primary {
   font: inherit;
-  color: var(--sp-text);
-  background: rgba(12, 12, 14, 0.85);
-  border: 1px solid rgba(200, 200, 210, 0.25);
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #2a2a32, var(--st-red));
+  border: 0;
   border-radius: 8px;
-  padding: 0.5rem 0.7rem;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.st-body .sp-btn-primary:hover {
+  filter: brightness(1.08);
 }
 
 .st-body .sp-new-collection button {
@@ -743,6 +754,16 @@
   border-radius: 8px;
   padding: 0.5rem 0.9rem;
   cursor: pointer;
+}
+
+.st-body .sp-new-collection input {
+  flex: 1 1 12rem;
+  font: inherit;
+  color: var(--sp-text);
+  background: rgba(12, 12, 14, 0.85);
+  border: 1px solid rgba(200, 200, 210, 0.25);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
 }
 
 .st-body .sp-collection-list {
@@ -839,6 +860,10 @@
 
 .st-body .sp-collections-actions {
   margin: 0.75rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .st-body .sp-add-cards-btn {
@@ -957,24 +982,67 @@
 .st-body .sp-collections-toolbar {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
   margin-top: 0.85rem;
 }
 
-.st-body .sp-import-btn {
-  font: inherit;
-  font-weight: 700;
-  color: var(--sp-text);
-  background: rgba(12, 12, 14, 0.85);
-  border: 1px solid rgba(200, 200, 210, 0.35);
+.st-body .sp-import-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.st-body .sp-import-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.st-body .sp-import-caret {
+  font-size: 0.72em;
+  opacity: 0.85;
+}
+
+.st-body .sp-import-dropdown {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 40;
+  min-width: 11.5rem;
+  padding: 0.35rem;
   border-radius: 8px;
-  padding: 0.5rem 0.9rem;
+  background: rgba(16, 14, 28, 0.98);
+  border: 1px solid rgba(196, 168, 232, 0.35);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.st-body .sp-import-dropdown[hidden] {
+  display: none;
+}
+
+.st-body .sp-import-dropdown button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--sp-text);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
   cursor: pointer;
 }
 
-.st-body .sp-import-btn:hover {
-  border-color: rgba(196, 168, 232, 0.65);
+.st-body .sp-import-dropdown button:hover:not(:disabled) {
+  background: rgba(196, 168, 232, 0.15);
   color: #fff;
+}
+
+.st-body .sp-import-dropdown button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .st-body .sp-import-dialog {
