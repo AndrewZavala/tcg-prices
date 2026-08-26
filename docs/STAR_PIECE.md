@@ -79,5 +79,10 @@ docker compose --profile manual run --rm star-piece-pipeline \
    docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
      python pipeline/refresh_tcgdex.py --skip-migration --series pop --enrich
    ```
-   Side-set ingests skip the full oracle rebuild (fast). Cube import only needs cards + subtypes.
+   Side-set ingests run an **incremental** oracle (not a full-catalog rebuild). Cards show in default search after enrich. To backfill oracle on already-ingested POP sets:
+   ```bash
+   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
+     python pipeline/build_pokemon_oracle.py --skip-migration --set pop1 --set pop2 --set pop3 --set pop4 --set pop5 --set pop6 --set pop7 --set pop8 --set pop9
+   ```
+   Cube import matches by `card_id` even without oracle rows.
 6. Optional: scheduled `star-piece-pipeline` cron; drop leftover `pokemon_*` from `tcg_buylist` after you’re happy.

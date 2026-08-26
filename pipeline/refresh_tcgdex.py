@@ -693,7 +693,7 @@ def main() -> int:
         ]
         if skip_oracle:
             enrich_cmd.append("--skip-oracle")
-            print("\nRunning post-ingest enrichment (skipping full oracle rebuild for side sets)...")
+            print("\nRunning post-ingest enrichment (incremental oracle for side sets)...")
         else:
             print("\nRunning post-ingest enrichment...")
         subprocess.run(enrich_cmd, check=True)

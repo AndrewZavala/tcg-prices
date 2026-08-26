@@ -357,46 +357,183 @@ def apply_migration(engine) -> None:
         conn.execute(text(mig.read_text(encoding="utf-8")))
 
 
-def load_cards(conn) -> list[dict[str, Any]]:
+_CARD_SELECT_SQL = """
+    SELECT
+        c.id,
+        c.set_id,
+        c.name,
+        c.category,
+        c.hp,
+        c.types,
+        c.stage,
+        c.evolve_from,
+        c.rarity,
+        c.illustrator,
+        c.image_url,
+        c.retreat,
+        c.attacks,
+        c.abilities,
+        c.weaknesses,
+        c.resistances,
+        c.description,
+        c.card_data,
+        s.release_date
+    FROM pokemon_cards c
+    LEFT JOIN pokemon_sets s ON s.id = c.set_id
+"""
+
+
+def _hydrate_card_row(row) -> dict[str, Any]:
+    item = dict(row)
+    for key in ("attacks", "abilities", "weaknesses", "resistances", "card_data"):
+        val = item.get(key)
+        if isinstance(val, str):
+            item[key] = json.loads(val)
+    apply_card_corrections(item)
+    return item
+
+
+def load_cards(
+    conn,
+    *,
+    set_ids: list[str] | None = None,
+    oracle_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    if set_ids:
+        clauses.append("c.set_id = ANY(:set_ids)")
+        params["set_ids"] = [s.lower() for s in set_ids]
+    if oracle_ids:
+        clauses.append("c.oracle_id = ANY(:oracle_ids)")
+        params["oracle_ids"] = oracle_ids
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    rows = conn.execute(
+        text(_CARD_SELECT_SQL + where + " ORDER BY c.id"),
+        params,
+    ).mappings()
+    return [_hydrate_card_row(row) for row in rows]
+
+
+def load_evolve_donor_cards(conn) -> list[dict[str, Any]]:
+    """Printings with evolve_from — used to backfill side-set ingest rows."""
     rows = conn.execute(
         text(
-            """
-            SELECT
-                c.id,
-                c.set_id,
-                c.name,
-                c.category,
-                c.hp,
-                c.types,
-                c.stage,
-                c.evolve_from,
-                c.rarity,
-                c.illustrator,
-                c.image_url,
-                c.retreat,
-                c.attacks,
-                c.abilities,
-                c.weaknesses,
-                c.resistances,
-                c.description,
-                c.card_data,
-                s.release_date
-            FROM pokemon_cards c
-            LEFT JOIN pokemon_sets s ON s.id = c.set_id
+            _CARD_SELECT_SQL
+            + """
+            WHERE c.category = 'Pokemon'
+              AND c.evolve_from IS NOT NULL
+              AND btrim(c.evolve_from) <> ''
             ORDER BY c.id
             """
         )
     ).mappings()
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        item = dict(row)
-        for key in ("attacks", "abilities", "weaknesses", "resistances", "card_data"):
-            val = item.get(key)
-            if isinstance(val, str):
-                item[key] = json.loads(val)
-        apply_card_corrections(item)
-        out.append(item)
-    return out
+    return [_hydrate_card_row(row) for row in rows]
+
+
+def _assign_card_fingerprints(cards: list[dict[str, Any]]) -> None:
+    for card in cards:
+        card["_oracle_fingerprint"] = oracle_fingerprint(card)
+        card["_illustration_id"] = illustration_fingerprint(card)
+
+
+def _oracle_row_payload(
+    oracle_id: str,
+    fp: str,
+    rep: dict[str, Any],
+    group: list[dict[str, Any]],
+) -> dict[str, Any]:
+    art_ids = {c["_illustration_id"] for c in group}
+    releases = [c.get("release_date") for c in group if c.get("release_date")]
+    first_release = min(releases) if releases else None
+    return {
+        "id": oracle_id,
+        "fingerprint": fp,
+        "name": rep.get("name"),
+        "category": rep.get("category"),
+        "representative_card_id": rep.get("id"),
+        "gameplay": json.dumps(gameplay_payload(rep)),
+        "printing_count": len(group),
+        "art_variant_count": len(art_ids),
+        "first_release_date": first_release,
+    }
+
+
+def _upsert_oracle(conn, payload: dict[str, Any]) -> None:
+    conn.execute(
+        text(
+            """
+            INSERT INTO pokemon_oracles (
+                id, fingerprint, name, category, representative_card_id,
+                gameplay, printing_count, art_variant_count, first_release_date
+            ) VALUES (
+                :id, :fingerprint, :name, :category, :representative_card_id,
+                CAST(:gameplay AS jsonb), :printing_count, :art_variant_count,
+                :first_release_date
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                fingerprint = EXCLUDED.fingerprint,
+                name = EXCLUDED.name,
+                category = EXCLUDED.category,
+                representative_card_id = EXCLUDED.representative_card_id,
+                gameplay = EXCLUDED.gameplay,
+                printing_count = EXCLUDED.printing_count,
+                art_variant_count = EXCLUDED.art_variant_count,
+                first_release_date = EXCLUDED.first_release_date
+            """
+        ),
+        payload,
+    )
+
+
+def _link_cards_to_oracle(
+    conn,
+    *,
+    oracle_id: str,
+    group: list[dict[str, Any]],
+    rep_id: str,
+    only_ids: set[str] | None = None,
+) -> int:
+    linked = 0
+    for card in group:
+        cid = str(card.get("id") or "")
+        if only_ids is not None and cid not in only_ids:
+            continue
+        is_rep = cid == rep_id
+        conn.execute(
+            text(
+                """
+                UPDATE pokemon_cards
+                SET oracle_id = :oracle_id,
+                    illustration_id = :illustration_id,
+                    illustration_artist = :illustration_artist,
+                    is_oracle_representative = :is_rep
+                WHERE id = :id
+                """
+            ),
+            {
+                "oracle_id": oracle_id,
+                "illustration_id": card["_illustration_id"],
+                "illustration_artist": card.get("illustrator"),
+                "is_rep": is_rep,
+                "id": cid,
+            },
+        )
+        linked += 1
+    return linked
+
+
+def _refresh_oracle_representative(conn, oracle_id: str, rep_id: str) -> None:
+    conn.execute(
+        text(
+            """
+            UPDATE pokemon_cards
+            SET is_oracle_representative = (id = :rep_id)
+            WHERE oracle_id = :oracle_id
+            """
+        ),
+        {"oracle_id": oracle_id, "rep_id": rep_id},
+    )
 
 
 def pick_representative(cards: list[dict[str, Any]]) -> dict[str, Any]:
@@ -677,21 +814,146 @@ def build_oracles(engine) -> dict[str, int]:
         }
 
 
+def build_oracles_for_sets(engine, set_ids: list[str]) -> dict[str, int]:
+    """Assign oracle groupings for printings in the given sets only.
+
+    Does not wipe pokemon_oracles — merges into existing fingerprints when
+    gameplay matches a card already in the catalog.
+    """
+    normalized = []
+    seen: set[str] = set()
+    for sid in set_ids:
+        key = sid.lower()
+        if key not in seen:
+            seen.add(key)
+            normalized.append(key)
+    if not normalized:
+        return {"cards": 0, "oracles": 0, "oracles_created": 0, "evolve_from_backfilled": 0}
+
+    persist_card_corrections(engine)
+
+    with engine.begin() as conn:
+        batch = load_cards(conn, set_ids=normalized)
+        if not batch:
+            print(f"No pokemon_cards rows in set(s): {', '.join(normalized)}")
+            return {"cards": 0, "oracles": 0, "oracles_created": 0, "evolve_from_backfilled": 0}
+
+        batch_ids = {str(c["id"]) for c in batch}
+        donors = load_evolve_donor_cards(conn)
+        donor_ids = {str(c["id"]) for c in donors}
+        combined = batch + [c for c in donors if str(c["id"]) not in batch_ids]
+        evolve_updates = backfill_evolve_from(combined)
+        evolve_updates = [(cid, evo) for cid, evo in evolve_updates if cid in batch_ids]
+        if evolve_updates:
+            upd = text(
+                """
+                UPDATE pokemon_cards
+                SET evolve_from = :evolve_from
+                WHERE id = :id
+                  AND (evolve_from IS NULL OR btrim(evolve_from) = '')
+                """
+            )
+            for card_id, evo in evolve_updates:
+                conn.execute(upd, {"id": card_id, "evolve_from": evo})
+            print(f"Backfilled evolve_from on {len(evolve_updates)} printing(s).")
+
+        _assign_card_fingerprints(batch)
+        soft_remapped = merge_non_pokemon_name_fingerprints(batch)
+        if soft_remapped:
+            mode = (
+                f"≥{int(SOFT_TEXT_SIM_THRESHOLD * 100)}% text"
+                if USE_NON_POKEMON_TEXT_SIMILARITY
+                else "same name"
+            )
+            print(f"Merged {soft_remapped} non-Pokémon printing(s) by {mode}.")
+
+        by_fingerprint: dict[str, list[dict[str, Any]]] = {}
+        for card in batch:
+            by_fingerprint.setdefault(card["_oracle_fingerprint"], []).append(card)
+
+        oracle_count = 0
+        oracles_created = 0
+        for fp, group in by_fingerprint.items():
+            oracle_id = fp
+            existing = conn.execute(
+                text("SELECT id FROM pokemon_oracles WHERE id = :id"),
+                {"id": oracle_id},
+            ).first()
+            if existing:
+                linked = load_cards(conn, oracle_ids=[oracle_id])
+                by_id = {str(c["id"]): c for c in linked}
+                for card in group:
+                    by_id[str(card["id"])] = card
+                all_group = list(by_id.values())
+                _assign_card_fingerprints(all_group)
+            else:
+                all_group = group
+                oracles_created += 1
+
+            rep = pick_representative(all_group)
+            _upsert_oracle(conn, _oracle_row_payload(oracle_id, fp, rep, all_group))
+            _link_cards_to_oracle(
+                conn,
+                oracle_id=oracle_id,
+                group=group,
+                rep_id=str(rep["id"]),
+            )
+            if existing:
+                _refresh_oracle_representative(conn, oracle_id, str(rep["id"]))
+            oracle_count += 1
+
+        print(
+            f"Incremental oracle — {len(batch)} printing(s) in {len(normalized)} set(s), "
+            f"{oracle_count} oracle group(s) ({oracles_created} new)."
+        )
+        return {
+            "cards": len(batch),
+            "oracles": oracle_count,
+            "oracles_created": oracles_created,
+            "evolve_from_backfilled": len(evolve_updates),
+        }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build Pokémon oracle groupings")
     parser.add_argument("--skip-migration", action="store_true")
+    parser.add_argument(
+        "--set",
+        action="append",
+        dest="sets",
+        metavar="ID",
+        help="Limit to set(s); incremental merge (no full-table rebuild)",
+    )
     args = parser.parse_args()
+
+    set_ids: list[str] | None = None
+    if args.sets:
+        seen: set[str] = set()
+        set_ids = []
+        for sid in args.sets:
+            key = sid.lower()
+            if key not in seen:
+                seen.add(key)
+                set_ids.append(key)
 
     engine = create_engine(DATABASE_URL, future=True)
     if not args.skip_migration:
         print("Applying pokemon oracle migration...")
         apply_migration(engine)
 
-    stats = build_oracles(engine)
-    print(
-        f"Done — {stats['cards']} printings → {stats['oracles']} oracles"
-        f" (evolve_from backfilled: {stats.get('evolve_from_backfilled', 0)})."
-    )
+    if set_ids:
+        stats = build_oracles_for_sets(engine, set_ids)
+        print(
+            f"Done — {stats['cards']} printings in {stats['oracles']} oracle group(s)"
+            f" ({stats.get('oracles_created', 0)} new;"
+            f" evolve_from backfilled: {stats.get('evolve_from_backfilled', 0)})."
+        )
+    else:
+        stats = build_oracles(engine)
+        print(
+            f"Done — {stats['cards']} printings → {stats['oracles']} oracles"
+            f" (evolve_from backfilled: {stats.get('evolve_from_backfilled', 0)})."
+        )
     return 0
 
 

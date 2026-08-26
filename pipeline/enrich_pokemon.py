@@ -85,10 +85,21 @@ def run_enrich(
     else:
         print("\n=== Species — skipped ===")
 
-    if not skip_oracle:
-        _run_step("Oracle groupings", "build_pokemon_oracle.py", common)
+    if skip_oracle:
+        if set_ids:
+            oracle_args = [*common]
+            for sid in set_ids:
+                oracle_args.extend(["--set", sid])
+            _run_step("Oracle (incremental)", "build_pokemon_oracle.py", oracle_args)
+        else:
+            print("\n=== Oracle — skipped ===")
+    elif set_ids:
+        oracle_args = [*common]
+        for sid in set_ids:
+            oracle_args.extend(["--set", sid])
+        _run_step("Oracle (incremental)", "build_pokemon_oracle.py", oracle_args)
     else:
-        print("\n=== Oracle — skipped ===")
+        _run_step("Oracle groupings", "build_pokemon_oracle.py", common)
 
     print("\nPokémon enrichment complete.")
     return 0
