@@ -50,7 +50,7 @@ POKEMONTCG_SET_ALIASES: dict[str, str] = {
 }
 
 _PTCGIO_FACE_RE = re.compile(
-    r"images\.pokemontcg\.io/([^/]+)/(\d+)(?:_[a-z]+)?\.(?:png|jpg|jpeg|webp)",
+    r"images\.pokemontcg\.io/([^/]+)/([A-Za-z0-9]+)(?:_[a-z]+)?\.(?:png|jpg|jpeg|webp)",
     re.I,
 )
 _PKMNCARDS_FACE_RE = re.compile(
@@ -58,6 +58,7 @@ _PKMNCARDS_FACE_RE = re.compile(
     re.I,
 )
 _NAME_NOISE_RE = re.compile(r"\s+I['']$|['']$", re.I)
+_PROMO_LOCAL_RE = re.compile(r"^([A-Za-z]+)(\d+)$")
 
 
 def _reverse_set_aliases() -> dict[str, list[str]]:
@@ -81,13 +82,27 @@ def _local_id_variants(num: str) -> list[str]:
     raw = unquote(str(num or "").strip())
     if not raw:
         return []
-    variants = [raw]
+    variants = [raw, raw.upper(), raw.lower()]
     if raw.isdigit():
         n = int(raw)
         variants.extend([str(n), f"{n:02d}", f"{n:03d}"])
     elif raw.upper().startswith("CC") and raw[2:].isdigit():
         n = int(raw[2:])
         variants.extend([raw.upper(), f"CC{n:02d}", f"CC{n:03d}"])
+    else:
+        m = _PROMO_LOCAL_RE.match(raw)
+        if m:
+            prefix, digits = m.group(1), m.group(2)
+            n = int(digits)
+            for p in (prefix, prefix.upper(), prefix.lower()):
+                variants.extend(
+                    [
+                        f"{p}{digits}",
+                        f"{p}{n}",
+                        f"{p}{n:02d}",
+                        f"{p}{n:03d}",
+                    ]
+                )
     return list(dict.fromkeys(variants))
 
 

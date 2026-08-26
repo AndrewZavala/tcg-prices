@@ -21,6 +21,16 @@ def test_parse_pokemontcg_face_url() -> None:
     assert parse_face_url(url) == ("pop4", "5")
 
 
+def test_parse_dpp_promo_face_url() -> None:
+    url = "https://images.pokemontcg.io/dpp/DP16_hires.png?c=68"
+    assert parse_face_url(url) == ("dpp", "DP16")
+
+
+def test_candidate_ids_dpp_promo() -> None:
+    ids = _candidate_card_ids("dpp", "DP16")
+    assert "dpp-DP16" in ids
+
+
 def test_parse_pkmncards_face_url() -> None:
     url = "https://pkmncards.com/wp-content/uploads/sv10_en_181_std.jpg?c=312"
     assert parse_face_url(url) == ("sv10", "181")
@@ -65,6 +75,8 @@ def test_extract_entries_from_fixture() -> None:
 
 if __name__ == "__main__":
     test_parse_pokemontcg_face_url()
+    test_parse_dpp_promo_face_url()
+    test_candidate_ids_dpp_promo()
     test_parse_pkmncards_face_url()
     test_candidate_ids_include_tcgdex_alias()
     test_normalize_name_strips_noise()
