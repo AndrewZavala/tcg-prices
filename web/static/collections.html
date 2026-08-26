@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/star-piece.css?v=mobile-sheet" />
-  <link rel="stylesheet" href="/static/spell-tag.css?v=18" />
+  <link rel="stylesheet" href="/static/spell-tag.css?v=19" />
   <link rel="icon" href="/static/spell-tag-logo.png?v=10" type="image/png" />
 </head>
 <body class="sp-body st-body">
@@ -46,11 +46,40 @@
     </section>
   </main>
 
+  <dialog id="importDialog" class="sp-import-dialog">
+    <form method="dialog" class="sp-import-inner" id="importForm">
+      <div class="sp-import-head">
+        <h2 class="sp-import-title">Import cube JSON</h2>
+        <button type="button" class="sp-import-close" id="importClose" aria-label="Close">×</button>
+      </div>
+      <p class="sp-hint">Upload a CubeKoga / Tabletop Simulator export (.json). We match cards from image URLs and add them to a collection.</p>
+      <label class="sp-import-file">
+        <span class="sp-label">Cube file</span>
+        <input type="file" id="importFile" accept=".json,application/json" />
+      </label>
+      <div id="importPreview" class="sp-import-preview" hidden></div>
+      <div id="importTarget" class="sp-import-target" hidden>
+        <label class="sp-field">
+          <span class="sp-label">Add to collection</span>
+          <select id="importCollectionSelect"></select>
+        </label>
+        <label class="sp-field sp-import-new-name" id="importNewNameWrap" hidden>
+          <span class="sp-label">New collection name</span>
+          <input type="text" id="importNewName" maxlength="80" placeholder="My cube" />
+        </label>
+      </div>
+      <div class="sp-import-actions">
+        <button type="button" class="sp-import-cancel" id="importCancel">Cancel</button>
+        <button type="submit" class="sp-import-submit" id="importSubmit" disabled>Import matched cards</button>
+      </div>
+    </form>
+  </dialog>
+
   <footer class="sp-footer">
     <p><strong>Spell Tag</strong> · Unofficial fan project · Not affiliated with Nintendo, Game Freak, or Creatures</p>
   </footer>
 
   <script src="/static/spelltag-auth.js?v=3"></script>
-  <script src="/static/collections.js?v=3"></script>
+  <script src="/static/collections.js?v=4"></script>
 </body>
 </html>

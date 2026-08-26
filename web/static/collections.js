@@ -3,6 +3,21 @@
   if (!root) return;
 
   const CARD_IMG_FALLBACK = "/static/empty-pokeball.png";
+  const importDialog = document.getElementById("importDialog");
+  const importFile = document.getElementById("importFile");
+  const importPreview = document.getElementById("importPreview");
+  const importTarget = document.getElementById("importTarget");
+  const importCollectionSelect = document.getElementById("importCollectionSelect");
+  const importNewNameWrap = document.getElementById("importNewNameWrap");
+  const importNewName = document.getElementById("importNewName");
+  const importSubmit = document.getElementById("importSubmit");
+  const importClose = document.getElementById("importClose");
+  const importCancel = document.getElementById("importCancel");
+
+  let importCubeData = null;
+  let importPreviewData = null;
+  let importPreselectId = null;
+  let importUiBound = false;
 
   function esc(s) {
     return String(s ?? "")
@@ -43,6 +58,165 @@
     return resp.json();
   }
 
+  function resetImportModal() {
+    importCubeData = null;
+    importPreviewData = null;
+    if (importFile) importFile.value = "";
+    if (importPreview) {
+      importPreview.hidden = true;
+      importPreview.innerHTML = "";
+    }
+    if (importTarget) importTarget.hidden = true;
+    if (importNewName) importNewName.value = "";
+    if (importSubmit) importSubmit.disabled = true;
+  }
+
+  async function populateImportCollections(preselectId) {
+    const data = await api("/api/me/collections");
+    if (!data) return;
+    const rows = (data.collections || []).filter((c) => c.kind !== "favorites");
+    importCollectionSelect.innerHTML = [
+      '<option value="__new__">Create new collection…</option>',
+      ...rows.map(
+        (c) =>
+          `<option value="${esc(c.id)}"${c.id === preselectId ? " selected" : ""}>${esc(c.name)} (${c.item_count})</option>`
+      ),
+    ].join("");
+    if (preselectId && rows.some((c) => c.id === preselectId)) {
+      importCollectionSelect.value = preselectId;
+      importNewNameWrap.hidden = true;
+    } else if (preselectId) {
+      importCollectionSelect.value = "__new__";
+      importNewNameWrap.hidden = false;
+    }
+  }
+
+  function renderImportPreview(data) {
+    const unmatched = (data.items || []).filter((i) => i.status === "unmatched");
+    importPreview.innerHTML = `
+      <p class="sp-import-stats">
+        ${data.unique_matched} unique matched · ${data.unmatched} unmatched · ${data.total} in file
+        ${data.duplicate_slots ? ` · ${data.duplicate_slots} duplicate slots collapsed` : ""}
+      </p>
+      ${
+        unmatched.length
+          ? `<details><summary>${unmatched.length} unmatched</summary><ul class="sp-import-unmatched">${unmatched
+              .slice(0, 40)
+              .map(
+                (u) =>
+                  `<li>${esc(u.nickname || "Unknown")}${
+                    u.hint ? ` <code>${esc(u.hint)}</code>` : ""
+                  }</li>`
+              )
+              .join("")}${unmatched.length > 40 ? `<li>…and ${unmatched.length - 40} more</li>` : ""}</ul></details>`
+          : "<p>All cards matched.</p>"
+      }`;
+    importPreview.hidden = false;
+  }
+
+  async function openImportModal(preselectId) {
+    if (!importDialog) return;
+    resetImportModal();
+    importPreselectId = preselectId || null;
+    await populateImportCollections(importPreselectId);
+    importDialog.showModal();
+  }
+
+  async function handleImportFile(file) {
+    if (!file) return;
+    const text = await file.text();
+    let cube;
+    try {
+      cube = JSON.parse(text);
+    } catch (_) {
+      alert("Could not parse JSON file");
+      return;
+    }
+    importCubeData = cube;
+    importSubmit.disabled = true;
+    importPreview.hidden = false;
+    importPreview.innerHTML = "<p class=\"sp-empty\">Matching cards…</p>";
+    importTarget.hidden = true;
+    try {
+      const data = await api("/api/me/collections/import/preview", {
+        method: "POST",
+        body: JSON.stringify({ cube }),
+      });
+      importPreviewData = data;
+      renderImportPreview(data);
+      importTarget.hidden = false;
+      importSubmit.disabled = !(data.unique_matched > 0);
+    } catch (err) {
+      importPreview.innerHTML = `<p class="sp-empty">${esc(err.message || "Preview failed")}</p>`;
+    }
+  }
+
+  async function submitImport() {
+    if (!importCubeData || !importPreviewData?.unique_matched) return;
+    const mode = importCollectionSelect.value;
+    const payload = { cube: importCubeData };
+    if (mode === "__new__") {
+      const name = String(importNewName.value || "").trim();
+      if (!name) {
+        alert("Enter a name for the new collection");
+        return;
+      }
+      payload.new_collection_name = name;
+    } else {
+      payload.collection_id = mode;
+    }
+    importSubmit.disabled = true;
+    importSubmit.textContent = "Importing…";
+    try {
+      const result = await api("/api/me/collections/import", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      importDialog.close();
+      resetImportModal();
+      const cid = result.collection_id;
+      if (collectionIdFromPath() === cid) {
+        await renderDetail(cid);
+      } else {
+        window.location.href = `/collections/${encodeURIComponent(cid)}`;
+      }
+    } catch (err) {
+      alert(err.message || "Import failed");
+      importSubmit.disabled = false;
+      importSubmit.textContent = "Import matched cards";
+    }
+  }
+
+  function bindImportUi() {
+    if (!importDialog || importUiBound) return;
+    importUiBound = true;
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-import-cube]");
+      if (!btn) return;
+      openImportModal(btn.dataset.importCube || null);
+    });
+    importFile?.addEventListener("change", () => {
+      const file = importFile.files?.[0];
+      if (file) handleImportFile(file);
+    });
+    importCollectionSelect?.addEventListener("change", () => {
+      importNewNameWrap.hidden = importCollectionSelect.value !== "__new__";
+    });
+    importClose?.addEventListener("click", () => {
+      importDialog.close();
+      resetImportModal();
+    });
+    importCancel?.addEventListener("click", () => {
+      importDialog.close();
+      resetImportModal();
+    });
+    importDialog.addEventListener("close", resetImportModal);
+    document.getElementById("importForm")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      submitImport();
+    });
+  }
+
   async function renderList() {
     const data = await api("/api/me/collections");
     if (!data) return;
@@ -51,10 +225,13 @@
       <div class="sp-collections-head">
         <h1 class="sp-collections-title">My Collections</h1>
         <p class="sp-hint">Save favorite arts from Search, then browse them here.</p>
-        <form class="sp-new-collection" id="newCollectionForm">
-          <input type="text" name="name" maxlength="80" placeholder="New collection name" required />
-          <button type="submit">Create</button>
-        </form>
+        <div class="sp-collections-toolbar">
+          <form class="sp-new-collection" id="newCollectionForm">
+            <input type="text" name="name" maxlength="80" placeholder="New collection name" required />
+            <button type="submit">Create</button>
+          </form>
+          <button type="button" class="sp-import-btn" data-import-cube>Import cube JSON</button>
+        </div>
       </div>
       <ul class="sp-collection-list">
         ${rows
@@ -89,7 +266,7 @@
     });
   }
 
-  function renderCardTile(c, collectionId) {
+  function renderCardTile(c) {
     const label = `${c.name} — ${c.set_name} #${c.local_id}`;
     return `
       <div class="sp-collection-item">
@@ -123,17 +300,22 @@
         } · ${cards.length} saved</p>
         <p class="sp-collections-actions">
           <a class="sp-add-cards-btn" href="/collections/${esc(id)}/add">+ Add cards</a>
+          ${
+            isFav
+              ? ""
+              : `<button type="button" class="sp-import-btn" data-import-cube="${esc(id)}">Import cube JSON</button>`
+          }
         </p>
       </div>
       ${
         cards.length
           ? `<div class="sp-grid sp-collections-grid">
-              ${cards.map((c) => renderCardTile(c, id)).join("")}
+              ${cards.map((c) => renderCardTile(c)).join("")}
             </div>`
           : `<p class="sp-empty">${
               isFav
                 ? "No favorites yet. Open a card on Search and tap ♡ Favorite, or use Add cards."
-                : "No cards yet. Use Add cards to search and tap printings to save them here."
+                : "No cards yet. Use Add cards to search and tap printings to save them here, or import a cube JSON."
             }</p>`
       }`;
 
@@ -169,10 +351,13 @@
   }
 
   async function boot() {
+    bindImportUi();
     if (window.__spelltagAuthReady) {
       try {
         await window.__spelltagAuthReady;
-      } catch (_) { /* ignore */ }
+      } catch (_) {
+        /* ignore */
+      }
     }
     const id = collectionIdFromPath();
     try {

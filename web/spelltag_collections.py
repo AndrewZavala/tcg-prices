@@ -12,6 +12,7 @@ from sqlalchemy.engine import Engine
 
 from spelltag_auth import require_user
 from pokemon_api import _image_url
+from spelltag_cube_import import extract_cube_entries, match_cube_entries
 
 router = APIRouter(tags=["collections"])
 
@@ -33,6 +34,30 @@ class AddItemBody(BaseModel):
 
 class ToggleFavoriteBody(BaseModel):
     card_id: str = Field(min_length=1, max_length=64)
+
+
+class CubeImportPreviewBody(BaseModel):
+    cube: dict[str, Any]
+
+
+class CubeImportBody(BaseModel):
+    cube: dict[str, Any]
+    collection_id: str | None = None
+    new_collection_name: str | None = Field(default=None, max_length=80)
+
+
+def _parse_cube_payload(cube: dict[str, Any]) -> list[dict[str, Any]]:
+    if not isinstance(cube, dict):
+        raise HTTPException(status_code=400, detail="Invalid cube JSON")
+    entries = extract_cube_entries(cube)
+    if not entries:
+        raise HTTPException(
+            status_code=400,
+            detail="No cards found — expected a CubeKoga / Tabletop Simulator export (ObjectStates → ContainedObjects)",
+        )
+    if len(entries) > 2000:
+        raise HTTPException(status_code=400, detail="Cube too large (max 2000 cards)")
+    return entries
 
 
 def _ensure_favorites(conn, user_id: str) -> str:
@@ -367,3 +392,104 @@ def toggle_favorite(request: Request, body: ToggleFavoriteBody):
             {"cid": fav_id},
         )
     return {"ok": True, "favorited": favorited, "favorites_id": fav_id, "card_id": card_id}
+
+
+def _bulk_add_cards(conn, collection_id: str, card_ids: list[str]) -> dict[str, int]:
+    added = 0
+    skipped = 0
+    for card_id in card_ids:
+        if not _card_exists(conn, card_id):
+            skipped += 1
+            continue
+        result = conn.execute(
+            text(
+                """
+                INSERT INTO collection_items (collection_id, card_id)
+                VALUES (CAST(:cid AS uuid), :card_id)
+                ON CONFLICT (collection_id, card_id) DO NOTHING
+                """
+            ),
+            {"cid": collection_id, "card_id": card_id},
+        )
+        if result.rowcount:
+            added += 1
+        else:
+            skipped += 1
+    if added:
+        conn.execute(
+            text("UPDATE collections SET updated_at = NOW() WHERE id = CAST(:cid AS uuid)"),
+            {"cid": collection_id},
+        )
+    return {"added": added, "skipped": skipped}
+
+
+@router.post("/api/me/collections/import/preview")
+def preview_cube_import(request: Request, body: CubeImportPreviewBody):
+    user = require_user(request)
+    assert _engine is not None
+    entries = _parse_cube_payload(body.cube)
+    with _engine.connect() as conn:
+        preview = match_cube_entries(conn, entries)
+    preview["ok"] = True
+    return preview
+
+
+@router.post("/api/me/collections/import")
+def import_cube(request: Request, body: CubeImportBody):
+    user = require_user(request)
+    assert _engine is not None
+    entries = _parse_cube_payload(body.cube)
+    collection_id = (body.collection_id or "").strip() or None
+    new_name = (body.new_collection_name or "").strip() or None
+
+    if collection_id and new_name:
+        raise HTTPException(status_code=400, detail="Choose an existing collection or a new name, not both")
+    if not collection_id and not new_name:
+        raise HTTPException(status_code=400, detail="Select a collection or enter a name for a new one")
+    if new_name and new_name.lower() == "favorites":
+        raise HTTPException(status_code=400, detail="Favorites is reserved")
+
+    with _engine.begin() as conn:
+        _ensure_favorites(conn, user["id"])
+        preview = match_cube_entries(conn, entries)
+        card_ids = preview.get("card_ids") or []
+        if not card_ids:
+            raise HTTPException(status_code=400, detail="No cards could be matched in Spell Tag")
+
+        if new_name:
+            try:
+                row = conn.execute(
+                    text(
+                        """
+                        INSERT INTO collections (user_id, name, kind)
+                        VALUES (CAST(:uid AS uuid), :name, 'custom')
+                        RETURNING id::text AS id, name, kind
+                        """
+                    ),
+                    {"uid": user["id"], "name": new_name},
+                ).mappings().one()
+            except Exception as exc:
+                raise HTTPException(status_code=409, detail="A collection with that name already exists") from exc
+            collection_id = str(row["id"])
+            coll = dict(row)
+        else:
+            assert collection_id is not None
+            coll = _owned_collection(conn, user["id"], collection_id)
+            if not coll:
+                raise HTTPException(status_code=404, detail="Collection not found")
+
+        counts = _bulk_add_cards(conn, collection_id, card_ids)
+
+    return {
+        "ok": True,
+        "collection": coll,
+        "collection_id": collection_id,
+        "preview": {
+            "total": preview["total"],
+            "matched": preview["matched"],
+            "unique_matched": preview["unique_matched"],
+            "unmatched": preview["unmatched"],
+            "duplicate_slots": preview["duplicate_slots"],
+        },
+        **counts,
+    }

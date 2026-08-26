@@ -953,3 +953,140 @@
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+.st-body .sp-collections-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.st-body .sp-import-btn {
+  font: inherit;
+  font-weight: 700;
+  color: var(--sp-text);
+  background: rgba(12, 12, 14, 0.85);
+  border: 1px solid rgba(200, 200, 210, 0.35);
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+
+.st-body .sp-import-btn:hover {
+  border-color: rgba(196, 168, 232, 0.65);
+  color: #fff;
+}
+
+.st-body .sp-import-dialog {
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  padding: 0;
+  border: 1px solid rgba(196, 168, 232, 0.35);
+  border-radius: 14px;
+  background: rgba(16, 14, 28, 0.98);
+  color: var(--sp-text);
+}
+
+.st-body .sp-import-dialog::backdrop {
+  background: rgba(4, 4, 10, 0.72);
+}
+
+.st-body .sp-import-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem 1.1rem;
+}
+
+.st-body .sp-import-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.st-body .sp-import-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.st-body .sp-import-close {
+  font: inherit;
+  font-size: 1.35rem;
+  line-height: 1;
+  color: var(--sp-pink-soft);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.st-body .sp-import-file input[type="file"] {
+  width: 100%;
+  font: inherit;
+  color: var(--sp-text);
+}
+
+.st-body .sp-import-preview {
+  max-height: 14rem;
+  overflow: auto;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(8, 8, 14, 0.75);
+  border: 1px solid rgba(200, 200, 210, 0.18);
+  font-size: 0.88rem;
+}
+
+.st-body .sp-import-stats {
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+}
+
+.st-body .sp-import-unmatched {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  color: rgba(240, 244, 255, 0.78);
+}
+
+.st-body .sp-import-target select,
+.st-body .sp-import-target input {
+  width: 100%;
+  font: inherit;
+  color: var(--sp-text);
+  background: rgba(12, 12, 14, 0.85);
+  border: 1px solid rgba(200, 200, 210, 0.25);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+}
+
+.st-body .sp-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.st-body .sp-import-cancel,
+.st-body .sp-import-submit {
+  font: inherit;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+
+.st-body .sp-import-cancel {
+  color: var(--sp-text);
+  background: transparent;
+  border: 1px solid rgba(200, 200, 210, 0.25);
+}
+
+.st-body .sp-import-submit {
+  color: #fff;
+  background: linear-gradient(135deg, #2a2a32, var(--st-red));
+  border: 0;
+}
+
+.st-body .sp-import-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

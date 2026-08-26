@@ -293,6 +293,8 @@ def _parse_search_query(
         "exclude_dex_ids": [],
         "stage": None,
         "exclude_stages": [],
+        "prizes": [],
+        "exclude_prizes": [],
     }
     if not q or not q.strip():
         return result
@@ -462,6 +464,13 @@ def _parse_search_query(
                     result["exclude_art_tags"].append(slug)
                 else:
                     result["art_tags"].append(slug)
+        elif prefix == "prize":
+            if val_lower in ("1", "2", "3"):
+                n = int(val_lower)
+                if negated:
+                    result["exclude_prizes"].append(n)
+                else:
+                    result["prizes"].append(n)
         else:
             name_parts.append(token)
 
@@ -482,9 +491,82 @@ def _parse_search_query(
         "exclude_card_types",
         "exclude_dex_ids",
         "exclude_stages",
+        "prizes",
+        "exclude_prizes",
     ):
         result[key] = list(dict.fromkeys(result[key]))
     return result
+
+
+# Prize cards taken when Knocked Out — derived from subtypes (not a stored column).
+# Radiant Pokémon are 1 prize. Modern Mega Pokémon ex (Mega Evolution block me*) are 3.
+PRIZE_3_TAGS = ("tag-team", "v-union")
+PRIZE_2_TAGS = ("ex", "gx", "v", "vmax", "vstar", "break", "legend")
+
+
+def _sql_prize_three() -> str:
+    """TAG TEAM / V-UNION, or Mega Pokémon ex from the Mega Evolution block onward."""
+    return """(
+      c.category = 'Pokemon'
+      AND (
+        COALESCE(c.tags, ARRAY[]::text[]) && CAST(:prize_3_tags AS text[])
+        OR (
+          'ex' = ANY(COALESCE(c.tags, ARRAY[]::text[]))
+          AND (
+            'mega' = ANY(COALESCE(c.tags, ARRAY[]::text[]))
+            OR c.name ILIKE 'Mega %'
+          )
+          AND (s.series_id LIKE 'me%' OR c.set_id LIKE 'me%')
+        )
+      )
+    )"""
+
+
+def _sql_prize_two() -> str:
+    """Rule-box 2-prize Pokémon (ex/V/GX/…), excluding 3-prize cards. Radiant is not included."""
+    return f"""(
+      c.category = 'Pokemon'
+      AND NOT {_sql_prize_three()}
+      AND COALESCE(c.tags, ARRAY[]::text[]) && CAST(:prize_2_tags AS text[])
+    )"""
+
+
+def _sql_prize_one() -> str:
+    """Pokémon that give 1 prize (including Radiant; excluding 2-/3-prize subtypes)."""
+    return f"""(
+      c.category = 'Pokemon'
+      AND NOT {_sql_prize_three()}
+      AND NOT (
+        COALESCE(c.tags, ARRAY[]::text[]) && CAST(:prize_2_tags AS text[])
+      )
+    )"""
+
+
+def _sql_prize_count(n: int) -> str:
+    if n == 1:
+        return _sql_prize_one()
+    if n == 2:
+        return _sql_prize_two()
+    if n == 3:
+        return _sql_prize_three()
+    raise ValueError(f"unsupported prize count: {n}")
+
+
+def _apply_prize_filters(
+    filters: list[str],
+    params: dict[str, Any],
+    *,
+    prizes: list[int],
+    exclude_prizes: list[int],
+) -> None:
+    if not prizes and not exclude_prizes:
+        return
+    params["prize_2_tags"] = list(PRIZE_2_TAGS)
+    params["prize_3_tags"] = list(PRIZE_3_TAGS)
+    if prizes:
+        filters.append("(" + " OR ".join(_sql_prize_count(n) for n in prizes) + ")")
+    for n in exclude_prizes:
+        filters.append(f"NOT {_sql_prize_count(n)}")
 
 
 def _apply_species_filters(
@@ -1041,6 +1123,13 @@ def search_pokemon_cards(
         key = f"xstage_{idx}"
         filters.append(f"c.stage IS DISTINCT FROM :{key}")
         params[key] = stg
+
+    _apply_prize_filters(
+        filters,
+        params,
+        prizes=list(parsed.get("prizes") or []),
+        exclude_prizes=list(parsed.get("exclude_prizes") or []),
+    )
 
     where_sql = " AND ".join(filters)
 
