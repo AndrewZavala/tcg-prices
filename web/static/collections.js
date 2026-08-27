@@ -1038,6 +1038,7 @@
               <option value="name"${detailSort === "name" ? " selected" : ""}>Name</option>
               <option value="set"${detailSort === "set" ? " selected" : ""}>Set</option>
               <option value="number"${detailSort === "number" ? " selected" : ""}>Number</option>
+              <option value="type"${detailSort === "type" ? " selected" : ""}>Type</option>
               ${
                 detailIsOwner
                   ? `<option value="tag"${detailSort === "tag" ? " selected" : ""}>Tag</option>`

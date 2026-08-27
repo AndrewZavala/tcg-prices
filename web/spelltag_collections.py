@@ -13,6 +13,7 @@ from sqlalchemy.engine import Engine
 
 from spelltag_auth import PUBLIC_URL, current_user, require_user
 from pokemon_api import _image_url
+from pokemon_type_sort_sql import COLLECTION_SPECIES_JOINS, build_card_type_sort_sql
 from spelltag_cube_import import extract_cube_entries, match_cube_entries
 
 router = APIRouter(tags=["collections"])
@@ -150,8 +151,11 @@ def _replace_item_tags(
     return tags
 
 
-def _card_sort_clause(sort: str) -> str:
+def _card_sort_clause(sort: str, *, group: str = "none") -> str:
     key = (sort or "saved").lower()
+    if key == "type":
+        grouped = (group or "none").lower() == "category"
+        return build_card_type_sort_sql("pc", include_category_bucket=not grouped)
     if key == "name":
         return "pc.name ASC, pc.id ASC"
     if key == "set":
@@ -180,7 +184,10 @@ def _card_group_order_clause(group: str) -> str:
 
 
 def _card_order_by(sort: str, group: str) -> str:
-    return f"{_card_group_order_clause(group)}{_card_sort_clause(sort)}"
+    key = (sort or "saved").lower()
+    group_key = (group or "none").lower()
+    group_prefix = _card_group_order_clause(group_key) if group_key == "category" else ""
+    return f"{group_prefix}{_card_sort_clause(key, group=group_key)}"
 
 
 def _normalize_visibility(raw: str | None) -> str:
@@ -369,6 +376,8 @@ def _load_collection_cards(
     include_tags: bool,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     order_by = _card_order_by(sort, group)
+    needs_species = (sort or "saved").lower() == "type"
+    species_joins = COLLECTION_SPECIES_JOINS if needs_species else ""
     tag_filter = ""
     params: dict[str, Any] = {"cid": collection_id}
     if tag_slug:
@@ -399,6 +408,7 @@ def _load_collection_cards(
             FROM collection_items i
             INNER JOIN pokemon_cards pc ON pc.id = i.card_id
             INNER JOIN pokemon_sets s ON s.id = pc.set_id
+            {species_joins}
             WHERE i.collection_id = CAST(:cid AS uuid)
             {tag_filter}
             ORDER BY {order_by}
@@ -655,14 +665,14 @@ def update_collection_item_tags(
 def get_collection(
     request: Request,
     collection_id: str,
-    sort: str = Query("saved", description="saved | name | set | number | tag"),
+    sort: str = Query("saved", description="saved | name | set | number | tag | type"),
     group: str = Query("none", description="none | category"),
     tag: str | None = Query(None, description="Filter to cards with this tag"),
 ):
     user = require_user(request)
     sort_key = (sort or "saved").lower()
-    if sort_key not in ("saved", "name", "set", "number", "tag"):
-        raise HTTPException(status_code=400, detail="sort must be saved, name, set, number, or tag")
+    if sort_key not in ("saved", "name", "set", "number", "tag", "type"):
+        raise HTTPException(status_code=400, detail="sort must be saved, name, set, number, tag, or type")
     group_key = (group or "none").lower()
     if group_key not in ("none", "category"):
         raise HTTPException(status_code=400, detail="group must be none or category")
@@ -699,7 +709,7 @@ def get_collection(
 def get_shared_collection(
     request: Request,
     id_or_slug: str,
-    sort: str = Query("saved", description="saved | name | set | number | tag"),
+    sort: str = Query("saved", description="saved | name | set | number | tag | type"),
     group: str = Query("none", description="none | category"),
     tag: str | None = Query(None, description="Filter to cards with this tag (owner only)"),
 ):
@@ -721,11 +731,12 @@ def get_shared_collection(
         if visibility == "private" and not is_owner:
             raise HTTPException(status_code=404, detail="Collection not found")
 
-        allowed_sorts = ("saved", "name", "set", "number", "tag") if is_owner else (
+        allowed_sorts = ("saved", "name", "set", "number", "tag", "type") if is_owner else (
             "saved",
             "name",
             "set",
             "number",
+            "type",
         )
         if sort_key not in allowed_sorts:
             raise HTTPException(
