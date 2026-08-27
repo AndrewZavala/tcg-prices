@@ -195,15 +195,26 @@
   function cardTextBlock(card) {
     const text = card.description;
     if (!text) return "";
-    const heading =
-      card.category === "Pokemon" ? "Flavor text" : "Effect";
+    const isPokemon = card.category === "Pokemon";
+    const heading = isPokemon ? "Flavor text" : "Effect";
+    const blockClass = isPokemon ? "sp-flavor-block" : "sp-oracle-text-block";
     const paragraphs = text
       .split(/\n\s*\n/)
       .map((p) => p.trim())
       .filter(Boolean)
       .map((p) => `<p>${esc(p)}</p>`)
       .join("");
-    return `<div class="sp-block"><h3>${heading}</h3>${paragraphs}</div>`;
+    return `<div class="sp-block ${blockClass}"><h3>${heading}</h3>${paragraphs}</div>`;
+  }
+
+  function flavorTextBlock(card) {
+    if (card.category !== "Pokemon") return "";
+    return cardTextBlock(card);
+  }
+
+  function effectTextBlock(card) {
+    if (card.category === "Pokemon") return "";
+    return cardTextBlock(card);
   }
 
   function subtypeBlock(card) {
@@ -1131,14 +1142,7 @@
       <div class="sp-detail">
         <div class="sp-detail-art">
           ${cardImg(card.image_url_high || card.image_url, card.name, "sp-detail-img")}
-        </div>
-        <div class="sp-detail-body">
-          <h2>
-            <button type="button" class="sp-name-link" data-name="${esc(card.name)}" title="Search for ${esc(card.name)}">
-              ${esc(card.name)}
-            </button>
-          </h2>
-          <div class="sp-detail-sticky-actions">
+          <div class="sp-detail-art-actions">
             ${(card.tcg_url || card.limitless_url) ? `
               <p class="sp-buy-row">
                 ${card.tcg_url ? `
@@ -1159,22 +1163,31 @@
                   <option value="">Add to collection…</option>
                 </select>
               </label>
-              <a class="sp-collect-link" href="/collections">My Collections</a>
             </div>
           </div>
+        </div>
+        <div class="sp-detail-body">
+          <h2>
+            <button type="button" class="sp-name-link" data-name="${esc(card.name)}" title="Search for ${esc(card.name)}">
+              ${esc(card.name)}
+            </button>
+          </h2>
           <p class="sp-detail-meta">
             ${esc(card.series_name || "—")} · ${esc(card.set_name)} · #${esc(card.local_id)} · ${esc(card.rarity || "—")}
             · ${esc(card.illustrator || "Unknown artist")}
           </p>
-          ${pokemonMetaBlock(card)}
-          ${subtypeBlock(card)}
-          ${statGridBlock(card)}
           ${card.evolve_from ? `<p class="sp-hint">Evolves from ${esc(card.evolve_from)}</p>` : ""}
-          ${cardTextBlock(card)}
-          ${(card.abilities || []).length ? `<div class="sp-block"><h3>Abilities</h3>${card.abilities.map(abilityBlock).join("")}</div>` : ""}
-          ${(card.attacks || []).length ? `<div class="sp-block"><h3>Attacks</h3>${card.attacks.map(attackBlock).join("")}</div>` : ""}
-          ${oracleTagsBlock(card)}
-          ${artTagsBlock(card)}
+          ${(card.abilities || []).length ? `<div class="sp-block sp-oracle-text-block"><h3>Abilities</h3>${card.abilities.map(abilityBlock).join("")}</div>` : ""}
+          ${(card.attacks || []).length ? `<div class="sp-block sp-oracle-text-block"><h3>Attacks</h3>${card.attacks.map(attackBlock).join("")}</div>` : ""}
+          ${effectTextBlock(card)}
+          ${flavorTextBlock(card)}
+          <div class="sp-detail-after-oracle">
+            ${subtypeBlock(card)}
+            ${pokemonMetaBlock(card)}
+            ${statGridBlock(card)}
+            ${oracleTagsBlock(card)}
+            ${artTagsBlock(card)}
+          </div>
           ${related.length > 1 ? `
             <div class="sp-siblings">
               <h3>${esc(relatedTitle)}</h3>

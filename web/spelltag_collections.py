@@ -52,6 +52,10 @@ class UpdateCollectionItemTagsBody(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=20)
 
 
+class UpdateCollectionItemBucketBody(BaseModel):
+    bucket: str = Field(min_length=1, max_length=16)
+
+
 class UpdateCollectionBody(BaseModel):
     visibility: str | None = None
     share_slug: str | None = None
@@ -60,6 +64,14 @@ class UpdateCollectionBody(BaseModel):
 _TAG_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _SHARE_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _SHAREABLE_VISIBILITIES = frozenset({"unlisted", "public"})
+_ITEM_BUCKETS = frozenset({"main", "considering"})
+
+
+def _normalize_item_bucket(raw: str) -> str:
+    val = (raw or "main").strip().lower()
+    if val not in _ITEM_BUCKETS:
+        raise HTTPException(status_code=400, detail="bucket must be main or considering")
+    return val
 
 
 def _normalize_item_tag(raw: str) -> str:
@@ -183,11 +195,21 @@ def _card_group_order_clause(group: str) -> str:
     return ""
 
 
-def _card_order_by(sort: str, group: str) -> str:
+def _card_bucket_order_clause(*, split_buckets: bool) -> str:
+    if not split_buckets:
+        return ""
+    return """CASE COALESCE(i.bucket, 'main')
+        WHEN 'considering' THEN 1
+        ELSE 0
+    END,"""
+
+
+def _card_order_by(sort: str, group: str, *, split_buckets: bool = False) -> str:
     key = (sort or "saved").lower()
     group_key = (group or "none").lower()
+    bucket_prefix = _card_bucket_order_clause(split_buckets=split_buckets)
     group_prefix = _card_group_order_clause(group_key) if group_key == "category" else ""
-    return f"{group_prefix}{_card_sort_clause(key, group=group_key)}"
+    return f"{bucket_prefix}{group_prefix}{_card_sort_clause(key, group=group_key)}"
 
 
 def _normalize_visibility(raw: str | None) -> str:
@@ -374,8 +396,10 @@ def _load_collection_cards(
     group: str,
     tag_slug: str | None,
     include_tags: bool,
+    main_only: bool = False,
+    split_buckets: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    order_by = _card_order_by(sort, group)
+    order_by = _card_order_by(sort, group, split_buckets=split_buckets)
     needs_species = (sort or "saved").lower() == "type"
     species_joins = COLLECTION_SPECIES_JOINS if needs_species else ""
     tag_filter = ""
@@ -391,6 +415,10 @@ def _load_collection_cards(
         """
         params["tag"] = tag_slug
 
+    bucket_filter = ""
+    if main_only:
+        bucket_filter = "AND COALESCE(i.bucket, 'main') = 'main'"
+
     card_tags: dict[str, list[str]] = {}
     known_tags: list[str] = []
     if include_tags:
@@ -404,12 +432,14 @@ def _load_collection_cards(
                 pc.id, pc.name, pc.category, pc.set_id, s.name AS set_name, pc.local_id,
                 pc.image_url, pc.image_local, pc.rarity, pc.illustrator,
                 s.release_date::text AS release_date,
-                i.created_at::text AS saved_at
+                i.created_at::text AS saved_at,
+                COALESCE(i.bucket, 'main') AS bucket
             FROM collection_items i
             INNER JOIN pokemon_cards pc ON pc.id = i.card_id
             INNER JOIN pokemon_sets s ON s.id = pc.set_id
             {species_joins}
             WHERE i.collection_id = CAST(:cid AS uuid)
+            {bucket_filter}
             {tag_filter}
             ORDER BY {order_by}
             """
@@ -661,6 +691,46 @@ def update_collection_item_tags(
     return {"ok": True, "collection_id": collection_id, "card_id": card_id, "tags": saved}
 
 
+@router.patch("/api/me/collections/{collection_id}/items/{card_id:path}")
+def update_item_bucket(
+    request: Request,
+    collection_id: str,
+    card_id: str,
+    body: UpdateCollectionItemBucketBody,
+):
+    user = require_user(request)
+    bucket = _normalize_item_bucket(body.bucket)
+    assert _engine is not None
+    with _engine.begin() as conn:
+        coll = _owned_collection(conn, user["id"], collection_id)
+        if not coll:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        if coll.get("kind") == "favorites":
+            raise HTTPException(status_code=400, detail="Favorites does not support considering")
+        updated = conn.execute(
+            text(
+                """
+                UPDATE collection_items
+                SET bucket = :bucket
+                WHERE collection_id = CAST(:cid AS uuid) AND card_id = :card_id
+                """
+            ),
+            {"cid": collection_id, "card_id": card_id, "bucket": bucket},
+        ).rowcount
+        if not updated:
+            raise HTTPException(status_code=404, detail="Card not in this collection")
+        conn.execute(
+            text(
+                """
+                UPDATE collections SET updated_at = NOW()
+                WHERE id = CAST(:cid AS uuid)
+                """
+            ),
+            {"cid": collection_id},
+        )
+    return {"ok": True, "collection_id": collection_id, "card_id": card_id, "bucket": bucket}
+
+
 @router.get("/api/me/collections/{collection_id}")
 def get_collection(
     request: Request,
@@ -692,6 +762,8 @@ def get_collection(
             group=group_key,
             tag_slug=tag_slug,
             include_tags=True,
+            main_only=False,
+            split_buckets=coll.get("kind") != "favorites",
         )
     return {
         "collection": coll,
@@ -756,6 +828,8 @@ def get_shared_collection(
             group=group_key,
             tag_slug=tag_slug,
             include_tags=is_owner,
+            main_only=not is_owner or coll.get("kind") == "favorites",
+            split_buckets=False,
         )
 
     return {

@@ -794,6 +794,51 @@ body {
   min-width: 0;
 }
 
+.sp-detail-art-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.sp-detail-art-actions .sp-buy-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.sp-detail-art-actions .sp-collect-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.sp-detail-art-actions .sp-collect-add select {
+  width: 100%;
+  max-width: none;
+}
+
+.sp-detail-art-actions .sp-buy-btn,
+.sp-detail-art-actions .sp-limitless-btn,
+.sp-detail-art-actions .sp-fav-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.sp-detail-art-actions:not(:has(.sp-buy-row)):has(#collectBar[hidden]) {
+  display: none;
+  margin: 0;
+}
+
+.sp-detail-after-oracle {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(200, 200, 210, 0.1);
+}
+
 .sp-detail-body {
   min-width: 0;
 }

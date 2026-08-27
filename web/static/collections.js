@@ -248,9 +248,41 @@
     return detailCards.filter((c) => cardMatchesQuery(c, detailQuery));
   }
 
+  function supportsConsidering() {
+    return detailIsOwner && detailColl?.kind !== "favorites";
+  }
+
+  function cardBucket(card) {
+    return card?.bucket === "considering" ? "considering" : "main";
+  }
+
+  function filteredMainCards() {
+    return filteredDetailCards().filter((c) => cardBucket(c) === "main");
+  }
+
+  function filteredConsideringCards() {
+    if (!supportsConsidering()) return [];
+    return filteredDetailCards().filter((c) => cardBucket(c) === "considering");
+  }
+
   function defaultPreviewCard() {
-    const visible = filteredDetailCards();
-    return visible.length ? visible[0] : null;
+    const main = filteredMainCards();
+    if (main.length) return main[0];
+    const considering = filteredConsideringCards();
+    return considering.length ? considering[0] : null;
+  }
+
+  async function setCardBucket(collectionId, cardId, bucket) {
+    const data = await api(
+      `/api/me/collections/${encodeURIComponent(collectionId)}/items/${encodeURIComponent(cardId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ bucket }),
+      }
+    );
+    const row = detailCards.find((c) => c.id === cardId);
+    if (row) row.bucket = data.bucket || bucket;
+    return data;
   }
 
   function bindModalUi() {
@@ -305,6 +337,8 @@
     cardModal.showModal();
     const savedRow = detailCards.find((c) => c.id === cardId);
     const initialTags = savedRow?.tags || [];
+    const bucket = cardBucket(savedRow);
+    const showConsidering = supportsConsidering() && collectionId && detailIsOwner;
     try {
       const card = await api(`/api/pokemon/cards/${encodeURIComponent(cardId)}`);
       const label = `${card.name} — ${card.set_name} #${card.local_id}`;
@@ -324,6 +358,13 @@
             <div class="sp-detail-sticky-actions">
               <p class="sp-buy-row">
                 <a class="sp-buy-btn" href="/?q=${encodeURIComponent(card.id)}">Open in Search</a>
+                ${
+                  showConsidering
+                    ? bucket === "considering"
+                      ? `<button type="button" class="sp-btn-secondary sp-collection-bucket-modal" data-bucket="main">Move to main collection</button>`
+                      : `<button type="button" class="sp-btn-secondary sp-collection-bucket-modal" data-bucket="considering">Move to considering</button>`
+                    : ""
+                }
                 ${
                   collectionId && detailIsOwner
                     ? `<button type="button" class="sp-collection-remove sp-collection-remove-modal" data-card-id="${esc(
@@ -354,6 +395,21 @@
           </div>
         </div>`;
       if (collectionId && detailIsOwner) bindCardTagEditor(collectionId, cardId, initialTags);
+      modalBody.querySelector(".sp-collection-bucket-modal")?.addEventListener("click", async (e) => {
+        if (!detailIsOwner || !collectionId) return;
+        const btn = e.currentTarget;
+        const nextBucket = btn.dataset.bucket;
+        if (!nextBucket) return;
+        btn.disabled = true;
+        try {
+          await setCardBucket(collectionId, cardId, nextBucket);
+          cardModal.close();
+          renderDetailGrid(collectionId);
+        } catch (err) {
+          alert(err.message || "Could not move card");
+          btn.disabled = false;
+        }
+      });
       modalBody.querySelector(".sp-collection-remove-modal")?.addEventListener("click", async (e) => {
         if (!detailIsOwner || !collectionId) return;
         const btn = e.currentTarget;
@@ -832,39 +888,92 @@
       .join("")}</div>`;
   }
 
-  function renderDetailGrid(collectionId) {
-    const mount = document.getElementById("collectionGridMount");
-    const countEl = document.getElementById("collectionSearchCount");
-    const emptyEl = document.getElementById("collectionGridEmpty");
-    if (!mount) return;
-    const visible = filteredDetailCards();
-    if (countEl) {
-      const total = detailCards.length;
-      countEl.textContent =
-        detailQuery && visible.length !== total
-          ? `${visible.length} of ${total}`
-          : `${total} card${total === 1 ? "" : "s"}`;
+  function renderCardsHtml(cards) {
+    if (detailView === "stacks") {
+      return detailGroup === "category" ? renderGroupedStacksHtml(cards) : renderStacksHtml(cards);
     }
-    if (visible.length) {
-      mount.classList.toggle("is-stacks", detailView === "stacks");
-      mount.classList.toggle("is-spoiler", detailView !== "stacks");
-      if (detailView === "stacks") {
-        mount.innerHTML =
-          detailGroup === "category" ? renderGroupedStacksHtml(visible) : renderStacksHtml(visible);
-      } else if (detailGroup === "category") {
-        mount.innerHTML = renderGroupedGridHtml(visible);
-      } else {
-        mount.innerHTML = `<div class="sp-grid sp-collections-grid">${visible
-          .map((c) => renderCardTile(c))
-          .join("")}</div>`;
-      }
-      mount.hidden = false;
-      if (emptyEl) emptyEl.hidden = true;
-      bindCollectionGrid(collectionId, mount);
-      updatePreviewPanel(defaultPreviewCard());
-    } else {
+    if (detailGroup === "category") {
+      return renderGroupedGridHtml(cards);
+    }
+    return `<div class="sp-grid sp-collections-grid">${cards.map((c) => renderCardTile(c)).join("")}</div>`;
+  }
+
+  function renderCardsIntoMount(mount, cards, collectionId) {
+    if (!mount) return;
+    if (!cards.length) {
       mount.innerHTML = "";
       mount.hidden = true;
+      return;
+    }
+    mount.hidden = false;
+    mount.classList.toggle("is-stacks", detailView === "stacks");
+    mount.classList.toggle("is-spoiler", detailView !== "stacks");
+    mount.innerHTML = renderCardsHtml(cards);
+    bindCollectionGrid(collectionId, mount);
+  }
+
+  function renderDetailGrid(collectionId) {
+    const mainMount = document.getElementById("collectionGridMount");
+    const consideringMount = document.getElementById("consideringGridMount");
+    const consideringSection = document.getElementById("consideringSection");
+    const mainEmptyEl = document.getElementById("collectionMainEmpty");
+    const countEl = document.getElementById("collectionSearchCount");
+    const emptyEl = document.getElementById("collectionGridEmpty");
+    if (!mainMount) return;
+
+    const mainCards = filteredMainCards();
+    const consideringCards = filteredConsideringCards();
+    const visibleTotal = mainCards.length + consideringCards.length;
+    const total = detailCards.length;
+
+    if (countEl) {
+      if (detailQuery && visibleTotal !== total) {
+        countEl.textContent = `${visibleTotal} of ${total}`;
+      } else if (supportsConsidering()) {
+        const mainCount = detailCards.filter((c) => cardBucket(c) === "main").length;
+        const consideringCount = detailCards.filter((c) => cardBucket(c) === "considering").length;
+        countEl.textContent =
+          consideringCount > 0
+            ? `${mainCount} main · ${consideringCount} considering`
+            : `${total} card${total === 1 ? "" : "s"}`;
+      } else {
+        countEl.textContent = `${total} card${total === 1 ? "" : "s"}`;
+      }
+    }
+
+    if (visibleTotal) {
+      renderCardsIntoMount(mainMount, mainCards, collectionId);
+      if (mainEmptyEl) {
+        mainEmptyEl.hidden = mainCards.length > 0 || !supportsConsidering();
+        mainEmptyEl.textContent = detailQuery
+          ? "No main cards match your search."
+          : "No cards in the main collection yet.";
+      }
+      if (consideringSection && consideringMount) {
+        if (consideringCards.length) {
+          consideringSection.hidden = false;
+          const consideringCountEl = document.getElementById("consideringCount");
+          if (consideringCountEl) {
+            consideringCountEl.textContent = String(consideringCards.length);
+          }
+          renderCardsIntoMount(consideringMount, consideringCards, collectionId);
+        } else {
+          consideringSection.hidden = true;
+          consideringMount.innerHTML = "";
+          consideringMount.hidden = true;
+        }
+      }
+      if (emptyEl) emptyEl.hidden = true;
+      updatePreviewPanel(defaultPreviewCard());
+    } else {
+      mainMount.innerHTML = "";
+      mainMount.hidden = true;
+      if (consideringMount) {
+        consideringMount.innerHTML = "";
+        consideringMount.hidden = true;
+      }
+      if (consideringSection) consideringSection.hidden = true;
+      if (mainEmptyEl) mainEmptyEl.hidden = true;
       updatePreviewPanel(null);
       if (emptyEl) {
         emptyEl.hidden = false;
@@ -1001,7 +1110,7 @@
             ? `Shared by ${esc(ownerName)} — view only.`
             : isFav
               ? "Card arts you’ve hearted from Search."
-              : "Cards you’ve saved to this list. Click a card to add your own tags (draw, recycle, …)."
+              : "Cards you’ve saved to this list. Click a card to add tags or move cards to Considering while building a cube."
         }</p>
         ${sharePanel}
         <div class="sp-collection-list-controls">
@@ -1068,7 +1177,19 @@
                  </div>
                </aside>
                <div class="sp-collection-main">
-                 <div id="collectionGridMount"></div>
+                 <section class="sp-collection-section" aria-label="Main collection">
+                   <div id="collectionGridMount"></div>
+                   <p class="sp-empty sp-collection-section-empty" id="collectionMainEmpty" hidden></p>
+                 </section>
+                 ${
+                   detailIsOwner && !isFav
+                     ? `<section class="sp-collection-section sp-collection-considering" id="consideringSection" hidden aria-label="Considering">
+                          <h2 class="sp-collection-group-title">Considering <span class="sp-collection-group-count" id="consideringCount"></span></h2>
+                          <p class="sp-hint sp-collection-considering-hint">Cards you’re still deciding on — not shown on shared links.</p>
+                          <div id="consideringGridMount"></div>
+                        </section>`
+                     : ""
+                 }
                  <p class="sp-empty" id="collectionGridEmpty" hidden></p>
                </div>
              </div>`

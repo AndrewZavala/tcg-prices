@@ -610,6 +610,44 @@
   margin: 0.75rem 0 1rem;
 }
 
+.st-body .sp-detail-art-actions .sp-collect-bar {
+  flex-direction: column;
+  align-items: stretch;
+  margin: 0;
+}
+
+.st-body .sp-detail-art-actions .sp-buy-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  width: 100%;
+}
+
+.st-body .sp-detail-art-actions .sp-buy-btn,
+.st-body .sp-detail-art-actions .sp-limitless-btn,
+.st-body .sp-detail-art-actions .sp-fav-btn {
+  width: 100%;
+  text-align: center;
+  justify-content: center;
+}
+
+.st-body .sp-detail-art-actions .sp-collect-add select {
+  width: 100%;
+  max-width: none;
+}
+
+.st-body .sp-detail-after-oracle {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(196, 168, 232, 0.18);
+}
+
+.st-body .sp-detail-after-oracle .sp-subtypes,
+.st-body .sp-detail-after-oracle .sp-stat-grid {
+  margin-top: 0.65rem;
+}
+
 .st-body .sp-fav-btn {
   font: inherit;
   font-size: 0.88rem;
@@ -649,6 +687,10 @@
   .st-body .sp-collect-add select {
     min-height: 2.75rem;
     font-size: 1rem;
+  }
+
+  .st-body .sp-detail-art-actions {
+    gap: 0.65rem;
   }
 
   .st-body .sp-detail-sticky-actions {
@@ -1385,6 +1427,36 @@
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--sp-muted);
+}
+
+.st-body .sp-collection-section {
+  margin-bottom: 1.5rem;
+}
+
+.st-body .sp-collection-section-empty {
+  margin: 0.75rem 0 0;
+  font-size: 0.92rem;
+}
+
+.st-body .sp-collection-considering {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px dashed rgba(196, 168, 232, 0.35);
+}
+
+.st-body .sp-collection-considering-hint {
+  margin: -0.35rem 0 0.85rem;
+}
+
+.st-body .sp-detail-sticky-actions .sp-buy-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.st-body .sp-collection-bucket-modal {
+  white-space: nowrap;
 }
 
 .st-body .sp-collection-body {
