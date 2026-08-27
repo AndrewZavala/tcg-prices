@@ -26,8 +26,10 @@
   let detailCards = [];
   let detailQuery = "";
   let detailSort = "saved";
+  let detailGroup = "none";
   let detailTagFilter = "";
   let detailKnownTags = [];
+  let detailIsOwner = true;
   let listSort = "name";
 
   function esc(s) {
@@ -39,8 +41,22 @@
   }
 
   function collectionIdFromPath() {
-    const m = location.pathname.match(/^\/collections\/([^/]+)\/?$/);
-    return m ? decodeURIComponent(m[1]) : null;
+    const ref = collectionRefFromPath();
+    return ref?.type === "id" ? ref.id : null;
+  }
+
+  function collectionRefFromPath() {
+    const slugMatch = location.pathname.match(/^\/c\/([^/]+)\/?$/);
+    if (slugMatch) return { type: "slug", id: decodeURIComponent(slugMatch[1]) };
+    const idMatch = location.pathname.match(/^\/collections\/([^/]+)\/?$/);
+    if (idMatch && idMatch[1] !== "add") {
+      return { type: "id", id: decodeURIComponent(idMatch[1]) };
+    }
+    return null;
+  }
+
+  function collectionGroupFromUrl() {
+    return new URLSearchParams(location.search).get("group") || "";
   }
 
   function collectionSearchFromUrl() {
@@ -71,6 +87,7 @@
     if (q) params.set("q", q);
     if (detailTagFilter) params.set("tag", detailTagFilter);
     if (detailSort && detailSort !== "saved") params.set("sort", detailSort);
+    if (detailGroup && detailGroup !== "none") params.set("group", detailGroup);
     const qs = params.toString();
     const next = qs ? `${location.pathname}?${qs}` : location.pathname;
     if (next !== `${location.pathname}${location.search}`) {
@@ -269,7 +286,7 @@
               <p class="sp-buy-row">
                 <a class="sp-buy-btn" href="/?q=${encodeURIComponent(card.id)}">Open in Search</a>
                 ${
-                  collectionId
+                  collectionId && detailIsOwner
                     ? `<button type="button" class="sp-collection-remove sp-collection-remove-modal" data-card-id="${esc(
                         card.id
                       )}">Remove from collection</button>`
@@ -278,7 +295,7 @@
               </p>
             </div>
             ${
-              collectionId
+              collectionId && detailIsOwner
                 ? `<div class="sp-collection-tags-panel sp-card-tags-panel">
                     <span class="sp-label">Your tags</span>
                     <p class="sp-hint">Private to this collection — e.g. draw, recycle, finisher.</p>
@@ -297,8 +314,9 @@
             ${renderAttacks(card)}
           </div>
         </div>`;
-      if (collectionId) bindCardTagEditor(collectionId, cardId, initialTags);
+      if (collectionId && detailIsOwner) bindCardTagEditor(collectionId, cardId, initialTags);
       modalBody.querySelector(".sp-collection-remove-modal")?.addEventListener("click", async (e) => {
+        if (!detailIsOwner || !collectionId) return;
         const btn = e.currentTarget;
         btn.disabled = true;
         try {
@@ -307,7 +325,7 @@
             { method: "DELETE" }
           );
           cardModal.close();
-          await renderDetail(collectionId);
+          await renderDetail({ type: "id", id: collectionId });
         } catch (err) {
           alert(err.message || "Could not remove");
           btn.disabled = false;
@@ -325,6 +343,7 @@
       ...opts,
     });
     if (resp.status === 401) {
+      if (opts?.allow401) return null;
       root.innerHTML = `
         <p class="sp-empty">Sign in to view your collections.</p>
         <p class="sp-empty"><a class="sp-topbar-login" href="/auth/google/login">Sign in with Google</a></p>`;
@@ -338,6 +357,63 @@
     }
     return resp.json();
   }
+
+  async function apiPublic(path) {
+    const resp = await fetch(path, { credentials: "same-origin" });
+    if (resp.status === 404) {
+      throw new Error("Collection not found or private");
+    }
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      const detail = err.detail;
+      throw new Error(typeof detail === "string" ? detail : `Request failed (${resp.status})`);
+    }
+    return resp.json();
+  }
+
+  async function fetchCollectionDetail(ref) {
+    const params = new URLSearchParams();
+    if (detailSort !== "saved") params.set("sort", detailSort);
+    if (detailGroup && detailGroup !== "none") params.set("group", detailGroup);
+    if (detailTagFilter) params.set("tag", detailTagFilter);
+    const qs = params.toString();
+    const suffix = qs ? `?${qs}` : "";
+
+    if (ref.type === "slug") {
+      return apiPublic(`/api/collections/${encodeURIComponent(ref.id)}${suffix}`);
+    }
+
+    const meResp = await fetch(
+      `/api/me/collections/${encodeURIComponent(ref.id)}${suffix}`,
+      { credentials: "same-origin" }
+    );
+    if (meResp.ok) return meResp.json();
+    if (meResp.status === 401) {
+      return apiPublic(`/api/collections/${encodeURIComponent(ref.id)}${suffix}`);
+    }
+    if (meResp.status === 404) {
+      try {
+        return await apiPublic(`/api/collections/${encodeURIComponent(ref.id)}${suffix}`);
+      } catch (_) {
+        throw new Error("Collection not found");
+      }
+    }
+    const err = await meResp.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "Request failed");
+  }
+
+  function visibilityBadge(visibility) {
+    if (visibility === "public") {
+      return '<span class="sp-collection-visibility-badge is-public">Public</span>';
+    }
+    if (visibility === "unlisted") {
+      return '<span class="sp-collection-visibility-badge is-unlisted">Unlisted</span>';
+    }
+    return "";
+  }
+
+  const CATEGORY_LABELS = { Pokemon: "Pokémon", Trainer: "Trainer", Energy: "Energy" };
+  const CATEGORY_ORDER = ["Pokemon", "Trainer", "Energy"];
 
   function resetImportModal() {
     importCubeData = null;
@@ -492,7 +568,7 @@
       resetImportModal();
       const cid = result.collection_id;
       if (collectionIdFromPath() === cid) {
-        await renderDetail(cid);
+        await renderDetail({ type: "id", id: cid });
       } else {
         window.location.href = `/collections/${encodeURIComponent(cid)}`;
       }
@@ -592,7 +668,7 @@
             <a class="sp-collection-row" href="/collections/${esc(c.id)}">
               <span class="sp-collection-name">${esc(c.name)}${
                 c.kind === "favorites" ? ' <span class="sp-collection-badge">♥</span>' : ""
-              }</span>
+              } ${visibilityBadge(c.visibility)}</span>
               <span class="sp-collection-count">${c.item_count} card${c.item_count === 1 ? "" : "s"}</span>
             </a>
           </li>`
@@ -631,11 +707,10 @@
       </article>`;
   }
 
-  function bindCollectionGrid(collectionId) {
-    const grid = document.getElementById("collectionGrid");
-    if (!grid) return;
-    grid.querySelectorAll(".sp-collection-card[data-id]").forEach((el) => {
-      const open = () => openCardDetail(el.dataset.id, collectionId);
+  function bindCollectionGrid(collectionId, scope) {
+    const rootEl = scope || document;
+    rootEl.querySelectorAll(".sp-collection-card[data-id]").forEach((el) => {
+      const open = () => openCardDetail(el.dataset.id, detailIsOwner ? collectionId : null);
       el.addEventListener("click", open);
       el.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -646,11 +721,34 @@
     });
   }
 
+  function renderGroupedGridHtml(cards) {
+    const buckets = new Map();
+    for (const c of cards) {
+      const key = c.category || "Unknown";
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(c);
+    }
+    const keys = CATEGORY_ORDER.filter((k) => buckets.has(k) && buckets.get(k).length);
+    for (const k of buckets.keys()) {
+      if (!keys.includes(k) && buckets.get(k).length) keys.push(k);
+    }
+    return keys
+      .map((key) => {
+        const groupCards = buckets.get(key) || [];
+        const label = CATEGORY_LABELS[key] || key;
+        return `<section class="sp-collection-group">
+          <h2 class="sp-collection-group-title">${esc(label)} <span class="sp-collection-group-count">${groupCards.length}</span></h2>
+          <div class="sp-grid sp-collections-grid">${groupCards.map((c) => renderCardTile(c)).join("")}</div>
+        </section>`;
+      })
+      .join("");
+  }
+
   function renderDetailGrid(collectionId) {
-    const grid = document.getElementById("collectionGrid");
+    const mount = document.getElementById("collectionGridMount");
     const countEl = document.getElementById("collectionSearchCount");
     const emptyEl = document.getElementById("collectionGridEmpty");
-    if (!grid) return;
+    if (!mount) return;
     const visible = filteredDetailCards();
     if (countEl) {
       const total = detailCards.length;
@@ -660,41 +758,114 @@
           : `${total} card${total === 1 ? "" : "s"}`;
     }
     if (visible.length) {
-      grid.innerHTML = visible.map((c) => renderCardTile(c)).join("");
-      grid.hidden = false;
+      if (detailGroup === "category") {
+        mount.innerHTML = renderGroupedGridHtml(visible);
+      } else {
+        mount.innerHTML = `<div class="sp-grid sp-collections-grid">${visible
+          .map((c) => renderCardTile(c))
+          .join("")}</div>`;
+      }
+      mount.hidden = false;
       if (emptyEl) emptyEl.hidden = true;
-      bindCollectionGrid(collectionId);
+      bindCollectionGrid(collectionId, mount);
     } else {
-      grid.innerHTML = "";
-      grid.hidden = true;
+      mount.innerHTML = "";
+      mount.hidden = true;
       if (emptyEl) {
         emptyEl.hidden = false;
         emptyEl.textContent = detailQuery
           ? `No cards match “${detailQuery}”.`
-          : "No cards in this collection.";
+          : detailTagFilter
+            ? `No cards tagged “${detailTagFilter}”.`
+            : "No cards in this collection.";
       }
     }
   }
 
-  async function renderDetail(id) {
+  async function patchCollection(id, body) {
+    return api(`/api/me/collections/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  }
+
+  function bindSharePanel(collectionId, coll) {
+    const visEl = document.getElementById("visibilitySelect");
+    const slugEl = document.getElementById("shareSlug");
+    const copyBtn = document.getElementById("copyShareLink");
+    const statusEl = document.getElementById("shareStatus");
+    if (!visEl) return;
+
+    const syncSlugVisibility = () => {
+      const shareable = visEl.value === "unlisted" || visEl.value === "public";
+      document.getElementById("shareSlugWrap")?.toggleAttribute("hidden", !shareable);
+      copyBtn?.toggleAttribute("hidden", !shareable);
+    };
+
+    syncSlugVisibility();
+
+    visEl.addEventListener("change", async () => {
+      visEl.disabled = true;
+      try {
+        const data = await patchCollection(collectionId, { visibility: visEl.value });
+        detailColl = data.collection;
+        syncSlugVisibility();
+        if (statusEl) statusEl.textContent = "Saved";
+      } catch (err) {
+        alert(err.message || "Could not update visibility");
+        visEl.value = coll.visibility || "private";
+      } finally {
+        visEl.disabled = false;
+      }
+    });
+
+    slugEl?.addEventListener("change", async () => {
+      const slug = String(slugEl.value || "").trim();
+      slugEl.disabled = true;
+      try {
+        const data = await patchCollection(collectionId, { share_slug: slug });
+        detailColl = data.collection;
+        slugEl.value = detailColl.share_slug || "";
+        if (statusEl) statusEl.textContent = "Link updated";
+      } catch (err) {
+        alert(err.message || "Could not update link slug");
+        slugEl.value = coll.share_slug || "";
+      } finally {
+        slugEl.disabled = false;
+      }
+    });
+
+    copyBtn?.addEventListener("click", async () => {
+      const url = detailColl?.public_url || coll.public_url;
+      if (!url) return;
+      try {
+        await navigator.clipboard.writeText(url);
+        if (statusEl) statusEl.textContent = "Copied!";
+      } catch (_) {
+        prompt("Copy this link:", url);
+      }
+    });
+  }
+
+  async function renderDetail(ref) {
     detailSort = collectionSortFromUrl() || "saved";
+    detailGroup = collectionGroupFromUrl() || "none";
     detailQuery = collectionSearchFromUrl();
     detailTagFilter = detailTagFromUrl();
-    const params = new URLSearchParams();
-    if (detailSort !== "saved") params.set("sort", detailSort);
-    if (detailTagFilter) params.set("tag", detailTagFilter);
-    const qs = params.toString();
-    const data = await api(`/api/me/collections/${encodeURIComponent(id)}${qs ? `?${qs}` : ""}`);
-    if (!data) return;
-    detailCollectionId = id;
+
+    const data = await fetchCollectionDetail(ref);
+    detailCollectionId = data.collection.id;
     detailColl = data.collection;
     detailCards = data.cards || [];
     detailKnownTags = data.card_tags || [];
+    detailIsOwner = data.is_owner !== false;
     if (data.sort) detailSort = data.sort;
+    if (data.group) detailGroup = data.group;
     if (data.tag) detailTagFilter = data.tag;
+
     const coll = detailColl;
-    const cards = detailCards;
     const isFav = coll.kind === "favorites";
+    const ownerName = coll.owner?.name;
     const tagOptions = [
       '<option value="">All tags</option>',
       ...detailKnownTags.map(
@@ -702,17 +873,51 @@
           `<option value="${esc(tag)}"${tag === detailTagFilter ? " selected" : ""}>${esc(tag)}</option>`
       ),
     ].join("");
+
+    const sharePanel =
+      detailIsOwner && !isFav
+        ? `<div class="sp-collection-share-panel" id="sharePanel">
+            <label class="sp-collection-control">
+              <span class="sp-label">Visibility</span>
+              <select id="visibilitySelect">
+                <option value="private"${(coll.visibility || "private") === "private" ? " selected" : ""}>Private</option>
+                <option value="unlisted"${coll.visibility === "unlisted" ? " selected" : ""}>Unlisted</option>
+                <option value="public"${coll.visibility === "public" ? " selected" : ""}>Public</option>
+              </select>
+            </label>
+            <label class="sp-collection-control" id="shareSlugWrap"${
+              coll.visibility === "unlisted" || coll.visibility === "public" ? "" : " hidden"
+            }>
+              <span class="sp-label">Link slug</span>
+              <input type="text" id="shareSlug" maxlength="48" placeholder="my-cube" value="${esc(
+                coll.share_slug || ""
+              )}" autocomplete="off" />
+            </label>
+            <button type="button" class="sp-btn-secondary" id="copyShareLink"${
+              coll.visibility === "unlisted" || coll.visibility === "public" ? "" : " hidden"
+            }>Copy link</button>
+            <span class="sp-share-status" id="shareStatus" aria-live="polite"></span>
+          </div>`
+        : "";
+
     root.innerHTML = `
       <div class="sp-collections-head">
-        <p class="sp-collections-back"><a href="/collections">← All collections</a></p>
+        <p class="sp-collections-back">${
+          detailIsOwner
+            ? '<a href="/collections">← All collections</a>'
+            : '<a href="/">← Search</a>'
+        }</p>
         <h1 class="sp-collections-title">${
           isFav ? '<span class="sp-collection-badge">♥</span> ' : ""
-        }${esc(coll.name)}</h1>
+        }${esc(coll.name)} ${detailIsOwner ? visibilityBadge(coll.visibility) : ""}</h1>
         <p class="sp-hint">${
-          isFav
-            ? "Card arts you’ve hearted from Search."
-            : "Cards you’ve saved to this list. Click a card to add your own tags (draw, recycle, …)."
+          !detailIsOwner && ownerName
+            ? `Shared by ${esc(ownerName)} — view only.`
+            : isFav
+              ? "Card arts you’ve hearted from Search."
+              : "Cards you’ve saved to this list. Click a card to add your own tags (draw, recycle, …)."
         }</p>
+        ${sharePanel}
         <div class="sp-collection-list-controls">
           <div class="sp-collection-search">
             <input
@@ -726,9 +931,20 @@
             />
             <span class="sp-collection-search-count" id="collectionSearchCount"></span>
           </div>
+          ${
+            detailIsOwner
+              ? `<label class="sp-collection-control">
+                  <span class="sp-label">Tag</span>
+                  <select id="detailTagFilter">${tagOptions}</select>
+                </label>`
+              : ""
+          }
           <label class="sp-collection-control">
-            <span class="sp-label">Tag</span>
-            <select id="detailTagFilter">${tagOptions}</select>
+            <span class="sp-label">Group</span>
+            <select id="detailGroup">
+              <option value="none"${detailGroup === "none" ? " selected" : ""}>None</option>
+              <option value="category"${detailGroup === "category" ? " selected" : ""}>Category</option>
+            </select>
           </label>
           <label class="sp-collection-control">
             <span class="sp-label">Sort</span>
@@ -737,47 +953,64 @@
               <option value="name"${detailSort === "name" ? " selected" : ""}>Name</option>
               <option value="set"${detailSort === "set" ? " selected" : ""}>Set</option>
               <option value="number"${detailSort === "number" ? " selected" : ""}>Number</option>
-              <option value="tag"${detailSort === "tag" ? " selected" : ""}>Tag</option>
+              ${
+                detailIsOwner
+                  ? `<option value="tag"${detailSort === "tag" ? " selected" : ""}>Tag</option>`
+                  : ""
+              }
             </select>
           </label>
         </div>
-        <p class="sp-collections-actions">
-          <a class="sp-add-cards-btn" href="/collections/${esc(id)}/add">+ Add cards</a>
-          ${isFav ? "" : importDropdownHtml(id)}
-        </p>
+        ${
+          detailIsOwner
+            ? `<p class="sp-collections-actions">
+                <a class="sp-add-cards-btn" href="/collections/${esc(detailCollectionId)}/add">+ Add cards</a>
+                ${isFav ? "" : importDropdownHtml(detailCollectionId)}
+              </p>`
+            : ""
+        }
       </div>
       ${
-        cards.length
-          ? `<div class="sp-grid sp-collections-grid" id="collectionGrid"></div>
+        detailCards.length
+          ? `<div id="collectionGridMount"></div>
              <p class="sp-empty" id="collectionGridEmpty" hidden></p>`
           : `<p class="sp-empty">${
               detailTagFilter
                 ? `No cards tagged “${esc(detailTagFilter)}”.`
                 : isFav
                   ? "No favorites yet. Open a card on Search and tap ♡ Favorite, or use Add cards."
-                  : "No cards yet. Use Add cards to search and tap printings to save them here, or import a cube JSON."
+                  : detailIsOwner
+                    ? "No cards yet. Use Add cards to search and tap printings to save them here, or import a cube JSON."
+                    : "This collection is empty."
             }</p>`
       }`;
+
+    if (detailIsOwner && !isFav) bindSharePanel(detailCollectionId, coll);
 
     const searchInput = document.getElementById("collectionSearch");
     if (searchInput) {
       searchInput.addEventListener("input", () => {
         detailQuery = searchInput.value;
         writeCollectionDetailToUrl();
-        renderDetailGrid(id);
+        renderDetailGrid(detailCollectionId);
       });
     }
     document.getElementById("detailTagFilter")?.addEventListener("change", async (e) => {
       detailTagFilter = e.target.value;
       writeCollectionDetailToUrl();
-      await renderDetail(id);
+      await renderDetail(ref);
+    });
+    document.getElementById("detailGroup")?.addEventListener("change", async (e) => {
+      detailGroup = e.target.value;
+      writeCollectionDetailToUrl();
+      await renderDetail(ref);
     });
     document.getElementById("detailSort")?.addEventListener("change", async (e) => {
       detailSort = e.target.value;
       writeCollectionDetailToUrl();
-      await renderDetail(id);
+      await renderDetail(ref);
     });
-    if (cards.length) renderDetailGrid(id);
+    if (detailCards.length) renderDetailGrid(detailCollectionId);
   }
 
   async function boot() {
@@ -790,9 +1023,9 @@
         /* ignore */
       }
     }
-    const id = collectionIdFromPath();
+    const ref = collectionRefFromPath();
     try {
-      if (id) await renderDetail(id);
+      if (ref) await renderDetail(ref);
       else await renderList();
     } catch (err) {
       root.innerHTML = `<p class="sp-empty">${esc(err.message || "Something went wrong")}</p>`;

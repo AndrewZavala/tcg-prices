@@ -65,6 +65,7 @@ POKEMON_MIGRATIONS = (
     "036_tag_hierarchy.sql",
     "037_collection_tags.sql",
     "038_collection_item_tags.sql",
+    "039_collection_visibility.sql",
 )
 
 
@@ -77,7 +78,11 @@ class SpellTagCacheMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
         path = request.url.path
-        is_html = path in _HTML_PATHS or path.startswith("/collections/")
+        is_html = (
+            path in _HTML_PATHS
+            or path.startswith("/collections/")
+            or path.startswith("/c/")
+        )
         is_static = path.startswith("/static/")
         if not is_static and not is_html:
             return response
@@ -170,6 +175,11 @@ def collection_add_page(collection_id: str):
 
 @app.get("/collections/{collection_id}")
 def collection_detail_page(collection_id: str):
+    return _page("collections.html")
+
+
+@app.get("/c/{share_slug}")
+def shared_collection_page(share_slug: str):
     return _page("collections.html")
 
 

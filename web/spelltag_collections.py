@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from spelltag_auth import require_user
+from spelltag_auth import PUBLIC_URL, current_user, require_user
 from pokemon_api import _image_url
 from spelltag_cube_import import extract_cube_entries, match_cube_entries
 
@@ -51,7 +51,14 @@ class UpdateCollectionItemTagsBody(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=20)
 
 
+class UpdateCollectionBody(BaseModel):
+    visibility: str | None = None
+    share_slug: str | None = None
+
+
 _TAG_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+_SHARE_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+_SHAREABLE_VISIBILITIES = frozenset({"unlisted", "public"})
 
 
 def _normalize_item_tag(raw: str) -> str:
@@ -160,6 +167,86 @@ def _card_sort_clause(sort: str) -> str:
     return "i.created_at DESC, pc.id ASC"
 
 
+def _card_group_order_clause(group: str) -> str:
+    key = (group or "none").lower()
+    if key == "category":
+        return """CASE pc.category
+            WHEN 'Pokemon' THEN 0
+            WHEN 'Trainer' THEN 1
+            WHEN 'Energy' THEN 2
+            ELSE 3
+        END,"""
+    return ""
+
+
+def _card_order_by(sort: str, group: str) -> str:
+    return f"{_card_group_order_clause(group)}{_card_sort_clause(sort)}"
+
+
+def _normalize_visibility(raw: str | None) -> str:
+    val = (raw or "private").strip().lower()
+    if val not in ("private", "unlisted", "public"):
+        raise HTTPException(
+            status_code=400,
+            detail="visibility must be private, unlisted, or public",
+        )
+    return val
+
+
+def _normalize_share_slug(raw: str | None, *, allow_clear: bool = False) -> str | None:
+    if raw is None:
+        return None
+    s = raw.strip().lower()
+    if not s:
+        if allow_clear:
+            return None
+        raise HTTPException(status_code=400, detail="Share slug cannot be empty")
+    if len(s) < 3 or len(s) > 48 or not _SHARE_SLUG_RE.match(s):
+        raise HTTPException(
+            status_code=400,
+            detail="Share slug must be 3–48 characters: lowercase letters, numbers, hyphens",
+        )
+    return s
+
+
+def _public_url(visibility: str, collection_id: str, share_slug: str | None) -> str | None:
+    if visibility not in _SHAREABLE_VISIBILITIES:
+        return None
+    base = (PUBLIC_URL or "").rstrip("/")
+    if share_slug:
+        return f"{base}/c/{share_slug}"
+    return f"{base}/collections/{collection_id}"
+
+
+def _attach_collection_meta(row: dict[str, Any]) -> dict[str, Any]:
+    vis = str(row.get("visibility") or "private")
+    cid = str(row.get("id") or "")
+    slug = row.get("share_slug")
+    row["visibility"] = vis
+    row["share_slug"] = slug
+    row["public_url"] = _public_url(vis, cid, slug)
+    return row
+
+
+def _collection_select_sql(*, owner_user_id: str | None = None) -> str:
+    owner_clause = ""
+    if owner_user_id:
+        owner_clause = "AND c.user_id = CAST(:uid AS uuid)"
+    return f"""
+        SELECT
+            c.id::text AS id,
+            c.name,
+            c.kind,
+            c.visibility,
+            c.share_slug,
+            c.created_at::text AS created_at,
+            c.updated_at::text AS updated_at
+        FROM collections c
+        WHERE c.id = CAST(:cid AS uuid)
+        {owner_clause}
+    """
+
+
 def _parse_cube_payload(cube: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(cube, dict):
         raise HTTPException(status_code=400, detail="Invalid cube JSON")
@@ -206,21 +293,144 @@ def _owned_collection(conn, user_id: str, collection_id: str) -> dict[str, Any] 
     except ValueError:
         return None
     row = conn.execute(
-        text(
-            """
-            SELECT
-                id::text AS id,
-                name,
-                kind,
-                created_at::text AS created_at,
-                updated_at::text AS updated_at
-            FROM collections
-            WHERE id = CAST(:cid AS uuid) AND user_id = CAST(:uid AS uuid)
-            """
-        ),
+        text(_collection_select_sql(owner_user_id=user_id)),
         {"cid": collection_id, "uid": user_id},
     ).mappings().first()
-    return dict(row) if row else None
+    return _attach_collection_meta(dict(row)) if row else None
+
+
+def _resolve_collection(conn, id_or_slug: str) -> dict[str, Any] | None:
+    """Lookup by UUID or share_slug (case-insensitive)."""
+    key = (id_or_slug or "").strip()
+    if not key:
+        return None
+    try:
+        UUID(key)
+        row = conn.execute(
+            text(
+                """
+                SELECT
+                    c.id::text AS id,
+                    c.user_id::text AS user_id,
+                    c.name,
+                    c.kind,
+                    c.visibility,
+                    c.share_slug,
+                    c.created_at::text AS created_at,
+                    c.updated_at::text AS updated_at,
+                    u.name AS owner_name,
+                    u.picture_url AS owner_picture_url
+                FROM collections c
+                INNER JOIN users u ON u.id = c.user_id
+                WHERE c.id = CAST(:cid AS uuid)
+                """
+            ),
+            {"cid": key},
+        ).mappings().first()
+    except ValueError:
+        row = conn.execute(
+            text(
+                """
+                SELECT
+                    c.id::text AS id,
+                    c.user_id::text AS user_id,
+                    c.name,
+                    c.kind,
+                    c.visibility,
+                    c.share_slug,
+                    c.created_at::text AS created_at,
+                    c.updated_at::text AS updated_at,
+                    u.name AS owner_name,
+                    u.picture_url AS owner_picture_url
+                FROM collections c
+                INNER JOIN users u ON u.id = c.user_id
+                WHERE lower(c.share_slug) = lower(:slug)
+                """
+            ),
+            {"slug": key},
+        ).mappings().first()
+    if not row:
+        return None
+    out = dict(row)
+    out["owner"] = {
+        "name": out.pop("owner_name"),
+        "picture_url": out.pop("owner_picture_url"),
+    }
+    return _attach_collection_meta(out)
+
+
+def _load_collection_cards(
+    conn,
+    collection_id: str,
+    *,
+    sort: str,
+    group: str,
+    tag_slug: str | None,
+    include_tags: bool,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    order_by = _card_order_by(sort, group)
+    tag_filter = ""
+    params: dict[str, Any] = {"cid": collection_id}
+    if tag_slug:
+        tag_filter = """
+            AND EXISTS (
+                SELECT 1 FROM collection_item_tags cit
+                WHERE cit.collection_id = i.collection_id
+                  AND cit.card_id = i.card_id
+                  AND cit.tag_slug = :tag
+            )
+        """
+        params["tag"] = tag_slug
+
+    card_tags: dict[str, list[str]] = {}
+    known_tags: list[str] = []
+    if include_tags:
+        card_tags = _fetch_item_tags(conn, collection_id)
+        known_tags = _distinct_collection_card_tags(conn, collection_id)
+
+    rows = conn.execute(
+        text(
+            f"""
+            SELECT
+                pc.id, pc.name, pc.category, pc.set_id, s.name AS set_name, pc.local_id,
+                pc.image_url, pc.image_local, pc.rarity, pc.illustrator,
+                s.release_date::text AS release_date,
+                i.created_at::text AS saved_at
+            FROM collection_items i
+            INNER JOIN pokemon_cards pc ON pc.id = i.card_id
+            INNER JOIN pokemon_sets s ON s.id = pc.set_id
+            WHERE i.collection_id = CAST(:cid AS uuid)
+            {tag_filter}
+            ORDER BY {order_by}
+            """
+        ),
+        params,
+    ).mappings().all()
+
+    out: list[dict[str, Any]] = []
+    for c in rows:
+        row = dict(c)
+        if include_tags:
+            row["tags"] = card_tags.get(str(row.get("id") or ""), [])
+        remote_base = row.get("image_url")
+        local = bool(row.get("image_local"))
+        row["image_local"] = local
+        row["image_url"] = _image_url(
+            remote_base,
+            card_id=row.get("id"),
+            local_id=row.get("local_id"),
+            image_local=local,
+            size="low",
+        )
+        row["image_url_high"] = _image_url(
+            remote_base,
+            card_id=row.get("id"),
+            local_id=row.get("local_id"),
+            image_local=local,
+            size="high",
+        )
+        out.append(row)
+    return out, known_tags
 
 
 def _card_exists(conn, card_id: str) -> bool:
@@ -257,19 +467,25 @@ def list_collections(
                     c.id::text AS id,
                     c.name,
                     c.kind,
+                    c.visibility,
+                    c.share_slug,
                     c.created_at::text AS created_at,
                     c.updated_at::text AS updated_at,
                     COUNT(i.id)::int AS item_count
                 FROM collections c
                 LEFT JOIN collection_items i ON i.collection_id = c.id
                 WHERE c.user_id = CAST(:uid AS uuid)
-                GROUP BY c.id, c.name, c.kind, c.created_at, c.updated_at
+                GROUP BY c.id, c.name, c.kind, c.visibility, c.share_slug,
+                         c.created_at, c.updated_at
                 ORDER BY {order_sql}
                 """
             ),
             {"uid": user["id"]},
         ).mappings().all()
-    return {"collections": [dict(r) for r in rows], "sort": sort_key}
+    return {
+        "collections": [_attach_collection_meta(dict(r)) for r in rows],
+        "sort": sort_key,
+    }
 
 
 @router.post("/api/me/collections")
@@ -296,7 +512,76 @@ def create_collection(request: Request, body: CreateCollectionBody):
             ).mappings().one()
         except Exception as exc:
             raise HTTPException(status_code=409, detail="A collection with that name already exists") from exc
-    return {"collection": dict(row), "item_count": 0}
+    return {"collection": _attach_collection_meta(dict(row)), "item_count": 0}
+
+
+@router.patch("/api/me/collections/{collection_id}")
+def update_collection(
+    request: Request,
+    collection_id: str,
+    body: UpdateCollectionBody,
+):
+    user = require_user(request)
+    assert _engine is not None
+    with _engine.begin() as conn:
+        coll = _owned_collection(conn, user["id"], collection_id)
+        if not coll:
+            raise HTTPException(status_code=404, detail="Collection not found")
+
+        updates: dict[str, Any] = {}
+        if body.visibility is not None:
+            vis = _normalize_visibility(body.visibility)
+            if coll.get("kind") == "favorites" and vis != "private":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Favorites must stay private",
+                )
+            updates["visibility"] = vis
+
+        if body.share_slug is not None:
+            slug = _normalize_share_slug(body.share_slug, allow_clear=True)
+            updates["share_slug"] = slug
+
+        if not updates:
+            return {"collection": coll}
+
+        set_parts = []
+        params: dict[str, Any] = {"cid": collection_id}
+        if "visibility" in updates:
+            set_parts.append("visibility = :visibility")
+            params["visibility"] = updates["visibility"]
+        if "share_slug" in updates:
+            set_parts.append("share_slug = :share_slug")
+            params["share_slug"] = updates["share_slug"]
+        set_parts.append("updated_at = NOW()")
+
+        try:
+            row = conn.execute(
+                text(
+                    f"""
+                    UPDATE collections
+                    SET {", ".join(set_parts)}
+                    WHERE id = CAST(:cid AS uuid)
+                    RETURNING
+                        id::text AS id,
+                        name,
+                        kind,
+                        visibility,
+                        share_slug,
+                        created_at::text AS created_at,
+                        updated_at::text AS updated_at
+                    """
+                ),
+                params,
+            ).mappings().one()
+        except Exception as exc:
+            if "share_slug" in str(exc).lower() or "unique" in str(exc).lower():
+                raise HTTPException(
+                    status_code=409,
+                    detail="That share link slug is already taken",
+                ) from exc
+            raise
+    return {"collection": _attach_collection_meta(dict(row))}
 
 
 @router.get("/api/me/collections/{collection_id}/add-context")
@@ -371,83 +656,106 @@ def get_collection(
     request: Request,
     collection_id: str,
     sort: str = Query("saved", description="saved | name | set | number | tag"),
+    group: str = Query("none", description="none | category"),
     tag: str | None = Query(None, description="Filter to cards with this tag"),
 ):
     user = require_user(request)
     sort_key = (sort or "saved").lower()
     if sort_key not in ("saved", "name", "set", "number", "tag"):
         raise HTTPException(status_code=400, detail="sort must be saved, name, set, number, or tag")
+    group_key = (group or "none").lower()
+    if group_key not in ("none", "category"):
+        raise HTTPException(status_code=400, detail="group must be none or category")
     tag_slug = None
     if tag:
         tag_slug = _normalize_item_tag(tag)
-    order_by = _card_sort_clause(sort_key)
-    tag_filter = ""
-    params: dict[str, Any] = {"cid": collection_id}
-    if tag_slug:
-        tag_filter = """
-            AND EXISTS (
-                SELECT 1 FROM collection_item_tags cit
-                WHERE cit.collection_id = i.collection_id
-                  AND cit.card_id = i.card_id
-                  AND cit.tag_slug = :tag
-            )
-        """
-        params["tag"] = tag_slug
 
     assert _engine is not None
     with _engine.connect() as conn:
         coll = _owned_collection(conn, user["id"], collection_id)
         if not coll:
             raise HTTPException(status_code=404, detail="Collection not found")
-        card_tags = _fetch_item_tags(conn, collection_id)
-        known_tags = _distinct_collection_card_tags(conn, collection_id)
-        cards = conn.execute(
-            text(
-                f"""
-                SELECT
-                    pc.id, pc.name, pc.set_id, s.name AS set_name, pc.local_id,
-                    pc.image_url, pc.image_local, pc.rarity, pc.illustrator,
-                    s.release_date::text AS release_date,
-                    i.created_at::text AS saved_at
-                FROM collection_items i
-                INNER JOIN pokemon_cards pc ON pc.id = i.card_id
-                INNER JOIN pokemon_sets s ON s.id = pc.set_id
-                WHERE i.collection_id = CAST(:cid AS uuid)
-                {tag_filter}
-                ORDER BY {order_by}
-                """
-            ),
-            params,
-        ).mappings().all()
-    out = []
-    for c in cards:
-        row = dict(c)
-        row["tags"] = card_tags.get(str(row.get("id") or ""), [])
-        remote_base = row.get("image_url")
-        local = bool(row.get("image_local"))
-        row["image_local"] = local
-        row["image_url"] = _image_url(
-            remote_base,
-            card_id=row.get("id"),
-            local_id=row.get("local_id"),
-            image_local=local,
-            size="low",
+        cards, known_tags = _load_collection_cards(
+            conn,
+            collection_id,
+            sort=sort_key,
+            group=group_key,
+            tag_slug=tag_slug,
+            include_tags=True,
         )
-        row["image_url_high"] = _image_url(
-            remote_base,
-            card_id=row.get("id"),
-            local_id=row.get("local_id"),
-            image_local=local,
-            size="high",
-        )
-        out.append(row)
     return {
         "collection": coll,
-        "cards": out,
-        "total": len(out),
+        "cards": cards,
+        "total": len(cards),
         "sort": sort_key,
+        "group": group_key,
         "tag": tag_slug,
         "card_tags": known_tags,
+        "is_owner": True,
+    }
+
+
+@router.get("/api/collections/{id_or_slug}")
+def get_shared_collection(
+    request: Request,
+    id_or_slug: str,
+    sort: str = Query("saved", description="saved | name | set | number | tag"),
+    group: str = Query("none", description="none | category"),
+    tag: str | None = Query(None, description="Filter to cards with this tag (owner only)"),
+):
+    """Public read for unlisted/public collections; owners see tags when signed in."""
+    viewer = current_user(request)
+    sort_key = (sort or "saved").lower()
+    group_key = (group or "none").lower()
+    if group_key not in ("none", "category"):
+        raise HTTPException(status_code=400, detail="group must be none or category")
+
+    assert _engine is not None
+    with _engine.connect() as conn:
+        coll = _resolve_collection(conn, id_or_slug)
+        if not coll:
+            raise HTTPException(status_code=404, detail="Collection not found")
+
+        is_owner = bool(viewer and str(viewer["id"]) == str(coll.get("user_id")))
+        visibility = str(coll.get("visibility") or "private")
+        if visibility == "private" and not is_owner:
+            raise HTTPException(status_code=404, detail="Collection not found")
+
+        allowed_sorts = ("saved", "name", "set", "number", "tag") if is_owner else (
+            "saved",
+            "name",
+            "set",
+            "number",
+        )
+        if sort_key not in allowed_sorts:
+            raise HTTPException(
+                status_code=400,
+                detail=f"sort must be one of: {', '.join(allowed_sorts)}",
+            )
+
+        tag_slug = None
+        if tag and is_owner:
+            tag_slug = _normalize_item_tag(tag)
+
+        public_coll = {k: v for k, v in coll.items() if k != "user_id"}
+        cards, known_tags = _load_collection_cards(
+            conn,
+            str(coll["id"]),
+            sort=sort_key,
+            group=group_key,
+            tag_slug=tag_slug,
+            include_tags=is_owner,
+        )
+
+    return {
+        "collection": public_coll,
+        "cards": cards,
+        "total": len(cards),
+        "sort": sort_key,
+        "group": group_key,
+        "tag": tag_slug,
+        "card_tags": known_tags if is_owner else [],
+        "is_owner": is_owner,
     }
 
 
