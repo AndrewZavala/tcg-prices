@@ -1143,20 +1143,19 @@
         <div class="sp-detail-art">
           ${cardImg(card.image_url_high || card.image_url, card.name, "sp-detail-img")}
           <div class="sp-detail-art-actions">
-            ${(card.tcg_url || card.limitless_url) ? `
-              <p class="sp-buy-row">
-                ${card.tcg_url ? `
-                  <a class="sp-buy-btn" href="${esc(card.tcg_url)}" target="_blank" rel="noopener noreferrer sponsored">
-                    Buy on TCGplayer
-                  </a>` : ""}
-                ${card.limitless_url ? `
-                  <a class="sp-limitless-btn" href="${esc(card.limitless_url)}" target="_blank" rel="noopener noreferrer"
-                     title="Card stats &amp; decks on Limitless${card.limitless_set_code ? ` (${esc(card.limitless_set_code)} #${esc(card.local_id)})` : ""}">
-                    Decks on Limitless
-                  </a>` : ""}
-              </p>` : ""}
+            <div class="sp-detail-art-row">
+              ${card.tcg_url ? `
+                <a class="sp-buy-btn" href="${esc(card.tcg_url)}" target="_blank" rel="noopener noreferrer sponsored">
+                  Buy on TCGplayer
+                </a>` : ""}
+              ${card.limitless_url ? `
+                <a class="sp-limitless-btn" href="${esc(card.limitless_url)}" target="_blank" rel="noopener noreferrer"
+                   title="Card stats &amp; decks on Limitless${card.limitless_set_code ? ` (${esc(card.limitless_set_code)} #${esc(card.local_id)})` : ""}">
+                  Decks on Limitless
+                </a>` : ""}
+              <button type="button" class="sp-fav-btn" id="favToggleBtn" aria-pressed="false" hidden>♡ Favorite</button>
+            </div>
             <div class="sp-collect-bar" id="collectBar" hidden>
-              <button type="button" class="sp-fav-btn" id="favToggleBtn" aria-pressed="false">♡ Favorite</button>
               <label class="sp-collect-add">
                 <span class="sp-visually-hidden">Add to collection</span>
                 <select id="collectAddSelect">
@@ -1259,9 +1258,11 @@
       );
       if (resp.status === 401 || !resp.ok) {
         bar.hidden = true;
+        favBtn.hidden = true;
         return;
       }
       bar.hidden = false;
+      favBtn.hidden = false;
       const data = await resp.json();
       const cols = data.collections || [];
       const fav = cols.find((c) => c.kind === "favorites");
