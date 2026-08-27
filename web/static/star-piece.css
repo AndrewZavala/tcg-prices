@@ -359,6 +359,28 @@ body {
   border-top: 1px solid rgba(255, 110, 180, 0.15);
 }
 
+.sp-adv-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 110, 180, 0.12);
+}
+
+.sp-adv-display .sp-view-row {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 0;
+  border-top: none;
+}
+
+.sp-adv-display .sp-adv-hint {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
 .sp-adv-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));

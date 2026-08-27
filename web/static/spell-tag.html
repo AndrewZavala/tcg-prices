@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/star-piece.css?v=page-jump1" />
-  <link rel="stylesheet" href="/static/spell-tag.css?v=18" />
+  <link rel="stylesheet" href="/static/star-piece.css?v=adv-display1" />
+  <link rel="stylesheet" href="/static/spell-tag.css?v=26" />
   <link rel="icon" href="/static/spell-tag-logo.png?v=10" type="image/png" />
   <link rel="apple-touch-icon" href="/static/spell-tag-logo.png?v=10" />
 </head>
@@ -53,18 +53,47 @@
         <button type="button" class="sp-adv-toggle" id="advToggle" aria-expanded="false" aria-controls="advPanel">
           Advanced
         </button>
-        <label class="sp-field sp-field-sort">
-          <span class="sp-label">Sort</span>
-          <select id="sort">
-            <option value="name">Name</option>
-            <option value="set">Set</option>
-            <option value="dex">Dex #</option>
-            <option value="hp_desc">HP ↓</option>
-          </select>
-        </label>
       </div>
 
       <div class="sp-adv-panel" id="advPanel" hidden>
+        <div class="sp-adv-display">
+          <label class="sp-field sp-field-sort">
+            <span class="sp-label">Sort</span>
+            <select id="sort">
+              <option value="name">Name</option>
+              <option value="set">Set</option>
+              <option value="dex">Dex #</option>
+              <option value="hp_desc">HP ↓</option>
+            </select>
+          </label>
+          <label class="sp-field sp-field-sort">
+            <span class="sp-label">Per page</span>
+            <select id="pageSize">
+              <option value="25" selected>25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </label>
+          <div class="sp-view-row">
+            <span class="sp-label">View</span>
+            <div class="sp-segment" role="tablist" aria-label="Result grouping">
+              <button type="button" class="sp-segment-btn" data-unique="pokemon" role="tab" aria-selected="false">Pokémon</button>
+              <button type="button" class="sp-segment-btn active" data-unique="cards" role="tab" aria-selected="true">Cards</button>
+              <button type="button" class="sp-segment-btn" data-unique="art" role="tab" aria-selected="false">Unique Arts</button>
+            </div>
+            <span class="sp-result-count" id="resultCount"></span>
+            <div class="sp-zoom" role="group" aria-label="Card size">
+              <button type="button" class="sp-zoom-btn" id="zoomOut" aria-label="Smaller cards">−</button>
+              <button type="button" class="sp-zoom-btn" id="zoomIn" aria-label="Larger cards">+</button>
+            </div>
+          </div>
+          <p class="sp-hint sp-adv-hint">
+            <em>Pokémon</em> rolls up by Dex #.
+            <em>Cards</em> needs an <strong>exact</strong> gameplay match — try
+            <button type="button" class="sp-linkish" data-quick="Dusknoir">Dusknoir</button>.
+            Oracle tags: <code>otag:rain-dance</code> · Art tags: <code>art:night</code> · Prizes: <code>prize:2</code> · Rules text: <code>o:"draw a card"</code>
+          </p>
+        </div>
         <div class="sp-adv-grid">
           <label class="sp-field">
             <span class="sp-label">Series</span>
@@ -199,26 +228,6 @@
         </details>
       </div>
 
-      <div class="sp-view-row">
-        <span class="sp-label">View</span>
-        <div class="sp-segment" role="tablist" aria-label="Result grouping">
-          <button type="button" class="sp-segment-btn" data-unique="pokemon" role="tab" aria-selected="false">Pokémon</button>
-          <button type="button" class="sp-segment-btn active" data-unique="cards" role="tab" aria-selected="true">Cards</button>
-          <button type="button" class="sp-segment-btn" data-unique="art" role="tab" aria-selected="false">Unique Arts</button>
-        </div>
-        <span class="sp-result-count" id="resultCount"></span>
-        <div class="sp-zoom" role="group" aria-label="Card size">
-          <button type="button" class="sp-zoom-btn" id="zoomOut" aria-label="Smaller cards">−</button>
-          <button type="button" class="sp-zoom-btn" id="zoomIn" aria-label="Larger cards">+</button>
-        </div>
-      </div>
-
-      <p class="sp-hint">
-        <em>Pokémon</em> rolls up by Dex #.
-        <em>Cards</em> needs an <strong>exact</strong> gameplay match — try
-        <button type="button" class="sp-linkish" data-quick="Dusknoir">Dusknoir</button>.
-        Oracle tags: <code>otag:rain-dance</code> · Art tags: <code>art:night</code> · Prizes: <code>prize:2</code> · Rules text: <code>o:"draw a card"</code>
-      </p>
     </section>
 
     <nav class="sp-pagination" data-pagination aria-label="Results pages (top)" hidden>
@@ -268,7 +277,7 @@
     </div>
   </dialog>
 
-  <script src="/static/pokemon.js?v=url1"></script>
+  <script src="/static/pokemon.js?v=page-size1"></script>
   <script src="/static/spelltag-auth.js?v=3"></script>
 </body>
 </html>

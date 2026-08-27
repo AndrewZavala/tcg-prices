@@ -1,6 +1,8 @@
 (function () {
-  const GRID_ROWS = 6;
-  let pageSize = 48;
+  const PAGE_SIZE_DEFAULT = 25;
+  const PAGE_SIZE_OPTIONS = [25, 50, 100];
+  const PAGE_SIZE_KEY = "sp-page-size";
+  let pageSize = PAGE_SIZE_DEFAULT;
 
   const qEl = document.getElementById("q");
   const seriesEl = document.getElementById("seriesId");
@@ -16,6 +18,7 @@
   const speciesGroupEl = document.getElementById("speciesGroup");
   const hasFilterEl = document.getElementById("hasFilter");
   const sortEl = document.getElementById("sort");
+  const pageSizeEl = document.getElementById("pageSize");
   const advToggle = document.getElementById("advToggle");
   const advPanel = document.getElementById("advPanel");
   const clearFiltersBtn = document.getElementById("clearFilters");
@@ -248,6 +251,38 @@
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
+  }
+
+  function normalizePageSize(raw) {
+    const n = parseInt(String(raw ?? ""), 10);
+    return PAGE_SIZE_OPTIONS.includes(n) ? n : PAGE_SIZE_DEFAULT;
+  }
+
+  function syncPageSizeFromControl() {
+    if (!pageSizeEl) return;
+    const next = normalizePageSize(pageSizeEl.value);
+    pageSize = next;
+    if (pageSizeEl.value !== String(next)) pageSizeEl.value = String(next);
+  }
+
+  function loadPageSizePreference() {
+    let size = PAGE_SIZE_DEFAULT;
+    try {
+      const raw = localStorage.getItem(PAGE_SIZE_KEY);
+      if (raw != null) size = normalizePageSize(raw);
+    } catch (_) {
+      /* ignore */
+    }
+    pageSize = size;
+    if (pageSizeEl) pageSizeEl.value = String(size);
+  }
+
+  function persistPageSize() {
+    try {
+      localStorage.setItem(PAGE_SIZE_KEY, String(pageSize));
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   function openAdvanced() {
@@ -1551,6 +1586,7 @@
     if (pokemonSpecialEl.value) params.set("special", pokemonSpecialEl.value);
     if (speciesGroupEl.value) params.set("group", speciesGroupEl.value);
     if (hasFilterEl.value) params.set("has", hasFilterEl.value);
+    if (pageSize !== PAGE_SIZE_DEFAULT) params.set("limit", String(pageSize));
     const page = Math.floor(offset / Math.max(pageSize, 1)) + 1;
     if (page > 1) params.set("page", String(page));
 
@@ -1580,6 +1616,12 @@
       const sortVal = params.get("sort") || "";
       if ([...sortEl.options].some((o) => o.value === sortVal)) sortEl.value = sortVal;
     }
+    if (params.has("limit")) {
+      pageSize = normalizePageSize(params.get("limit"));
+      if (pageSizeEl) pageSizeEl.value = String(pageSize);
+    } else {
+      loadPageSizePreference();
+    }
     if (params.has("series")) seriesEl.value = params.get("series") || "";
     populateSetOptions();
     if (params.has("set")) setEl.value = params.get("set") || "";
@@ -1595,6 +1637,9 @@
     if (params.has("has")) hasFilterEl.value = params.get("has") || "";
 
     const hasAdvanced =
+      unique !== "cards" ||
+      pageSize !== PAGE_SIZE_DEFAULT ||
+      !!(sortEl.value && sortEl.value !== "name") ||
       !!(
         seriesEl.value ||
         setEl.value ||
@@ -1611,7 +1656,7 @@
       );
     if (hasAdvanced) openAdvanced();
 
-    syncPageSize();
+    syncPageSizeFromControl();
     const pageRaw = parseInt(params.get("page") || "1", 10);
     const page = Number.isFinite(pageRaw) && pageRaw > 1 ? pageRaw : 1;
     offset = (page - 1) * pageSize;
@@ -1624,7 +1669,7 @@
   }
 
   async function search() {
-    syncPageSize();
+    syncPageSizeFromControl();
     const params = buildSearchParams();
 
     updateActiveFilters();
@@ -1684,32 +1729,12 @@
     });
   });
 
-  function gridGapPx() {
-    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    return 0.85 * rem;
-  }
-
-  function columnCount() {
-    const width = gridEl?.clientWidth || 0;
-    if (width < 40) return 6;
-    const gap = gridGapPx();
-    return Math.max(1, Math.floor((width + gap) / (cardZoomPx + gap)));
-  }
-
-  /** Keep page length a multiple of visible columns so the last cell is never empty. */
-  function syncPageSize() {
-    const next = Math.max(columnCount() * GRID_ROWS, columnCount());
-    const changed = next !== pageSize;
-    pageSize = next;
-    return changed;
-  }
-
   function clampCardZoom(px) {
     const n = Math.round(Number(px) / CARD_ZOOM_STEP) * CARD_ZOOM_STEP;
     return Math.min(CARD_ZOOM_MAX, Math.max(CARD_ZOOM_MIN, n));
   }
 
-  function applyCardZoom(px, persist, refetchOnPageChange = true) {
+  function applyCardZoom(px, persist) {
     cardZoomPx = clampCardZoom(px);
     document.documentElement.style.setProperty("--sp-card-min", `${cardZoomPx}px`);
     if (zoomOutBtn) zoomOutBtn.disabled = cardZoomPx <= CARD_ZOOM_MIN;
@@ -1719,10 +1744,6 @@
         localStorage.setItem(CARD_ZOOM_KEY, String(cardZoomPx));
       } catch (_) { /* ignore */ }
     }
-    if (syncPageSize() && refetchOnPageChange) {
-      offset = 0;
-      search();
-    }
   }
 
   function loadCardZoom() {
@@ -1731,7 +1752,7 @@
       const raw = localStorage.getItem(CARD_ZOOM_KEY);
       if (raw != null) saved = clampCardZoom(raw);
     } catch (_) { /* ignore */ }
-    applyCardZoom(saved, false, false);
+    applyCardZoom(saved, false);
   }
 
   function bindZoomHold(btn, delta) {
@@ -1778,6 +1799,11 @@
 
   qEl.addEventListener("input", scheduleSearch);
   sortEl.addEventListener("change", resetOffsetAndSearch);
+  pageSizeEl?.addEventListener("change", () => {
+    syncPageSizeFromControl();
+    persistPageSize();
+    resetOffsetAndSearch();
+  });
 
   filterEls.forEach((el) => {
     el.addEventListener("change", () => {
@@ -1879,17 +1905,6 @@
     });
   });
 
-  let resizePageTimer = null;
-  window.addEventListener("resize", () => {
-    clearTimeout(resizePageTimer);
-    resizePageTimer = setTimeout(() => {
-      if (syncPageSize()) {
-        offset = 0;
-        search();
-      }
-    }, 200);
-  });
-
   modalClose.addEventListener("click", () => modal.close());
   modal.addEventListener("click", (e) => {
     if (e.target === modal) modal.close();
@@ -1983,6 +1998,7 @@
   initAddMode()
     .then(() => loadMeta())
     .then(() => {
+      loadPageSizePreference();
       applySearchFromUrl();
       search();
     });
