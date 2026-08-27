@@ -343,17 +343,8 @@ def refresh_inventory_ck_prices(engine) -> dict[str, int]:
                     ),
                     params,
                 )
-                if fields.get("ck_adj") is not None:
-                    conn.execute(
-                        text(
-                            """
-                            UPDATE ck_fulfillments
-                            SET ck_adj = :ck_adj, updated_at = NOW()
-                            WHERE inventory_lot_id = :id AND status IN ('planned', 'packed')
-                            """
-                        ),
-                        {"id": lot_id, "ck_adj": fields["ck_adj"]},
-                    )
+                # Do not overwrite ck_fulfillments.ck_adj — that value is locked
+                # when the sell order is created (expected revenue until paid_amount).
                 stats["updated"] += 1
                 if fields["ck_cash"] is None:
                     cash_note = "ck_cash — (CK not buying)"

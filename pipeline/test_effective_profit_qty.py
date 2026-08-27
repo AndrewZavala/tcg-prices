@@ -13,12 +13,12 @@ def test_tcg_equals_ck_cap_uses_tcg_qty():
 
 def test_tcg_above_ck_cap_uses_multiplier_times_ck():
     assert effective_profit_qty(100, 4) == 4 * CK_MAX_QTY_ORDER_MULTIPLIER
-    assert CK_MAX_QTY_ORDER_MULTIPLIER == 2
+    assert CK_MAX_QTY_ORDER_MULTIPLIER == 1
 
 
 def test_tcg_above_cap_but_below_multiplier_times_ck():
-    # TCG=7, CK max=4 → 2× cap is 8 but only 7 available
-    assert effective_profit_qty(7, 4) == 7
+    # With 1× multiplier, TCG=7 and CK max=4 → cap at 4
+    assert effective_profit_qty(7, 4) == 4
 
 
 def test_missing_ck_max_falls_back_to_tcg():

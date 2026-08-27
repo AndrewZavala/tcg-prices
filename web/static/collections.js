@@ -27,6 +27,7 @@
   let detailQuery = "";
   let detailSort = "saved";
   let detailGroup = "none";
+  let detailView = "spoiler";
   let detailTagFilter = "";
   let detailKnownTags = [];
   let detailIsOwner = true;
@@ -59,6 +60,10 @@
     return new URLSearchParams(location.search).get("group") || "";
   }
 
+  function collectionViewFromUrl() {
+    return new URLSearchParams(location.search).get("view") || "";
+  }
+
   function collectionSearchFromUrl() {
     return new URLSearchParams(location.search).get("q") || "";
   }
@@ -88,6 +93,7 @@
     if (detailTagFilter) params.set("tag", detailTagFilter);
     if (detailSort && detailSort !== "saved") params.set("sort", detailSort);
     if (detailGroup && detailGroup !== "none") params.set("group", detailGroup);
+    if (detailView && detailView !== "spoiler") params.set("view", detailView);
     const qs = params.toString();
     const next = qs ? `${location.pathname}?${qs}` : location.pathname;
     if (next !== `${location.pathname}${location.search}`) {
@@ -185,6 +191,43 @@
       } catch (err) {
         alert(err.message || "Could not add tag");
       }
+    });
+  }
+
+  function cardById(cardId) {
+    return detailCards.find((c) => c.id === cardId);
+  }
+
+  function updatePreviewPanel(card) {
+    const empty = document.getElementById("collectionPreviewEmpty");
+    const body = document.getElementById("collectionPreviewBody");
+    const img = document.getElementById("previewImg");
+    const nameEl = document.getElementById("previewName");
+    const metaEl = document.getElementById("previewMeta");
+    if (!empty || !body || !img) return;
+    if (!card) {
+      empty.hidden = false;
+      body.hidden = true;
+      return;
+    }
+    empty.hidden = true;
+    body.hidden = false;
+    img.src = card.image_url_high || card.image_url || CARD_IMG_FALLBACK;
+    img.alt = card.name || "";
+    if (nameEl) nameEl.textContent = card.name || "";
+    if (metaEl) {
+      metaEl.textContent = `${card.set_name || "—"} · #${card.local_id || "—"}${
+        card.rarity ? ` · ${card.rarity}` : ""
+      }`;
+    }
+  }
+
+  function bindCardPreviewHover(scope) {
+    const rootEl = scope || document;
+    rootEl.querySelectorAll("[data-id].sp-collection-card, [data-id].sp-collection-stack-card").forEach((el) => {
+      el.addEventListener("mouseenter", () => {
+        updatePreviewPanel(cardById(el.dataset.id));
+      });
     });
   }
 
@@ -707,21 +750,19 @@
       </article>`;
   }
 
-  function bindCollectionGrid(collectionId, scope) {
-    const rootEl = scope || document;
-    rootEl.querySelectorAll(".sp-collection-card[data-id]").forEach((el) => {
-      const open = () => openCardDetail(el.dataset.id, detailIsOwner ? collectionId : null);
-      el.addEventListener("click", open);
-      el.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          open();
-        }
-      });
-    });
+  function renderCardStack(c) {
+    const label = `${c.name} — ${c.set_name} #${c.local_id}`;
+    return `
+      <article class="sp-collection-stack-card" data-id="${esc(c.id)}" tabindex="0" aria-label="${esc(label)}">
+        <div class="sp-stack-bar">
+          <span class="sp-stack-name">${esc(c.name)}</span>
+          <span class="sp-stack-meta">#${esc(c.local_id || "—")}</span>
+        </div>
+        ${cardImg(c.image_url, label, "sp-stack-img")}
+      </article>`;
   }
 
-  function renderGroupedGridHtml(cards) {
+  function bucketCardsByCategory(cards) {
     const buckets = new Map();
     for (const c of cards) {
       const key = c.category || "Unknown";
@@ -732,6 +773,26 @@
     for (const k of buckets.keys()) {
       if (!keys.includes(k) && buckets.get(k).length) keys.push(k);
     }
+    return { buckets, keys };
+  }
+
+  function bindCollectionGrid(collectionId, scope) {
+    const rootEl = scope || document;
+    rootEl.querySelectorAll(".sp-collection-card[data-id], .sp-collection-stack-card[data-id]").forEach((el) => {
+      const open = () => openCardDetail(el.dataset.id, detailIsOwner ? collectionId : null);
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      });
+    });
+    bindCardPreviewHover(rootEl);
+  }
+
+  function renderGroupedGridHtml(cards) {
+    const { buckets, keys } = bucketCardsByCategory(cards);
     return keys
       .map((key) => {
         const groupCards = buckets.get(key) || [];
@@ -742,6 +803,26 @@
         </section>`;
       })
       .join("");
+  }
+
+  function renderGroupedStacksHtml(cards) {
+    const { buckets, keys } = bucketCardsByCategory(cards);
+    return `<div class="sp-collection-stack-columns">${keys
+      .map((key) => {
+        const groupCards = buckets.get(key) || [];
+        const label = CATEGORY_LABELS[key] || key;
+        return `<section class="sp-collection-stack-column">
+          <h2 class="sp-collection-group-title">${esc(label)} <span class="sp-collection-group-count">${groupCards.length}</span></h2>
+          <div class="sp-collection-stack">${groupCards.map((c) => renderCardStack(c)).join("")}</div>
+        </section>`;
+      })
+      .join("")}</div>`;
+  }
+
+  function renderStacksHtml(cards) {
+    return `<div class="sp-collection-stack sp-collection-stack-solo">${cards
+      .map((c) => renderCardStack(c))
+      .join("")}</div>`;
   }
 
   function renderDetailGrid(collectionId) {
@@ -758,7 +839,12 @@
           : `${total} card${total === 1 ? "" : "s"}`;
     }
     if (visible.length) {
-      if (detailGroup === "category") {
+      mount.classList.toggle("is-stacks", detailView === "stacks");
+      mount.classList.toggle("is-spoiler", detailView !== "stacks");
+      if (detailView === "stacks") {
+        mount.innerHTML =
+          detailGroup === "category" ? renderGroupedStacksHtml(visible) : renderStacksHtml(visible);
+      } else if (detailGroup === "category") {
         mount.innerHTML = renderGroupedGridHtml(visible);
       } else {
         mount.innerHTML = `<div class="sp-grid sp-collections-grid">${visible
@@ -850,6 +936,8 @@
   async function renderDetail(ref) {
     detailSort = collectionSortFromUrl() || "saved";
     detailGroup = collectionGroupFromUrl() || "none";
+    detailView = collectionViewFromUrl() || "spoiler";
+    if (detailView !== "stacks") detailView = "spoiler";
     detailQuery = collectionSearchFromUrl();
     detailTagFilter = detailTagFromUrl();
 
@@ -940,6 +1028,13 @@
               : ""
           }
           <label class="sp-collection-control">
+            <span class="sp-label">View</span>
+            <select id="detailView">
+              <option value="spoiler"${detailView === "spoiler" ? " selected" : ""}>Visual Spoiler</option>
+              <option value="stacks"${detailView === "stacks" ? " selected" : ""}>Visual Stacks</option>
+            </select>
+          </label>
+          <label class="sp-collection-control">
             <span class="sp-label">Group</span>
             <select id="detailGroup">
               <option value="none"${detailGroup === "none" ? " selected" : ""}>None</option>
@@ -972,8 +1067,20 @@
       </div>
       ${
         detailCards.length
-          ? `<div id="collectionGridMount"></div>
-             <p class="sp-empty" id="collectionGridEmpty" hidden></p>`
+          ? `<div class="sp-collection-body">
+               <aside class="sp-collection-preview" id="collectionPreview" aria-label="Card preview">
+                 <p class="sp-collection-preview-empty" id="collectionPreviewEmpty">Hover a card to preview</p>
+                 <div class="sp-collection-preview-body" id="collectionPreviewBody" hidden>
+                   <img id="previewImg" class="sp-preview-img sp-card-img" src="" alt="" decoding="async" />
+                   <h2 class="sp-preview-name" id="previewName"></h2>
+                   <p class="sp-preview-meta" id="previewMeta"></p>
+                 </div>
+               </aside>
+               <div class="sp-collection-main">
+                 <div id="collectionGridMount"></div>
+                 <p class="sp-empty" id="collectionGridEmpty" hidden></p>
+               </div>
+             </div>`
           : `<p class="sp-empty">${
               detailTagFilter
                 ? `No cards tagged “${esc(detailTagFilter)}”.`
@@ -1005,12 +1112,22 @@
       writeCollectionDetailToUrl();
       await renderDetail(ref);
     });
+    document.getElementById("detailView")?.addEventListener("change", (e) => {
+      detailView = e.target.value === "stacks" ? "stacks" : "spoiler";
+      writeCollectionDetailToUrl();
+      renderDetailGrid(detailCollectionId);
+    });
     document.getElementById("detailSort")?.addEventListener("change", async (e) => {
       detailSort = e.target.value;
       writeCollectionDetailToUrl();
       await renderDetail(ref);
     });
-    if (detailCards.length) renderDetailGrid(detailCollectionId);
+    if (detailCards.length) {
+      document.getElementById("collectionGridMount")?.addEventListener("mouseleave", () => {
+        updatePreviewPanel(null);
+      });
+      renderDetailGrid(detailCollectionId);
+    }
   }
 
   async function boot() {

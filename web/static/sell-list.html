@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sell List — Manifest Bread</title>
+  <meta name="description" content="Stacks collection matched to Card Kingdom buylist by batch." />
+  <link rel="stylesheet" href="/static/app.css?v=2026072721" />
+  <script src="/static/theme-init.js"></script>
+</head>
+<body class="opp-page inv-page sell-list-page">
+  <nav>
+    <a href="/" class="brand-block">
+      <img src="/static/bread.jpg" alt="" class="brand-logo" width="32" height="32" />
+      <span class="brand-text">
+        <span class="brand">Manifest Bread</span>
+        <span class="tagline">Turn bulk into bread.</span>
+      </span>
+    </a>
+    <a href="/">Search</a>
+    <a href="/opportunities">Opportunities</a>
+    <a href="/inventory">Inventory</a>
+    <a href="/returns">CK returns</a>
+    <a href="/sell-list">Sell list</a>
+    <a href="/match">Match collection</a>
+    <a href="/charts">Price history</a>
+    <a href="/data">Data</a>
+    <a href="/architecture">Overview</a>
+  </nav>
+  <main>
+    <header class="opp-hero">
+      <div class="opp-hero-text">
+        <h1>Sell list</h1>
+        <p class="opp-sub" id="meta">Stacks collection × current CK buylist — live after each pipeline load</p>
+      </div>
+      <dl class="opp-kpis" id="kpis">
+        <div>
+          <dt>Sellable</dt>
+          <dd id="kpiLines">—</dd>
+        </div>
+        <div>
+          <dt>CK cash</dt>
+          <dd id="kpiCash">—</dd>
+        </div>
+        <div>
+          <dt>CK credit</dt>
+          <dd id="kpiCredit">—</dd>
+        </div>
+        <div>
+          <dt>Selected cash</dt>
+          <dd id="kpiSelected">—</dd>
+        </div>
+      </dl>
+    </header>
+
+    <nav class="opp-tabs" role="tablist" aria-label="Collection views">
+      <button type="button" class="opp-tab is-active" id="tabSell" role="tab" aria-selected="true" data-tab="sell">Sell list</button>
+      <button type="button" class="opp-tab" id="tabKeep" role="tab" aria-selected="false" data-tab="keep">Keep</button>
+      <button type="button" class="opp-tab" id="tabSold" role="tab" aria-selected="false" data-tab="sold">Sold</button>
+      <button type="button" class="opp-tab" id="tabAll" role="tab" aria-selected="false" data-tab="all">All cards</button>
+    </nav>
+    <p class="inv-tab-note" id="tabNote">Active Stacks cards CK is buying for at least $0.03 cash, grouped by batch. Export for CK, then confirm what to mark sold. Use Keep for cards you want to hold for decks.</p>
+
+    <section class="opp-toolbar" aria-label="Sell list filters">
+      <div class="opp-toolbar-primary">
+        <label class="opp-search">
+          <span class="sr-only">Search</span>
+          <input type="search" id="q" placeholder="Search cards…" autocomplete="off" />
+        </label>
+        <button type="button" id="exportBtn" class="secondary">Export for CK</button>
+        <a href="/api/collection/share.html" id="shareHtmlBtn" class="secondary" target="_blank" rel="noopener">Share inventory HTML</a>
+        <button type="button" id="keepBtn" class="secondary" hidden>Keep</button>
+        <button type="button" id="markSoldBtn" class="secondary" hidden>Mark sold</button>
+        <button type="button" id="batchSelectBtn" class="secondary">Select batches…</button>
+        <button type="button" id="restoreBtn" class="secondary" hidden>Restore</button>
+        <label class="secondary" style="cursor:pointer; display:inline-flex; align-items:center; gap:0.35rem;" id="addBatchLabel" title="Upload new Stacks Batch*_export.csv files. Already-imported filenames are skipped. CK match is live — no pipeline run needed.">
+          Add batch…
+          <input type="file" id="addBatchFiles" accept=".csv,text/csv" multiple hidden />
+        </label>
+        <label class="secondary opp-btn-ghost" style="cursor:pointer; display:inline-flex; align-items:center; gap:0.35rem;" id="importInventoryLabel" hidden title="Replace the whole collection from a consolidated inventory.csv (preserves sold/keep columns).">
+          Replace inventory.csv
+          <input type="file" id="importFiles" accept=".csv,text/csv" hidden />
+        </label>
+      </div>
+    </section>
+
+    <p id="statusMsg" class="opp-status" aria-live="polite"></p>
+    <p id="resultSummary" class="opp-result-summary"></p>
+
+    <div id="sellPanel">
+      <div id="batchHost"></div>
+      <p id="emptySell" class="opp-empty" hidden>No sellable cards — import Stacks CSVs, or wait until CK is buying something you own.</p>
+    </div>
+
+    <div id="tablePanel" hidden>
+      <div class="opp-table-wrap" id="tableWrap">
+        <table class="opp-table inv-table" id="cardsTable">
+          <thead>
+            <tr>
+              <th class="opp-check-col"><input type="checkbox" id="selectAll" aria-label="Select all" /></th>
+              <th>Card</th>
+              <th>Batch</th>
+              <th>Scan</th>
+              <th>Finish</th>
+              <th class="num">Qty</th>
+              <th>Status</th>
+              <th>Sold</th>
+              <th><span class="sr-only">Edit</span></th>
+            </tr>
+          </thead>
+          <tbody id="cardsBody"></tbody>
+        </table>
+      </div>
+      <p id="emptyCards" class="opp-empty" hidden>No cards in this view.</p>
+    </div>
+  </main>
+
+  <dialog id="cardEditModal" class="pur-edit-dialog">
+    <form method="dialog" class="pur-edit-form" id="cardEditForm">
+      <header class="pur-edit-header">
+        <h2>Edit card</h2>
+        <button type="button" class="pur-edit-close" id="cardEditClose" aria-label="Close">×</button>
+      </header>
+      <p class="pur-manual-intro">
+        Fix finish or printing when Stacks got it wrong (e.g. etched → normal). CK match updates on save.
+      </p>
+      <div class="pur-edit-grid">
+        <label class="pur-edit-wide">
+          <span>Name</span>
+          <input type="text" id="ceName" required />
+        </label>
+        <label>
+          <span>Set code</span>
+          <input type="text" id="ceSet" placeholder="mh3" />
+        </label>
+        <label>
+          <span>Collector #</span>
+          <input type="text" id="ceCollector" />
+        </label>
+        <label>
+          <span>Finish</span>
+          <select id="ceFinish">
+            <option value="normal">Normal</option>
+            <option value="foil">Foil</option>
+            <option value="etched">Etched</option>
+          </select>
+        </label>
+        <label>
+          <span>Qty</span>
+          <input type="number" id="ceQty" min="1" step="1" required />
+        </label>
+        <label>
+          <span>Status</span>
+          <select id="ceStatus">
+            <option value="active">Active</option>
+            <option value="keep">Keep</option>
+            <option value="sold">Sold</option>
+          </select>
+        </label>
+        <label class="pur-edit-wide">
+          <span>Scryfall ID</span>
+          <input type="text" id="ceScryfall" required />
+        </label>
+        <label class="pur-edit-wide">
+          <span>Notes</span>
+          <input type="text" id="ceNotes" placeholder="optional" />
+        </label>
+      </div>
+      <p class="inv-qty-sub" id="ceMeta"></p>
+      <footer class="pur-edit-actions">
+        <button type="button" class="secondary" id="cardEditCancel">Cancel</button>
+        <button type="submit" id="cardEditSave">Save</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="batchSelectModal" class="pur-edit-dialog sell-batch-picker-dialog">
+    <form method="dialog" class="pur-edit-form" id="batchSelectForm">
+      <header class="pur-edit-header">
+        <h2>Select batches</h2>
+        <button type="button" class="pur-edit-close" id="batchSelectClose" aria-label="Close">×</button>
+      </header>
+      <p class="pur-manual-intro">
+        Check the batches you want included for export. Apply updates card selection on the page.
+      </p>
+      <div class="sell-batch-picker-toolbar">
+        <button type="button" class="secondary opp-btn-ghost" id="batchSelectAll">All</button>
+        <button type="button" class="secondary opp-btn-ghost" id="batchSelectNone">None</button>
+      </div>
+      <div class="sell-batch-picker-list" id="batchSelectList" role="group" aria-label="Batches"></div>
+      <footer class="pur-edit-actions">
+        <button type="button" class="secondary" id="batchSelectCancel">Cancel</button>
+        <button type="submit" id="batchSelectApply">Apply</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="confirmSoldModal" class="pur-edit-dialog sell-confirm-dialog">
+    <form method="dialog" class="pur-edit-form" id="confirmSoldForm">
+      <header class="pur-edit-header">
+        <h2>Mark these as sold?</h2>
+        <button type="button" class="pur-edit-close" id="confirmSoldClose" aria-label="Close">×</button>
+      </header>
+      <p class="pur-manual-intro">
+        CK upload CSV downloaded. Flip through each <strong>batch</strong> while you pull and pack.
+        Set each card to <strong>Sell</strong>, <strong>Keep</strong> (hold for a deck — leaves the sell list), or <strong>Skip</strong> (leave as-is).
+        Cancel leaves inventory unchanged.
+      </p>
+      <div class="sell-confirm-tabs" id="confirmSoldTabs" role="tablist" aria-label="Batches in export"></div>
+      <div class="sell-confirm-toolbar">
+        <button type="button" class="secondary opp-btn-ghost" id="confirmBatchPrev" aria-label="Previous batch">← Prev</button>
+        <p class="sell-confirm-batch-meta" id="confirmBatchMeta"></p>
+        <button type="button" class="secondary opp-btn-ghost" id="confirmBatchNext" aria-label="Next batch">Next →</button>
+        <span class="sell-confirm-toolbar-spacer"></span>
+        <button type="button" class="secondary opp-btn-ghost" id="confirmCheckAll">Sell all</button>
+        <button type="button" class="secondary opp-btn-ghost" id="confirmKeepAll">Keep all</button>
+        <button type="button" class="secondary opp-btn-ghost" id="confirmUncheckAll">Skip all</button>
+      </div>
+      <div class="sell-confirm-panels" id="confirmSoldPanels"></div>
+      <p class="sell-confirm-summary" id="confirmSoldSummary" aria-live="polite"></p>
+      <footer class="pur-edit-actions">
+        <button type="button" class="secondary" id="confirmSoldCancel">Not yet</button>
+        <button type="submit" id="confirmSoldSave">Confirm</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="importResultModal" class="pur-edit-dialog sell-import-result-dialog">
+    <form method="dialog" class="pur-edit-form" id="importResultForm">
+      <header class="pur-edit-header">
+        <h2 id="importResultTitle">Batches added</h2>
+        <button type="button" class="pur-edit-close" id="importResultClose" aria-label="Close">×</button>
+      </header>
+      <p class="pur-manual-intro" id="importResultIntro">
+        New Stacks cards are in your collection. CK matching is live against the current buylist — no pipeline run needed.
+      </p>
+      <ul class="sell-import-result-list" id="importResultList"></ul>
+      <p class="sell-import-result-summary" id="importResultSummary"></p>
+      <footer class="pur-edit-actions">
+        <button type="submit" id="importResultOk">Done</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div id="linkToast" class="pur-toast" hidden role="status"></div>
+
+  <script src="/static/app.js?v=2026071001"></script>
+  <script src="/static/sell-list.js?v=2026072721"></script>
+</body>
+</html>

@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import sys
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -20,6 +22,37 @@ SCRYFALL_HEADERS = {
     ),
     "Accept": "application/json",
 }
+DOWNLOAD_HEADERS = {
+    "User-Agent": SCRYFALL_HEADERS["User-Agent"],
+    "Accept": "*/*",
+}
+
+
+def _bulk_download_uri(default: dict) -> tuple[str, bool]:
+    """Return (uri, is_jsonl_gz). Prefer jsonl_download_uri (current Scryfall format)."""
+    jsonl = default.get("jsonl_download_uri")
+    if jsonl:
+        return jsonl, True
+    legacy = default.get("download_uri")
+    if legacy:
+        return legacy, legacy.endswith(".jsonl.gz") or "jsonl" in legacy
+    raise KeyError(
+        "Scryfall bulk object missing jsonl_download_uri/download_uri; "
+        f"keys={sorted(default.keys())}"
+    )
+
+
+def _iter_cards(path: Path, is_jsonl_gz: bool):
+    if is_jsonl_gz:
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    yield json.loads(line)
+        return
+    with open(path, encoding="utf-8") as f:
+        cards = json.load(f)
+    yield from cards
 
 
 def main() -> int:
@@ -27,22 +60,24 @@ def main() -> int:
     print("Fetching Scryfall bulk metadata...")
     meta = requests.get(BULK_META_URL, headers=SCRYFALL_HEADERS, timeout=60).json()
     default = next(x for x in meta["data"] if x["type"] == "default_cards")
-    download_uri = default["download_uri"]
+    download_uri, is_jsonl_gz = _bulk_download_uri(default)
+    dest = (
+        HELPER_DIR / "scryfall_default_cards.jsonl.gz"
+        if is_jsonl_gz
+        else SCRYFALL_BULK_JSON
+    )
     print(f"Downloading {download_uri} (this may take several minutes)...")
 
-    resp = requests.get(download_uri, headers=SCRYFALL_HEADERS, timeout=600, stream=True)
+    resp = requests.get(download_uri, headers=DOWNLOAD_HEADERS, timeout=600, stream=True)
     resp.raise_for_status()
-    with open(SCRYFALL_BULK_JSON, "wb") as f:
+    with open(dest, "wb") as f:
         for chunk in resp.iter_content(chunk_size=1024 * 1024):
             if chunk:
                 f.write(chunk)
 
-    print("Parsing JSON...")
-    with open(SCRYFALL_BULK_JSON, encoding="utf-8") as f:
-        cards = json.load(f)
-
+    print("Parsing bulk cards...")
     rows = []
-    for c in cards:
+    for c in _iter_cards(dest, is_jsonl_gz):
         prices = c.get("prices") or {}
         rows.append(
             {

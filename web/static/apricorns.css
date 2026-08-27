@@ -1,0 +1,224 @@
+/* Apricorns — temporary mock theme (beige woodland / apricorn-bush card vibe) */
+
+@import url("https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,700;0,800;1,400&display=swap");
+
+.ap-body {
+  --sp-font: "Nunito", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --sp-display: "Nunito", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --sp-space: #e8dcc8;
+  --sp-space-mid: #d9cbb4;
+  --sp-nebula: #c4b89a;
+  --sp-nebula-teal: #8a9a6e;
+  --sp-pink: #c45c48;
+  --sp-pink-hot: #b54838;
+  --sp-pink-soft: #e8a090;
+  --sp-lilac: #7a9a5a;
+  --sp-cyan: #6b8f4e;
+  --sp-star: #fff8ef;
+  --sp-text: #3a3228;
+  --sp-muted: #6e6356;
+  --sp-glass: rgba(255, 248, 239, 0.82);
+  --sp-glass-border: rgba(122, 154, 90, 0.35);
+  --sp-glow: 0 8px 28px rgba(90, 70, 40, 0.12);
+  --ap-leaf: #6b8f4e;
+  --ap-berry: #c45c48;
+}
+
+.ap-body button,
+.ap-body input,
+.ap-body select,
+.ap-body textarea {
+  font-family: "Nunito", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: var(--sp-text);
+}
+
+.ap-body::before {
+  background:
+    radial-gradient(ellipse 70% 45% at 18% 12%, rgba(122, 154, 90, 0.18), transparent 55%),
+    radial-gradient(ellipse 55% 40% at 88% 8%, rgba(196, 92, 72, 0.1), transparent 50%),
+    radial-gradient(ellipse 80% 50% at 50% 100%, rgba(139, 105, 20, 0.1), transparent 55%),
+    radial-gradient(ellipse 40% 30% at 70% 40%, rgba(255, 248, 239, 0.55), transparent 60%),
+    linear-gradient(180deg, #f3ead8 0%, #e8dcc8 45%, #ddd0b8 100%);
+}
+
+.ap-body .sp-stars {
+  opacity: 0.55;
+  background-image:
+    radial-gradient(2px 2px at 12% 20%, rgba(107, 143, 78, 0.35), transparent),
+    radial-gradient(1.5px 1.5px at 30% 55%, rgba(139, 105, 20, 0.25), transparent),
+    radial-gradient(2px 2px at 58% 18%, rgba(107, 143, 78, 0.3), transparent),
+    radial-gradient(1.5px 1.5px at 78% 42%, rgba(196, 92, 72, 0.2), transparent),
+    radial-gradient(2px 2px at 90% 72%, rgba(107, 143, 78, 0.28), transparent),
+    radial-gradient(1.5px 1.5px at 22% 82%, rgba(139, 105, 20, 0.22), transparent),
+    radial-gradient(2px 2px at 48% 48%, rgba(107, 143, 78, 0.2), transparent);
+  animation: none;
+}
+
+.ap-body .sp-shooting-star {
+  background: linear-gradient(90deg, transparent 0%, var(--ap-leaf) 55%, #fff8ef 100%);
+  filter: drop-shadow(0 0 4px rgba(107, 143, 78, 0.45));
+}
+
+.ap-mock-banner {
+  margin: 0;
+  padding: 0.45rem 1rem;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #3a3228;
+  background: linear-gradient(90deg, #f5ebe0, #d4e0c4 40%, #e8c4b8 75%, #e8dcc8);
+  border-bottom: 1px solid rgba(90, 70, 40, 0.15);
+}
+
+.ap-mock-banner a {
+  color: #3a3228;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ap-body .sp-brand.ap-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+  max-width: min(920px, 96vw);
+}
+
+.ap-body .sp-brand-logo.ap-mascot {
+  width: min(120px, 28vw);
+  height: auto;
+  margin: 0;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 8px 18px rgba(90, 70, 40, 0.22));
+}
+
+.ap-wordmark {
+  display: block;
+  width: min(400px, 64vw);
+  height: auto;
+  margin: 0;
+  flex: 1 1 200px;
+  filter: drop-shadow(0 6px 14px rgba(90, 70, 40, 0.18));
+}
+
+.ap-body .sp-topbar {
+  background: rgba(245, 235, 224, 0.72);
+  border-bottom-color: rgba(90, 70, 40, 0.12);
+}
+
+.ap-body .sp-topbar-link {
+  color: var(--sp-muted);
+}
+
+.ap-body .sp-topbar-link.is-active,
+.ap-body .sp-topbar-link:hover {
+  color: var(--ap-berry);
+}
+
+.ap-body .sp-topbar-login {
+  color: var(--ap-leaf);
+  border-color: rgba(107, 143, 78, 0.4);
+}
+
+.ap-body .sp-panel {
+  background: rgba(255, 248, 239, 0.88);
+  border-color: rgba(122, 154, 90, 0.32);
+  box-shadow: var(--sp-glow), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.ap-body .sp-label,
+.ap-body .sp-hint,
+.ap-body .sp-result-count,
+.ap-body .sp-tagline,
+.ap-body .sp-footer {
+  color: var(--sp-muted);
+}
+
+.ap-body .sp-field input,
+.ap-body .sp-field select {
+  background: rgba(255, 252, 246, 0.95);
+  border-color: rgba(90, 70, 40, 0.18);
+  color: var(--sp-text);
+}
+
+.ap-body .sp-field input:focus,
+.ap-body .sp-field select:focus {
+  border-color: var(--ap-leaf);
+  box-shadow: 0 0 0 3px rgba(107, 143, 78, 0.2);
+}
+
+.ap-body .sp-card {
+  background:
+    radial-gradient(circle at 50% 30%, rgba(122, 154, 90, 0.12), transparent 55%),
+    rgba(255, 248, 239, 0.65);
+  border-color: rgba(90, 70, 40, 0.14);
+  box-shadow: 0 6px 16px rgba(90, 70, 40, 0.1);
+}
+
+.ap-body .sp-card:hover {
+  border-color: rgba(196, 92, 72, 0.45);
+  box-shadow: 0 12px 28px rgba(107, 143, 78, 0.22), 0 0 16px rgba(196, 92, 72, 0.12);
+}
+
+.ap-body .sp-segment-btn.active {
+  background: linear-gradient(135deg, var(--ap-leaf), #8a9a6e);
+  border-color: transparent;
+  color: #fff8ef;
+}
+
+.ap-body .sp-adv-toggle,
+.ap-body .sp-page-btn,
+.ap-body .sp-clear-btn,
+.ap-body .sp-zoom-btn {
+  border-color: rgba(107, 143, 78, 0.4);
+  background: rgba(255, 248, 239, 0.7);
+  color: var(--sp-text);
+}
+
+.ap-body .sp-adv-toggle:hover,
+.ap-body .sp-page-btn:hover:not(:disabled),
+.ap-body .sp-clear-btn:hover,
+.ap-body .sp-zoom-btn:hover:not(:disabled) {
+  border-color: var(--ap-berry);
+  color: var(--ap-berry);
+}
+
+.ap-body .sp-linkish {
+  color: var(--ap-berry);
+}
+
+.ap-body .sp-view-row {
+  border-top-color: rgba(90, 70, 40, 0.12);
+}
+
+.ap-body .sp-modal-inner {
+  background: rgba(255, 248, 239, 0.95);
+  border-color: rgba(122, 154, 90, 0.35);
+  color: var(--sp-text);
+}
+
+.ap-body .sp-modal::backdrop {
+  background: rgba(58, 50, 40, 0.45);
+}
+
+.ap-body .sp-footer strong {
+  color: var(--ap-berry);
+}
+
+.ap-body .sp-footer a {
+  color: var(--ap-leaf);
+}
+
+.ap-body .sp-sibling.rep {
+  outline-color: var(--ap-leaf);
+  box-shadow: 0 0 12px rgba(107, 143, 78, 0.3);
+}
+
+.ap-body .sp-name-link {
+  background-image: linear-gradient(90deg, var(--ap-berry), var(--ap-leaf));
+  border-bottom-color: rgba(196, 92, 72, 0.35);
+}

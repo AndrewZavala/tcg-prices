@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Inventory — Manifest Bread</title>
   <meta name="description" content="On-hand TCG stock and CK fulfillments." />
-  <link rel="stylesheet" href="/static/app.css?v=2026071313" />
+  <link rel="stylesheet" href="/static/app.css?v=2026072420" />
   <script src="/static/theme-init.js"></script>
 </head>
 <body class="opp-page inv-page">
@@ -21,6 +21,7 @@
     <a href="/opportunities">Opportunities</a>
     <a href="/inventory">Inventory</a>
     <a href="/returns">CK returns</a>
+    <a href="/sell-list">Sell list</a>
     <a href="/match">Match collection</a>
     <a href="/charts">Price history</a>
     <a href="/data">Data</a>
@@ -54,8 +55,10 @@
 
     <nav class="opp-tabs" role="tablist" aria-label="Inventory lifecycle">
       <button type="button" class="opp-tab is-active" id="tabAll" role="tab" aria-selected="true" data-tab="all" data-label="Inventory">Inventory</button>
+      <button type="button" class="opp-tab" id="tabOrders" role="tab" aria-selected="false" data-tab="orders" data-label="Orders">Orders</button>
       <button type="button" class="opp-tab" id="tabInbound" role="tab" aria-selected="false" data-tab="inbound" data-label="Inbound">Inbound</button>
       <button type="button" class="opp-tab" id="tabNeedSell" role="tab" aria-selected="false" data-tab="need_to_sell" data-label="Need to Sell">Need to Sell</button>
+      <button type="button" class="opp-tab" id="tabProblem" role="tab" aria-selected="false" data-tab="problem" data-label="Problem">Problem</button>
       <button type="button" class="opp-tab" id="tabToPack" role="tab" aria-selected="false" data-tab="to_pack" data-label="Need to Pack">Need to Pack</button>
       <button type="button" class="opp-tab" id="tabToShip" role="tab" aria-selected="false" data-tab="to_ship" data-label="Need to Ship">Need to Ship</button>
       <button type="button" class="opp-tab" id="tabAwaiting" role="tab" aria-selected="false" data-tab="awaiting_payment" data-label="Awaiting payment">Awaiting payment</button>
@@ -74,8 +77,16 @@
           <option value="ordered">Ordered</option>
           <option value="inbound">Inbound</option>
           <option value="on_hand">On hand</option>
+          <option value="problem">Problem</option>
           <option value="depleted">Depleted</option>
           <option value="cancelled">Cancelled</option>
+        </select>
+        <select id="orderStatusFilter" class="opp-sort inv-orders-filter" aria-label="Filter CK orders by status" hidden>
+          <option value="">All CK statuses</option>
+          <option value="planned">Need to pack</option>
+          <option value="packed">Need to ship</option>
+          <option value="sent">Sent / awaiting pay</option>
+          <option value="paid">Paid</option>
         </select>
         <input type="text" id="seller" placeholder="Seller" />
         <select id="tcgOrderFilter" class="opp-sort" aria-label="Filter by TCG order">
@@ -226,7 +237,7 @@
               <th class="num">Qty</th>
               <th>CK batch</th>
               <th>CK ref</th>
-              <th class="num">Revenue</th>
+              <th class="num" id="fulfillRevenueHead">Revenue</th>
               <th class="num">Cost</th>
               <th class="num">Profit</th>
               <th>Date</th>
@@ -236,6 +247,21 @@
             </tr>
           </thead>
           <tbody id="fulfillResults"></tbody>
+        </table>
+        <table class="opp-table pur-table inv-table" id="ordersTable" hidden>
+          <thead>
+            <tr>
+              <th>CK order</th>
+              <th>Batch</th>
+              <th class="num">Lines</th>
+              <th class="num">Qty</th>
+              <th>Pipeline</th>
+              <th class="opp-sortable" data-sort-col="placed" data-sort-dir="asc" scope="col" tabindex="0" aria-sort="none" title="Sort by placed date">Placed</th>
+              <th>Status</th>
+              <th><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="ordersResults"></tbody>
         </table>
       </div>
 
@@ -248,6 +274,8 @@
       <p>
         Track TCG buys: inbound → need to sell → need to pack → need to ship → awaiting payment → paid.
         Mass fulfill as <strong>Need to pack</strong> reserves free stock (leaves on-hand / need-to-sell), then mark <strong>Packed</strong> and <strong>Sent</strong>.
+        Set status to <strong>Problem</strong> for wrong copies / disputes (hidden from Need to Sell until resolved).
+        On pack/ship/awaiting tabs: <strong>Remove line</strong> returns copies to inventory; <strong>Cancel buy</strong> deletes the lot (TCG seller canceled).
       </p>
     </footer>
   </main>
@@ -370,8 +398,8 @@
           <input type="text" id="fCkBatch" placeholder="CK-2026-07-02-A" />
         </label>
         <label>
-          <span>CK $ / copy</span>
-          <input type="number" id="fCkAdj" step="0.01" min="0" />
+          <span>CK $ / copy (locked at sell)</span>
+          <input type="number" id="fCkAdj" step="0.01" min="0" title="Stored on this sell line; revenue uses this even if lot CK price changes later" />
         </label>
         <label>
           <span>CK ref</span>
@@ -462,7 +490,45 @@
     </form>
   </dialog>
 
+  <dialog id="orderPaidModal" class="pur-edit-dialog inv-order-paid-dialog">
+    <form id="orderPaidForm" method="dialog" class="pur-edit-form">
+      <header class="pur-edit-header">
+        <h2 id="orderPaidTitle">Mark CK order paid</h2>
+        <button type="button" id="orderPaidClose" class="pur-edit-close" aria-label="Close">×</button>
+      </header>
+      <p class="inv-fulfill-sub" id="orderPaidSub">
+        Enter grade qtys and the exact unit price CK shows for each grade.
+        Defaults start at NM 100% / EX 75% / VG 50% / G 25% of the locked price — edit when CK differs (e.g. EX at 80%).
+      </p>
+      <div class="inv-mass-table-wrap">
+        <table class="opp-table pur-table inv-order-paid-table">
+          <thead>
+            <tr>
+              <th>Card</th>
+              <th class="num">Qty</th>
+              <th class="num">NM</th>
+              <th class="num">NM $</th>
+              <th class="num">EX</th>
+              <th class="num">EX $</th>
+              <th class="num">VG</th>
+              <th class="num">VG $</th>
+              <th class="num">G</th>
+              <th class="num">G $</th>
+              <th class="num">Paid $</th>
+            </tr>
+          </thead>
+          <tbody id="orderPaidBody"></tbody>
+        </table>
+      </div>
+      <p id="orderPaidSummary" class="inv-mass-summary">Expected — · Graded paid —</p>
+      <footer class="pur-edit-actions">
+        <button type="button" id="orderPaidCancel" class="secondary opp-btn-ghost">Cancel</button>
+        <button type="submit" id="orderPaidSave" class="secondary">Confirm paid</button>
+      </footer>
+    </form>
+  </dialog>
+
   <script src="/static/app.js?v=2026071001"></script>
-  <script src="/static/inventory.js?v=2026071316"></script>
+  <script src="/static/inventory.js?v=2026072421"></script>
 </body>
 </html>

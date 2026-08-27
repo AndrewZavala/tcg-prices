@@ -4,23 +4,27 @@
     { value: "ordered", label: "Ordered" },
     { value: "inbound", label: "Inbound" },
     { value: "on_hand", label: "On hand" },
+    { value: "problem", label: "Problem" },
     { value: "depleted", label: "Depleted" },
     { value: "cancelled", label: "Cancelled" },
   ];
 
   const TAB_NOTES = {
     all: "All inventory lots — free stock only counts as on hand; pack/ship/paid lines live in their own tabs.",
+    orders: "Card Kingdom sell orders grouped by CK order #. Status is the furthest-behind pipeline stage. Changing status updates every line on that CK order.",
     inbound: "Waiting on TCG sellers — follow up if an order is late.",
     need_to_sell: "Free stock with a current CK buy price (or ordered/inbound 5+ days) — hidden once reserved for pack/ship or fulfilled today.",
+    problem: "Wrong copies, disputes, or anything waiting on TCG/seller resolution — still inventory, but not sellable to CK.",
     to_pack: "Reserved for CK — no longer on-hand. Mark Packed when sleeved/boxed.",
     to_ship: "Packed and ready to mail — mark Sent when the package goes out.",
     awaiting_payment: "Sent to CK — move back to Packed/Need to pack if needed, or Mark paid when CK pays.",
-    paid: "Completed CK payouts — profit uses paid amount when recorded.",
+    paid: "Completed CK payouts — edit CK paid $ on each row (blur to save). Profit uses that amount.",
   };
 
-  const LOT_TABS = new Set(["all", "inbound", "need_to_sell"]);
-  const LIFECYCLE_LOT_TABS = new Set(["inbound", "need_to_sell"]);
+  const LOT_TABS = new Set(["all", "inbound", "need_to_sell", "problem"]);
+  const LIFECYCLE_LOT_TABS = new Set(["inbound", "need_to_sell", "problem"]);
   const FULFILL_TABS = new Set(["to_pack", "to_ship", "awaiting_payment", "paid"]);
+  const ORDER_TAB = "orders";
   const NEED_TO_SELL_DAYS = 5;
   const FULFILL_STATUS_OPTIONS = [
     { value: "planned", label: "Need to pack" },
@@ -28,7 +32,21 @@
     { value: "sent", label: "Sent / awaiting pay" },
     { value: "paid", label: "Paid" },
   ];
-
+  const ORDER_STATUS_OPTIONS = [
+    { value: "planned", label: "Need to pack" },
+    { value: "packed", label: "Need to ship" },
+    { value: "sent", label: "Sent / awaiting pay" },
+    { value: "paid", label: "Paid" },
+  ];
+  const ORDER_STATUS_LABELS = Object.fromEntries(
+    ORDER_STATUS_OPTIONS.map((o) => [o.value, o.label])
+  );
+  const CK_GRADE_MULT = { nm: 1, ex: 0.75, vg: 0.5, g: 0.25 };
+  let ordersById = new Map();
+  let ordersList = [];
+  /** null = API order; asc = oldest first; desc = newest first */
+  let ordersPlacedSortDir = null;
+  let payingOrderId = null;
   let searchTimer = null;
   let activeTab = "all";
   const selected = new Set();
@@ -47,14 +65,17 @@
     kpi4: document.getElementById("kpi4"),
     tabNote: document.getElementById("tabNote"),
     tabAll: document.getElementById("tabAll"),
+    tabOrders: document.getElementById("tabOrders"),
     tabInbound: document.getElementById("tabInbound"),
     tabNeedSell: document.getElementById("tabNeedSell"),
+    tabProblem: document.getElementById("tabProblem"),
     tabToPack: document.getElementById("tabToPack"),
     tabToShip: document.getElementById("tabToShip"),
     tabAwaiting: document.getElementById("tabAwaiting"),
     tabPaid: document.getElementById("tabPaid"),
     q: document.getElementById("q"),
     status: document.getElementById("status"),
+    orderStatusFilter: document.getElementById("orderStatusFilter"),
     seller: document.getElementById("seller"),
     tcgOrderFilter: document.getElementById("tcgOrderFilter"),
     batchFilter: document.getElementById("batchFilter"),
@@ -72,8 +93,19 @@
     linkToast: document.getElementById("linkToast"),
     results: document.getElementById("results"),
     fulfillResults: document.getElementById("fulfillResults"),
+    ordersResults: document.getElementById("ordersResults"),
     lotsTable: document.getElementById("lotsTable"),
     fulfillTable: document.getElementById("fulfillTable"),
+    ordersTable: document.getElementById("ordersTable"),
+    orderPaidModal: document.getElementById("orderPaidModal"),
+    orderPaidForm: document.getElementById("orderPaidForm"),
+    orderPaidClose: document.getElementById("orderPaidClose"),
+    orderPaidCancel: document.getElementById("orderPaidCancel"),
+    orderPaidSave: document.getElementById("orderPaidSave"),
+    orderPaidTitle: document.getElementById("orderPaidTitle"),
+    orderPaidSub: document.getElementById("orderPaidSub"),
+    orderPaidBody: document.getElementById("orderPaidBody"),
+    orderPaidSummary: document.getElementById("orderPaidSummary"),
     tableWrap: document.getElementById("tableWrap"),
     emptyState: document.getElementById("emptyState"),
     emptyMessage: document.getElementById("emptyMessage"),
@@ -252,7 +284,7 @@
     const onHandSub = onHandBits.length
       ? `<div class="inv-qty-sub">${onHandBits.join(" · ")}</div>`
       : "";
-    const canFulfill = (row.qty_on_hand ?? 0) > 0;
+    const canFulfill = (row.qty_on_hand ?? 0) > 0 && row.status !== "problem" && row.status !== "cancelled";
     const showBuyCk = showCkBuyCols();
     const ckTitle = [
       row.ck_cash == null && row.tcg_product_id
@@ -329,12 +361,31 @@
     return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
   }
 
+  /** Calendar days since placed (local). CK ship window is 7 days. */
+  const CK_SHIP_DAYS = 7;
+
+  function daysSincePlaced(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.floor((today - start) / 86400000);
+  }
+
+  function orderNeedsShip(status) {
+    return status === "planned" || status === "packed";
+  }
+
   const EMPTY_MESSAGES = {
     all: 'No inventory yet. Buy from <a href="/opportunities">Opportunities</a> or use <strong>Manual entry</strong>.',
+    orders: "No CK orders yet — mass fulfill from Need to Sell with a CK order # / batch, then they show up here.",
     inbound: 'No inbound orders. Add buys from <a href="/opportunities">Opportunities</a> and set status to Ordered or Inbound.',
     to_pack: "No CK orders waiting to pack — Mass fulfill from Need to Sell as Need to pack.",
     to_ship: "Nothing packed awaiting shipment — mark rows Packed from Need to Pack.",
     need_to_sell: "Nothing in the sell queue — need On hand stock (any order date) or ordered/inbound 5+ days old, plus a current CK buy price and no CK fulfillment dated today.",
+    problem: "No problem lots — set status to Problem when you get the wrong card or are waiting on a TCG/seller resolution.",
     awaiting_payment: "No CK shipments awaiting payment — mark Sent from Need to Ship.",
     paid: "No paid fulfillments yet — mark rows paid from Awaiting payment.",
   };
@@ -349,6 +400,10 @@
     return LOT_TABS.has(activeTab);
   }
 
+  function isOrdersTab() {
+    return activeTab === ORDER_TAB;
+  }
+
   function isLifecycleLotTab() {
     return LIFECYCLE_LOT_TABS.has(activeTab);
   }
@@ -356,8 +411,10 @@
   function tabButtons() {
     return [
       els.tabAll,
+      els.tabOrders,
       els.tabInbound,
       els.tabNeedSell,
+      els.tabProblem,
       els.tabToPack,
       els.tabToShip,
       els.tabAwaiting,
@@ -380,14 +437,29 @@
     }
     updateEmptyMessage();
     updateCkBuyColVisibility();
+    const revHead = document.getElementById("fulfillRevenueHead");
+    if (revHead) revHead.textContent = tab === "paid" ? "CK paid $" : "Revenue";
     const lotMode = isLotTab();
+    const ordersMode = isOrdersTab();
+    const fulfillMode = FULFILL_TABS.has(tab);
     els.lotsTable.hidden = !lotMode;
-    els.fulfillTable.hidden = lotMode;
+    els.fulfillTable.hidden = !fulfillMode;
+    if (els.ordersTable) els.ordersTable.hidden = !ordersMode;
     els.linkBar.hidden = true;
     if (els.selectAll) els.selectAll.closest("th")?.classList.toggle("hidden-col", !lotMode);
     document.querySelectorAll(".inv-advanced-filter").forEach((el) => {
       el.hidden = activeTab !== "all";
     });
+    document.querySelectorAll(".inv-orders-filter").forEach((el) => {
+      el.hidden = !ordersMode;
+    });
+    // Orders tab: keep search, hide lot-only filters
+    if (els.tcgOrderFilter) els.tcgOrderFilter.hidden = ordersMode;
+    if (els.batchFilter) els.batchFilter.hidden = ordersMode;
+    if (els.seller) els.seller.hidden = ordersMode;
+    if (els.q) {
+      els.q.placeholder = ordersMode ? "Search CK order # or card…" : "Search cards…";
+    }
     load();
   }
 
@@ -405,6 +477,7 @@
       all: summary.total_lots,
       inbound: summary.inbound,
       need_to_sell: summary.need_to_sell,
+      problem: summary.problem,
       to_pack: summary.to_pack,
       to_ship: summary.to_ship,
       awaiting_payment: summary.awaiting_payment,
@@ -453,6 +526,23 @@
           : activeTab === "awaiting_payment"
             ? `<button type="button" class="secondary inv-advance-btn" data-action="mark-paid" data-lot-id="${row.lot_id}" data-id="${row.fulfillment_id}">Mark paid</button>`
             : "";
+    const canUndo = activeTab === "to_pack" || activeTab === "to_ship" || activeTab === "awaiting_payment";
+    const undoBtns = canUndo
+      ? `<button type="button" class="secondary opp-btn-ghost inv-fulfill-remove" data-action="remove-line" data-lot-id="${row.lot_id}" data-id="${row.fulfillment_id}" data-name="${escapeHtml(row.name)}" title="Remove this CK line — copies return to free inventory">Remove line</button>
+          <button type="button" class="secondary pur-btn-danger inv-fulfill-cancel-buy" data-action="cancel-buy" data-lot-id="${row.lot_id}" data-id="${row.fulfillment_id}" data-name="${escapeHtml(row.name)}" title="TCG buy canceled — delete the lot and this CK line">Cancel buy</button>`
+      : "";
+    const paidDisplay =
+      row.paid_amount != null ? row.paid_amount : row.fulfillment_revenue;
+    const revenueCell =
+      activeTab === "paid"
+        ? `<td class="num">
+            <input type="number" class="pur-link-input inv-paid-amount" step="0.01" min="0"
+              data-lot-id="${row.lot_id}" data-id="${row.fulfillment_id}"
+              value="${paidDisplay ?? ""}"
+              title="CK paid amount for this line — edit anytime"
+              aria-label="CK paid amount for ${escapeHtml(row.name)}" />
+          </td>`
+        : `<td class="num">${fmtUsd(row.fulfillment_revenue)}</td>`;
     return `
       <tr class="inv-fulfill-row" data-id="${row.fulfillment_id}">
         <td class="opp-card-cell">
@@ -463,7 +553,7 @@
         <td class="num">${row.fulfillment_qty}</td>
         <td>${escapeHtml(row.ck_batch_id || "—")}</td>
         <td>${escapeHtml(row.ck_ref || "—")}</td>
-        <td class="num">${fmtUsd(row.fulfillment_revenue)}</td>
+        ${revenueCell}
         <td class="num">${fmtUsd(row.fulfillment_cost)}</td>
         <td class="num ${profitClass}">${fmtUsd(row.fulfillment_profit)}</td>
         <td>${fmtDate(dateVal)}</td>
@@ -471,6 +561,7 @@
         <td>${escapeHtml(row.tcg_order_id || "—")}</td>
         <td class="opp-actions inv-fulfill-actions">
           ${advanceBtn}
+          ${undoBtns}
           ${ckUrl ? `<a class="opp-link" href="${ckUrl}" target="_blank" rel="noopener">CK</a>` : ""}
           ${tcgUrl ? `<a class="opp-link opp-link-primary" href="${tcgUrl}" target="_blank" rel="noopener">TCG</a>` : ""}
         </td>
@@ -529,6 +620,14 @@
 
   async function deleteLot(id) {
     const res = await fetch(`/api/inventory/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async function deleteFulfillment(lotId, fulfillmentId) {
+    const res = await fetch(`/api/inventory/${lotId}/fulfillments/${fulfillmentId}`, {
+      method: "DELETE",
+    });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   }
@@ -652,6 +751,10 @@
   }
 
   async function load() {
+    if (isOrdersTab()) {
+      await loadOrders();
+      return;
+    }
     if (!isLotTab()) {
       await loadFulfillments();
       return;
@@ -674,7 +777,9 @@
           ? "all lots"
           : activeTab === "inbound"
             ? "inbound from TCG"
-            : `need to sell (on hand, or ${NEED_TO_SELL_DAYS}+ days ordered/inbound)`;
+            : activeTab === "problem"
+              ? "problem / awaiting resolution"
+              : `need to sell (on hand, or ${NEED_TO_SELL_DAYS}+ days ordered/inbound)`;
       els.meta.textContent = rows.length
         ? `${rows.length} shown · ${tabLabel}`
         : activeTab === "all"
@@ -688,6 +793,349 @@
     }
   }
 
+  function orderStatusSelect(row) {
+    const current = row.status || "planned";
+    const options = ORDER_STATUS_OPTIONS.map(
+      (o) =>
+        `<option value="${o.value}" ${o.value === current ? "selected" : ""}>${escapeHtml(o.label)}</option>`
+    ).join("");
+    return `<select class="pur-status-select inv-order-status" data-order="${escapeHtml(row.ck_order_id)}" data-prev="${escapeHtml(current)}" aria-label="Status for CK order ${escapeHtml(row.ck_order_id)}">${options}</select>`;
+  }
+
+  function pipelineBits(row) {
+    const bits = [];
+    if (row.qty_planned) bits.push(`${row.qty_planned} pack`);
+    if (row.qty_packed) bits.push(`${row.qty_packed} ship`);
+    if (row.qty_sent) bits.push(`${row.qty_sent} sent`);
+    if (row.qty_paid) bits.push(`${row.qty_paid} paid`);
+    return bits.length ? bits.join(" · ") : "—";
+  }
+
+  function renderOrderRow(row) {
+    const lines = row.lines || [];
+    const statusLabel = ORDER_STATUS_LABELS[row.status] || row.status || "—";
+    const cardsList = lines.length
+      ? `<details class="inv-order-cards">
+          <summary>${lines.length} line${lines.length === 1 ? "" : "s"} · ${row.qty_total} cards</summary>
+          <ul class="inv-order-card-list">
+            ${lines
+              .map((l) => {
+                const st = ORDER_STATUS_LABELS[l.status] || l.status || "";
+                return `<li>
+                  <span class="inv-order-card-name">${escapeHtml(l.name)}</span>
+                  <span class="inv-order-card-meta">${l.qty}×${st ? ` · ${escapeHtml(st)}` : ""}</span>
+                </li>`;
+              })
+              .join("")}
+          </ul>
+        </details>`
+      : `<span class="inv-qty-sub">No lines</span>`;
+    const canMarkPaid = row.status !== "paid" && lines.length > 0;
+    const paidBtn = canMarkPaid
+      ? `<button type="button" class="secondary inv-order-paid-btn" data-order="${escapeHtml(row.ck_order_id)}">Mark paid</button>`
+      : "";
+    const days = daysSincePlaced(row.created_at);
+    const late = days != null && days >= CK_SHIP_DAYS && orderNeedsShip(row.status);
+    const placedClass = late ? "inv-order-placed is-late" : "inv-order-placed";
+    const daysLabel =
+      days == null
+        ? ""
+        : `<div class="inv-qty-sub${late ? " is-late" : ""}">${days} day${days === 1 ? "" : "s"} ago${
+            late ? " · ship overdue" : ""
+          }</div>`;
+    return `
+      <tr class="inv-order-row" data-order="${escapeHtml(row.ck_order_id)}">
+        <td>
+          <div class="inv-order-id">${escapeHtml(row.ck_order_id)}</div>
+          ${cardsList}
+        </td>
+        <td>${escapeHtml(row.ck_batch_id || "—")}</td>
+        <td class="num">${row.line_count}</td>
+        <td class="num">${row.qty_total}</td>
+        <td>
+          <div>${escapeHtml(statusLabel)}</div>
+          <div class="inv-qty-sub">${escapeHtml(pipelineBits(row))}</div>
+        </td>
+        <td data-sort="${row.created_at ? new Date(row.created_at).getTime() : 0}">
+          <div class="${placedClass}">${fmtDate(row.created_at)}</div>
+          ${daysLabel}
+        </td>
+        <td>${orderStatusSelect(row)}</td>
+        <td class="opp-actions">${paidBtn}</td>
+      </tr>`;
+  }
+
+  function parseMoneyInput(el, fallback = 0) {
+    const raw = parseFloat(el?.value);
+    return Number.isFinite(raw) && raw >= 0 ? raw : fallback;
+  }
+
+  function linePaidFromUnits(nm, ex, vg, g, nmUnit, exUnit, vgUnit, gUnit) {
+    return nm * nmUnit + ex * exUnit + vg * vgUnit + g * gUnit;
+  }
+
+  function readPaidGradeRow(tr) {
+    const qty = parseInt(tr.dataset.qty, 10) || 0;
+    const locked = parseFloat(tr.dataset.ckAdj);
+    const base = Number.isFinite(locked) && locked >= 0 ? locked : 0;
+    const nm = parseInt(tr.querySelector(".op-nm")?.value, 10) || 0;
+    const ex = parseInt(tr.querySelector(".op-ex")?.value, 10) || 0;
+    const vg = parseInt(tr.querySelector(".op-vg")?.value, 10) || 0;
+    const g = parseInt(tr.querySelector(".op-g")?.value, 10) || 0;
+    const nmUnit = parseMoneyInput(tr.querySelector(".op-nm-unit"), base * CK_GRADE_MULT.nm);
+    const exUnit = parseMoneyInput(tr.querySelector(".op-ex-unit"), base * CK_GRADE_MULT.ex);
+    const vgUnit = parseMoneyInput(tr.querySelector(".op-vg-unit"), base * CK_GRADE_MULT.vg);
+    const gUnit = parseMoneyInput(tr.querySelector(".op-g-unit"), base * CK_GRADE_MULT.g);
+    return {
+      fulfillment_id: parseInt(tr.dataset.fulfillmentId, 10),
+      qty,
+      ckAdj: nmUnit,
+      nm,
+      ex,
+      vg,
+      g,
+      nmUnit,
+      exUnit,
+      vgUnit,
+      gUnit,
+      sum: nm + ex + vg + g,
+      paid: linePaidFromUnits(nm, ex, vg, g, nmUnit, exUnit, vgUnit, gUnit),
+    };
+  }
+
+  function syncPaidGradesFromLower(tr, changedEl) {
+    /** When EX/VG/G change, NM becomes the residual so the line still sums to qty. */
+    const qty = parseInt(tr.dataset.qty, 10) || 0;
+    const nmEl = tr.querySelector(".op-nm");
+    const exEl = tr.querySelector(".op-ex");
+    const vgEl = tr.querySelector(".op-vg");
+    const gEl = tr.querySelector(".op-g");
+    if (!nmEl || !exEl || !vgEl || !gEl) return;
+
+    let ex = Math.max(0, parseInt(exEl.value, 10) || 0);
+    let vg = Math.max(0, parseInt(vgEl.value, 10) || 0);
+    let g = Math.max(0, parseInt(gEl.value, 10) || 0);
+
+    const changed = changedEl?.classList;
+    if (changed?.contains("op-ex")) {
+      ex = Math.min(ex, Math.max(0, qty - vg - g));
+      exEl.value = String(ex);
+    } else if (changed?.contains("op-vg")) {
+      vg = Math.min(vg, Math.max(0, qty - ex - g));
+      vgEl.value = String(vg);
+    } else if (changed?.contains("op-g")) {
+      g = Math.min(g, Math.max(0, qty - ex - vg));
+      gEl.value = String(g);
+    } else {
+      exEl.value = String(ex);
+      vgEl.value = String(vg);
+      gEl.value = String(g);
+    }
+
+    nmEl.value = String(Math.max(0, qty - ex - vg - g));
+  }
+
+  function updateOrderPaidSummary() {
+    if (!els.orderPaidBody || !els.orderPaidSummary) return;
+    const rows = [...els.orderPaidBody.querySelectorAll("tr[data-fulfillment-id]")];
+    let expected = 0;
+    let graded = 0;
+    let ok = true;
+    rows.forEach((tr) => {
+      const r = readPaidGradeRow(tr);
+      expected += r.qty * r.nmUnit;
+      graded += r.paid;
+      const paidCell = tr.querySelector(".op-paid");
+      if (paidCell) paidCell.textContent = fmtUsd(r.paid);
+      tr.classList.toggle("is-invalid", r.sum !== r.qty);
+      if (r.sum !== r.qty) ok = false;
+    });
+    const delta = graded - expected;
+    const deltaLabel =
+      Math.abs(delta) < 0.005 ? "even" : `${delta > 0 ? "+" : ""}${fmtUsd(delta)} vs all-NM`;
+    els.orderPaidSummary.textContent = `All-NM ${fmtUsd(expected)} · Graded paid ${fmtUsd(graded)} · ${deltaLabel}`;
+    if (els.orderPaidSave) els.orderPaidSave.disabled = !ok || rows.length === 0;
+  }
+
+  function openOrderPaidModal(orderId) {
+    const order = ordersById.get(orderId);
+    if (!order || !els.orderPaidModal) return;
+    payingOrderId = orderId;
+    if (els.orderPaidTitle) els.orderPaidTitle.textContent = `Mark paid — CK ${orderId}`;
+    const lines = order.lines || [];
+    if (els.orderPaidBody) {
+      els.orderPaidBody.innerHTML = lines
+        .map((l) => {
+          const ck = l.ck_adj != null ? Number(l.ck_adj) : 0;
+          const qty = Number(l.qty) || 0;
+          const nmU = (ck * CK_GRADE_MULT.nm).toFixed(2);
+          const exU = (ck * CK_GRADE_MULT.ex).toFixed(2);
+          const vgU = (ck * CK_GRADE_MULT.vg).toFixed(2);
+          const gU = (ck * CK_GRADE_MULT.g).toFixed(2);
+          return `<tr data-fulfillment-id="${l.fulfillment_id}" data-qty="${qty}" data-ck-adj="${ck}">
+            <td>${escapeHtml(l.name)}</td>
+            <td class="num">${qty}</td>
+            <td class="num"><input type="number" class="op-nm" min="0" step="1" value="${qty}" aria-label="NM qty for ${escapeHtml(l.name)}" /></td>
+            <td class="num"><input type="number" class="op-nm-unit" min="0" step="0.01" value="${nmU}" aria-label="NM unit $ for ${escapeHtml(l.name)}" /></td>
+            <td class="num"><input type="number" class="op-ex" min="0" step="1" value="0" aria-label="EX qty for ${escapeHtml(l.name)}" /></td>
+            <td class="num"><input type="number" class="op-ex-unit" min="0" step="0.01" value="${exU}" aria-label="EX unit $ for ${escapeHtml(l.name)}" /></td>
+            <td class="num"><input type="number" class="op-vg" min="0" step="1" value="0" aria-label="VG qty for ${escapeHtml(l.name)}" /></td>
+            <td class="num"><input type="number" class="op-vg-unit" min="0" step="0.01" value="${vgU}" aria-label="VG unit $ for ${escapeHtml(l.name)}" /></td>
+            <td class="num"><input type="number" class="op-g" min="0" step="1" value="0" aria-label="G qty for ${escapeHtml(l.name)}" /></td>
+            <td class="num"><input type="number" class="op-g-unit" min="0" step="0.01" value="${gU}" aria-label="G unit $ for ${escapeHtml(l.name)}" /></td>
+            <td class="num op-paid">${fmtUsd(qty * ck)}</td>
+          </tr>`;
+        })
+        .join("");
+    }
+    updateOrderPaidSummary();
+    els.orderPaidModal.showModal();
+  }
+
+  function closeOrderPaidModal() {
+    payingOrderId = null;
+    els.orderPaidModal?.close();
+  }
+
+  async function submitOrderPaid() {
+    if (!payingOrderId || !els.orderPaidBody) return;
+    const rows = [...els.orderPaidBody.querySelectorAll("tr[data-fulfillment-id]")].map(readPaidGradeRow);
+    for (const r of rows) {
+      if (r.sum !== r.qty) {
+        throw new Error(`Each card's NM+EX+VG+G must equal its qty (${r.qty}).`);
+      }
+    }
+    const payload = {
+      ck_order_id: payingOrderId,
+      lines: rows.map((r) => ({
+        fulfillment_id: r.fulfillment_id,
+        nm: r.nm,
+        ex: r.ex,
+        vg: r.vg,
+        g: r.g,
+        nm_unit: Math.round(r.nmUnit * 100) / 100,
+        ex_unit: Math.round(r.exUnit * 100) / 100,
+        vg_unit: Math.round(r.vgUnit * 100) / 100,
+        g_unit: Math.round(r.gUnit * 100) / 100,
+        ck_adj: Math.round(r.nmUnit * 100) / 100,
+      })),
+    };
+    const res = await fetch("/api/inventory/orders/mark-paid", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      let msg = await res.text();
+      try {
+        const parsed = JSON.parse(msg);
+        if (parsed.detail) msg = typeof parsed.detail === "string" ? parsed.detail : JSON.stringify(parsed.detail);
+      } catch {
+        /* keep */
+      }
+      throw new Error(msg);
+    }
+    return res.json();
+  }
+
+  async function loadOrders() {
+    setStatusLoading(els.statusMsg, true, "Loading CK orders…");
+    try {
+      const params = new URLSearchParams();
+      if (els.q?.value.trim()) params.set("q", els.q.value.trim());
+      const statusFilter = els.orderStatusFilter?.value || "";
+      if (statusFilter) params.set("status", statusFilter);
+      const res = await fetch(`/api/inventory/orders?${params}`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      ordersList = data.results || [];
+      renderOrdersTable(ordersList);
+      els.tableWrap.hidden = ordersList.length === 0;
+      els.emptyState.hidden = ordersList.length !== 0;
+      const statusLabel = statusFilter
+        ? ORDER_STATUS_LABELS[statusFilter] || statusFilter
+        : null;
+      els.resultSummary.textContent = statusLabel
+        ? `${(data.total || 0).toLocaleString()} CK order${data.total === 1 ? "" : "s"} · ${statusLabel}`
+        : `${(data.total || 0).toLocaleString()} CK order${data.total === 1 ? "" : "s"}`;
+      els.meta.textContent = ordersList.length
+        ? `${ordersList.length} CK orders · change status to update every line on that order`
+        : statusLabel
+          ? `No CK orders in ${statusLabel}`
+          : "Card Kingdom sell orders by order number";
+      setStatusLoading(els.statusMsg, false);
+    } catch (err) {
+      els.statusMsg.textContent = err.message || String(err);
+      els.statusMsg.className = "opp-status error";
+    }
+  }
+
+  function sortOrdersByPlaced(rows) {
+    if (!ordersPlacedSortDir) return rows;
+    const dir = ordersPlacedSortDir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      if (ta !== tb) return (ta - tb) * dir;
+      return String(a.ck_order_id || "").localeCompare(String(b.ck_order_id || ""));
+    });
+  }
+
+  function updateOrdersPlacedSortHeader() {
+    const th = els.ordersTable?.querySelector("th[data-sort-col='placed']");
+    if (!th) return;
+    th.classList.remove("sort-asc", "sort-desc");
+    if (ordersPlacedSortDir === "asc") {
+      th.classList.add("sort-asc");
+      th.dataset.sortDir = "asc";
+      th.setAttribute("aria-sort", "ascending");
+    } else if (ordersPlacedSortDir === "desc") {
+      th.classList.add("sort-desc");
+      th.dataset.sortDir = "desc";
+      th.setAttribute("aria-sort", "descending");
+    } else {
+      th.dataset.sortDir = "asc";
+      th.setAttribute("aria-sort", "none");
+    }
+  }
+
+  function renderOrdersTable(rows) {
+    const sorted = sortOrdersByPlaced(rows);
+    ordersById = new Map(sorted.map((r) => [r.ck_order_id, r]));
+    if (els.ordersResults) {
+      els.ordersResults.innerHTML = sorted.map(renderOrderRow).join("");
+      animateTableRows(els.ordersResults);
+    }
+    updateOrdersPlacedSortHeader();
+  }
+
+  function toggleOrdersPlacedSort() {
+    // First click → oldest first (overdue ships up); then toggle.
+    if (ordersPlacedSortDir == null) ordersPlacedSortDir = "asc";
+    else if (ordersPlacedSortDir === "asc") ordersPlacedSortDir = "desc";
+    else ordersPlacedSortDir = "asc";
+    renderOrdersTable(ordersList);
+  }
+
+  async function setOrderStatus(ckOrderId, status) {
+    const res = await fetch("/api/inventory/orders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ck_order_id: ckOrderId, status }),
+    });
+    if (!res.ok) {
+      let msg = await res.text();
+      try {
+        const parsed = JSON.parse(msg);
+        if (parsed.detail) msg = typeof parsed.detail === "string" ? parsed.detail : JSON.stringify(parsed.detail);
+      } catch {
+        /* keep */
+      }
+      throw new Error(msg);
+    }
+    return res.json();
+  }
+
   async function markFulfillmentPaid(lotId, fulfillmentId) {
     const paid = prompt("CK paid amount for this line ($)? Leave blank to use CK adj × qty.");
     const payload = { status: "paid" };
@@ -699,6 +1147,24 @@
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await res.text());
+  }
+
+  async function patchFulfillmentPaidAmount(lotId, fulfillmentId, rawValue) {
+    const trimmed = String(rawValue ?? "").trim();
+    let paid_amount = null;
+    if (trimmed !== "") {
+      const amount = parseFloat(trimmed);
+      if (Number.isNaN(amount) || amount < 0) {
+        throw new Error("Paid amount must be a number ≥ 0");
+      }
+      paid_amount = amount;
+    }
+    const res = await fetch(`/api/inventory/${lotId}/fulfillments/${fulfillmentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paid_amount }),
     });
     if (!res.ok) throw new Error(await res.text());
   }
@@ -724,6 +1190,29 @@
     ).join("");
   }
 
+  function conditionSelectValue(row) {
+    const known = [
+      "Near Mint",
+      "Lightly Played",
+      "Moderately Played",
+      "Heavily Played",
+      "Damaged",
+    ];
+    const raw = String(row.condition_raw || "").trim();
+    if (known.includes(raw)) return raw;
+    const display = String(row.condition_display || "").trim();
+    for (const k of known) {
+      if (display === k || display.startsWith(`${k} `) || display.startsWith(`${k}(`)) {
+        return k;
+      }
+    }
+    const hay = `${raw} ${display}`.toLowerCase();
+    for (const k of known) {
+      if (hay.includes(k.toLowerCase())) return k;
+    }
+    return "Near Mint";
+  }
+
   function openEditModal(id) {
     const row = rowsById.get(id);
     if (!row || !els.editModal) return;
@@ -737,7 +1226,7 @@
     els.eQtyOnHand.value = row.qty_on_hand ?? "";
     els.eExpectedCkQty.value = row.expected_ck_qty ?? row.qty_original ?? "";
     els.eCkMax.value = row.ck_max_qty ?? "";
-    els.eCondition.value = row.condition_display || row.condition_raw || "Near Mint";
+    els.eCondition.value = conditionSelectValue(row);
     els.eFinish.value = row.finish || "normal";
     els.eShipping.value = row.shipping_price ?? "";
     els.eCkCash.value = row.ck_cash ?? "";
@@ -975,7 +1464,12 @@
       const res = await fetch(`/api/inventory?${params}`);
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      const lots = (data.results || []).filter((row) => (row.qty_on_hand ?? 0) > 0);
+      const lots = (data.results || []).filter(
+        (row) =>
+          (row.qty_on_hand ?? 0) > 0 &&
+          row.status !== "problem" &&
+          row.status !== "cancelled"
+      );
       lots.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
       if (!lots.length) {
         alert("No lots with stock on hand to fulfill.");
@@ -1076,14 +1570,17 @@
   els.q.addEventListener("input", scheduleLoad);
   els.seller.addEventListener("input", scheduleLoad);
   els.status?.addEventListener("change", load);
+  els.orderStatusFilter?.addEventListener("change", load);
   els.tcgOrderFilter?.addEventListener("change", load);
   els.batchFilter?.addEventListener("change", load);
   els.hasRemaining?.addEventListener("change", load);
   els.unlinkedOnly?.addEventListener("change", load);
 
   els.tabAll?.addEventListener("click", () => switchTab("all"));
+  els.tabOrders?.addEventListener("click", () => switchTab("orders"));
   els.tabInbound?.addEventListener("click", () => switchTab("inbound"));
   els.tabNeedSell?.addEventListener("click", () => switchTab("need_to_sell"));
+  els.tabProblem?.addEventListener("click", () => switchTab("problem"));
   els.tabToPack?.addEventListener("click", () => switchTab("to_pack"));
   els.tabToShip?.addEventListener("click", () => switchTab("to_ship"));
   els.tabAwaiting?.addEventListener("click", () => switchTab("awaiting_payment"));
@@ -1095,6 +1592,7 @@
     const action = btn.dataset.action;
     const lotId = parseInt(btn.dataset.lotId, 10);
     const fulfillmentId = parseInt(btn.dataset.id, 10);
+    const name = btn.dataset.name || "this card";
     try {
       if (action === "mark-packed") {
         await setFulfillmentStatus(lotId, fulfillmentId, "packed");
@@ -1105,6 +1603,27 @@
       } else if (action === "mark-paid") {
         await markFulfillmentPaid(lotId, fulfillmentId);
         showToast("Marked paid");
+      } else if (action === "remove-line") {
+        if (
+          !confirm(
+            `Remove "${name}" from this CK queue?\n\nCopies return to free inventory (Need to Sell / On hand). The inventory lot stays.`
+          )
+        ) {
+          return;
+        }
+        await deleteFulfillment(lotId, fulfillmentId);
+        showToast(`Removed CK line — ${name} back in inventory`);
+      } else if (action === "cancel-buy") {
+        if (
+          !confirm(
+            `Cancel buy for "${name}"?\n\nDeletes the inventory lot and this CK line. Use when the TCG seller canceled your order.`
+          )
+        ) {
+          return;
+        }
+        // Lot delete cascades fulfillments; no need to delete the line first.
+        await deleteLot(lotId);
+        showToast(`Canceled buy — removed ${name}`);
       } else {
         return;
       }
@@ -1133,6 +1652,98 @@
       alert(err.message || String(err));
     }
   });
+
+  els.ordersResults?.addEventListener("change", async (e) => {
+    const sel = e.target.closest(".inv-order-status");
+    if (!sel) return;
+    const orderId = sel.dataset.order;
+    const status = sel.value;
+    const prev = sel.dataset.prev || sel.value;
+    if (status === "paid") {
+      sel.value = prev;
+      openOrderPaidModal(orderId);
+      return;
+    }
+    sel.dataset.prev = status;
+    try {
+      const result = await setOrderStatus(orderId, status);
+      const label = ORDER_STATUS_LABELS[status] || status;
+      const n = result.updated_fulfillments || 0;
+      showToast(n ? `CK order → ${label} (${n} line${n === 1 ? "" : "s"})` : `Order already ${label}`);
+      await refreshSummaries();
+      load();
+    } catch (err) {
+      sel.value = prev;
+      alert(err.message || String(err));
+    }
+  });
+
+  els.ordersTable?.querySelector("th[data-sort-col='placed']")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    toggleOrdersPlacedSort();
+  });
+  els.ordersTable?.querySelector("th[data-sort-col='placed']")?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    toggleOrdersPlacedSort();
+  });
+
+  els.ordersResults?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".inv-order-paid-btn");
+    if (!btn) return;
+    openOrderPaidModal(btn.dataset.order);
+  });
+
+  els.orderPaidBody?.addEventListener("input", (e) => {
+    const input = e.target.closest("input");
+    if (!input) return;
+    const tr = input.closest("tr[data-fulfillment-id]");
+    if (tr && (input.classList.contains("op-ex") || input.classList.contains("op-vg") || input.classList.contains("op-g"))) {
+      syncPaidGradesFromLower(tr, input);
+    }
+    updateOrderPaidSummary();
+  });
+
+  els.orderPaidClose?.addEventListener("click", closeOrderPaidModal);
+  els.orderPaidCancel?.addEventListener("click", closeOrderPaidModal);
+  els.orderPaidForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    setButtonLoading(els.orderPaidSave, true);
+    try {
+      const result = await submitOrderPaid();
+      showToast(`Marked paid · ${fmtUsd(result.order_paid)}`);
+      closeOrderPaidModal();
+      await refreshSummaries();
+      load();
+    } catch (err) {
+      alert(err.message || String(err));
+    } finally {
+      setButtonLoading(els.orderPaidSave, false);
+    }
+  });
+
+  els.fulfillResults?.addEventListener(
+    "blur",
+    async (e) => {
+      const input = e.target.closest(".inv-paid-amount");
+      if (!input) return;
+      const lotId = parseInt(input.dataset.lotId, 10);
+      const fulfillmentId = parseInt(input.dataset.id, 10);
+      const prev = fulfillRowsById.get(fulfillmentId);
+      const prevVal =
+        prev?.paid_amount != null ? String(prev.paid_amount) : String(prev?.fulfillment_revenue ?? "");
+      try {
+        await patchFulfillmentPaidAmount(lotId, fulfillmentId, input.value);
+        showToast("Updated CK paid amount");
+        await refreshSummaries();
+        load();
+      } catch (err) {
+        input.value = prevVal;
+        alert(err.message || String(err));
+      }
+    },
+    true
+  );
 
   els.selectAll?.addEventListener("change", () => {
     const boxes = els.results.querySelectorAll(".inv-row-check");

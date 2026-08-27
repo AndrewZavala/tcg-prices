@@ -369,20 +369,58 @@ def apply_sku_tcgplayer_resolution(
         & ~scryfall_id_text.isin(_invalid_sid)
         & (sku_scryfall_id_text != scryfall_id_text)
     )
+    # Edition set attached from CK set name (e.g. "Final Fantasy Through the Ages" → fca).
+    edition_set = (
+        merged["set_code"].fillna("").astype(str).str.lower()
+        if "set_code" in merged.columns
+        else pd.Series("", index=merged.index)
+    )
+    edition_agrees_with_sku = edition_set.ne("") & (edition_set == sku_set)
+    ck_id_set_wrong = id_set.ne("") & (id_set != sku_set)
+    # Same collector # in different sets: CK scryfall_id points at FIN Zack Fair #45
+    # while SKU FCA-0045 is Farseek. Do NOT blanket-override whenever id_set != sku_set
+    # (that previously broke Arcane Signet). Require edition + SKU set agreement.
+    cross_set_wrong_identity = (
+        scryfall_id_mismatch
+        & edition_agrees_with_sku
+        & ck_id_set_wrong
+    )
     override = (
         merged["sku_pid"].notna()
         & (merged["sku_pid"] != current_pid)
         & (
             ~has_ck_identity
-            | ((id_set == sku_set) & numeric_collector_clash)
-            | (scryfall_id_mismatch & numeric_collector_clash)
+            | ((id_set == sku_set) & numeric_collector_clash)  # same-set collector clash (Nissa)
+            | (scryfall_id_mismatch & numeric_collector_clash)  # Chandra SDCC 132 vs 134
+            | cross_set_wrong_identity  # Farseek FCA #45 vs Zack Fair FIN #45
         )
     )
     if not override.any():
         return out
 
-    out.loc[override, "tcgplayer_id"] = merged.loc[override, "sku_tcgplayer_id"].values
-    out.loc[override, "scryfall_id"] = merged.loc[override, "sku_scryfall_id"].values
+    # Match existing column dtypes (CSV often float64 for tcgplayer_id; StringDtype in tests).
+    pids = merged.loc[override, "sku_tcgplayer_id"].map(_clean_pid)
+    if pd.api.types.is_numeric_dtype(out["tcgplayer_id"].dtype):
+        out.loc[override, "tcgplayer_id"] = pd.to_numeric(pids, errors="coerce").values
+    else:
+        out.loc[override, "tcgplayer_id"] = pids.astype(object).values
+
+    sids = merged.loc[override, "sku_scryfall_id"].map(
+        lambda v: str(v).strip() if pd.notna(v) else pd.NA
+    )
+    if pd.api.types.is_string_dtype(out["scryfall_id"].dtype) and not pd.api.types.is_object_dtype(
+        out["scryfall_id"].dtype
+    ):
+        out.loc[override, "scryfall_id"] = sids.astype("string").values
+    else:
+        out.loc[override, "scryfall_id"] = sids.astype(object).values
+
     if "set_code" in out.columns:
-        out.loc[override, "set_code"] = merged.loc[override, "sku_set_code"].values
+        codes = merged.loc[override, "sku_set_code"].astype(str).str.lower()
+        if pd.api.types.is_string_dtype(out["set_code"].dtype) and not pd.api.types.is_object_dtype(
+            out["set_code"].dtype
+        ):
+            out.loc[override, "set_code"] = codes.astype("string").values
+        else:
+            out.loc[override, "set_code"] = codes.astype(object).values
     return out

@@ -7,9 +7,8 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import pandas as pd
 
-# When TCG supply exceeds CK's per-order buy cap, estimate profit across a few CK orders.
-# CK only reliably accepts max qty once/day, so keep this conservative (default 2×).
-CK_MAX_QTY_ORDER_MULTIPLIER = int(os.environ.get("CK_MAX_QTY_ORDER_MULTIPLIER", "2"))
+# CK only reliably accepts max qty once/day; profit qty = min(TCG qty, 1× CK max).
+CK_MAX_QTY_ORDER_MULTIPLIER = int(os.environ.get("CK_MAX_QTY_ORDER_MULTIPLIER", "1"))
 
 # CK pays a fraction of listed NM cash for lower conditions (Cardbitrage parity).
 # TCGplayer grade → CK grade: NM=NM, LP=EX, MP=VG, HP=G, Damaged=no buy.
@@ -285,9 +284,8 @@ def aggregate_best_listings(listings: pd.DataFrame) -> pd.DataFrame:
 def effective_profit_qty(tcg_qty: float, ck_max_qty: float | None) -> float:
     """Max copies we can profitably flip given TCG supply and CK per-order limits.
 
-    CK max qty is the per-order bottleneck. When TCG has more than CK will accept in
-    one order, cap at CK_MAX_QTY_ORDER_MULTIPLIER × ck_max_qty (separate CK orders).
-    When TCG supply is at or below CK's cap, TCG quantity is the limit.
+    Cap at CK_MAX_QTY_ORDER_MULTIPLIER × ck_max_qty (default 1× = one CK order).
+    When TCG supply is at or below that cap, TCG quantity is the limit.
     """
     qty = max(float(tcg_qty or 0), 0.0)
     if qty <= 0:

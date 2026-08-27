@@ -37,6 +37,7 @@
     revenue: "#c9852c",
     profit: "#2f6b4f",
     free: "#5c6b7a",
+    problem: "#a65d4a",
     planned: "#a89070",
     packed: "#8b7355",
     sent: "#c9852c",
@@ -304,6 +305,7 @@
       );
       upsertDoughnut(openStageChartRef, "chartOpenStage", data.by_stage || [], {
         free: "Free stock",
+        problem: "Problem / hold",
         planned: "Need to pack",
         packed: "Packed",
         sent: "Sent / awaiting",

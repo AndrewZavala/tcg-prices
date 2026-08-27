@@ -8,8 +8,10 @@ node_modules/
 
 # Generated / large data (rebuilt on VPS via pipeline)
 helper/scryfall_default_cards.json
+helper/scryfall_default_cards.jsonl.gz
 helper/scryfall_cards_lookup.csv
 helper/tcgcsv_prices_lookup.csv
+helper/tcgcsv_sealed_products_lookup.csv
 helper/tcg_listings_lookup.csv
 /scryfall_cards_lookup.csv
 /scryfall_set_lookup.csv
@@ -31,6 +33,7 @@ Buylist/*.csv
 
 # Local inventory / reports (personal)
 Stacks/
+inventory.csv
 data/stack_ck_match_report.csv
 
 # Stray binaries

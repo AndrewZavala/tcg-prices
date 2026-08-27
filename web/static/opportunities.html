@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0" />
   <title>Opportunities — Manifest Bread</title>
   <meta name="description" content="CK buylist arbitrage opportunities — buy on TCGplayer, sell to Card Kingdom." />
-  <link rel="stylesheet" href="/static/app.css?v=2026070902" />
+  <link rel="stylesheet" href="/static/app.css?v=2026072101" />
   <script src="/static/theme-init.js?v=2026070902"></script>
 </head>
 <body class="opp-page">
@@ -24,6 +24,7 @@
     <a href="/opportunities">Opportunities</a>
     <a href="/inventory">Inventory</a>
     <a href="/returns">CK returns</a>
+    <a href="/sell-list">Sell list</a>
     <a href="/match">Match collection</a>
     <a href="/charts">Price history</a>
     <a href="/data">Data</a>
@@ -34,6 +35,7 @@
       <div class="opp-hero-text">
         <h1>Opportunities</h1>
         <p class="opp-sub" id="meta">Loading snapshot…</p>
+        <p class="opp-sub opp-sub-hint">Order qty / profit use min(TCG available, CK max qty) — one CK order.</p>
       </div>
       <dl class="opp-kpis" id="kpis" hidden>
         <div>
@@ -53,6 +55,7 @@
 
     <nav class="opp-tabs" role="tablist" aria-label="Opportunity views">
       <button type="button" class="opp-tab is-active" id="tabCards" role="tab" aria-selected="true" aria-controls="panelCards" data-tab="cards">Cards</button>
+      <button type="button" class="opp-tab" id="tabSealed" role="tab" aria-selected="false" aria-controls="panelSealed" data-tab="sealed">Sealed</button>
       <button type="button" class="opp-tab" id="tabSellers" role="tab" aria-selected="false" aria-controls="panelSellers" data-tab="sellers">Seller batches</button>
     </nav>
 
@@ -116,7 +119,7 @@
               <th>Card</th>
               <th class="num">CK</th>
               <th class="num" title="Per-copy buy cost (listing + share of shipping)">Landed</th>
-              <th class="num">Qty</th>
+              <th class="num" title="min(TCG available, CK max qty) — one CK order">Qty</th>
               <th class="num opp-sortable sort-desc" data-col="4" data-type="num" data-sort-col="profit" data-sort-dir="desc" scope="col" tabindex="0" aria-sort="descending">Profit</th>
               <th class="num opp-sortable" data-col="5" data-type="num" data-sort-col="roi" data-sort-dir="desc" scope="col" tabindex="0" aria-sort="none">ROI</th>
               <th><span class="sr-only">Links</span></th>
@@ -133,11 +136,66 @@
     </section>
     </div>
 
+    <div id="panelSealed" class="opp-tab-panel" role="tabpanel" aria-labelledby="tabSealed" hidden>
+      <p class="opp-seller-note">
+        CK sealed buylist vs TCGCSV market/low. Shipping is a flat estimate (default $15) — verify live listings before buying.
+        Name match joins CK → TCG product IDs (no Scryfall).
+      </p>
+      <section class="opp-toolbar" aria-label="Sealed search and filters">
+        <div class="opp-toolbar-primary">
+          <label class="opp-search">
+            <span class="sr-only">Search sealed product</span>
+            <input type="search" id="sealedQ" placeholder="Search sealed…" autocomplete="off" />
+          </label>
+          <select id="sealedSort" class="opp-sort" title="Sort order" aria-label="Sealed sort order">
+            <option value="profit_desc">Profit ↓</option>
+            <option value="profit_asc">Profit ↑</option>
+            <option value="roi_desc">ROI ↓</option>
+            <option value="roi_asc">ROI ↑</option>
+            <option value="ck_desc">CK price ↓</option>
+            <option value="name">Name A–Z</option>
+          </select>
+          <input type="number" id="sealed_min_profit" placeholder="Min profit $" step="1" min="0" class="opp-inline-filter" />
+        </div>
+      </section>
+      <section class="opp-results" aria-live="polite">
+        <div class="opp-results-bar">
+          <span id="sealedSummary" class="opp-results-summary">—</span>
+          <div class="opp-pager">
+            <button type="button" id="sealedPrevBtn" class="secondary opp-btn-ghost" aria-label="Previous sealed page">←</button>
+            <span id="sealedPageInfo" class="opp-page-info">—</span>
+            <button type="button" id="sealedNextBtn" class="secondary opp-btn-ghost" aria-label="Next sealed page">→</button>
+          </div>
+        </div>
+        <p id="sealedStatus" class="opp-status"></p>
+        <div class="opp-table-wrap" id="sealedTableWrap">
+          <table class="opp-table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th class="num">CK buy</th>
+                <th class="num" title="TCGCSV low + shipping estimate">Landed est.</th>
+                <th class="num" title="CK max qty buying">CK max</th>
+                <th class="num">Profit / 1</th>
+                <th class="num">ROI</th>
+                <th class="num" title="Name match confidence">Match</th>
+                <th><span class="sr-only">Links</span></th>
+              </tr>
+            </thead>
+            <tbody id="sealedResults"></tbody>
+          </table>
+        </div>
+        <div class="opp-empty" id="sealedEmpty" hidden>
+          <p>No sealed opportunities yet — run <code>pipeline/run_sealed_pipeline.ps1</code>.</p>
+        </div>
+      </section>
+    </div>
+
     <div id="panelSellers" class="opp-tab-panel" role="tabpanel" aria-labelledby="tabSellers" hidden>
       <h2 class="opp-seller-title">Seller report — top 50 by max order profit</h2>
       <p class="opp-seller-note">
         Groups positive opportunity rows by TCGplayer seller. TCG links in buy lists include seller, condition, and printing filters.
-        Max profit assumes buying each listed opportunity from that seller with shipping charged once.
+        Max profit assumes buying each listed opportunity from that seller (order qty ≤ CK max) with shipping charged once.
       </p>
       <section class="opp-toolbar opp-seller-toolbar" aria-label="Seller search">
         <label class="opp-search">
@@ -177,10 +235,10 @@
     </div>
 
     <footer class="site-footer site-footer-compact">
-      <p>Updated daily from CK buylist + live TCG listings. <kbd>/</kbd> focuses search.</p>
+      <p>Cards: CK singles + live TCG listings. Sealed: CK sealed buylist + TCGCSV. <kbd>/</kbd> focuses search.</p>
     </footer>
   </main>
   <script src="/static/app.js?v=2026070902"></script>
-  <script src="/static/opportunities.js?v=2026070902"></script>
+  <script src="/static/opportunities.js?v=2026073001"></script>
 </body>
 </html>

@@ -60,8 +60,20 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d
 | Page | URL | Description |
 |------|-----|-------------|
 | Buylist search | `/` | Browse current CK buylist |
-| **Match collection** | `/match` | Upload CSV (Manabox / Stacks / etc.) → CK buylist match ([similar to BulkCaster CK tool](https://mtgbulkcaster.com/)) |
-| **Price history** | `/charts` | Line chart: CK cash/credit vs TCGplayer market/low/mid (tcgcsv) over time |
+| Opportunities | `/opportunities` | TCG→CK arbitrage candidates |
+| Inventory | `/inventory` | TCG flip lots + CK fulfillments |
+| CK returns | `/returns` | Flip P&L / open book |
+| Sell list | `/sell-list` | Stacks collection × current CK buylist (by batch); export CK CSV + mark sold |
+| Match collection | `/match` | One-off CSV upload match (not saved) |
+| Price history | `/charts` | Line chart: CK cash/credit vs TCGplayer market/low/mid (tcgcsv) over time |
+
+Import Stacks `Batch*_export.csv` via Sell list → **All cards** → Import, or:
+
+```powershell
+docker compose run --rm pipeline python3 /app/pipeline/import_stacks.py
+```
+
+(Requires a `Stacks/` folder under the repo root.)
 
 Price history needs **multiple daily pipeline runs** — each run stores a dated snapshot in Postgres.
 
@@ -142,6 +154,83 @@ See [.env.example](.env.example). Key values:
 ```
 
 Install deps: `pip install -r requirements.txt`
+
+## Star Piece (Pokémon catalog)
+
+Separate from the MTG buylist pipeline and from **Manifest Bread** as a product.
+Ingests TCGdex card data into Postgres and enriches for the Star Piece UI.
+
+**Local Star Piece** (own Postgres on `:5433` + app on `:8001`):
+
+```bash
+docker compose up -d star-piece-db star-piece
+```
+
+One-shot copy of existing catalog from Manifest Bread DB:
+
+```powershell
+.\pipeline\migrate_pokemon_to_star_piece.ps1
+```
+
+See [docs/STAR_PIECE.md](docs/STAR_PIECE.md).
+
+### Pipeline flow
+
+| Step | Script | Source |
+|------|--------|--------|
+| Ingest | `refresh_tcgdex.py` | [TCGdex](https://tcgdex.dev) |
+| Subtypes | `enrich_pokemon_subtypes.py` | [pokemontcg.io](https://dev.pokemontcg.io) (free API key) |
+| Species | `build_pokemon_species.py` | [PokeAPI](https://pokeapi.co) (generation, legendary/mythical) |
+| Oracles | `build_pokemon_oracle.py` | local grouping |
+
+**One command** (ingest + enrich):
+
+```powershell
+.\pipeline\run_pokemon_pipeline.ps1 -Series bw
+.\pipeline\run_pokemon_pipeline.ps1 -Series me   # Mega Evolution → Pitch Black
+```
+
+Or a single set with enrich chained:
+
+```powershell
+docker compose run --rm pipeline python pipeline/refresh_tcgdex.py --set sv1 --enrich
+```
+
+Re-enrich without re-fetching TCGdex (e.g. after adding `POKEMONTCG_API_KEY`):
+
+```powershell
+.\pipeline\run_pokemon_pipeline.ps1 -SkipIngest
+.\pipeline\run_pokemon_pipeline.ps1 -SkipIngest -Set sv1   # subtypes for one set only
+```
+
+Species metadata uses `--missing-only` by default (fast when adding sets). Full PokeAPI refresh:
+
+```powershell
+docker compose run --rm pipeline python pipeline/build_pokemon_species.py --skip-migration
+```
+
+Cursor command: **run-pokemon-pipeline** (`.cursor/commands/run-pokemon-pipeline.md`).
+
+### Search syntax (Star Piece UI → Advanced → Search syntax)
+
+pkmncards-style filters in the search box:
+
+| Syntax | Example | Meaning |
+|--------|---------|---------|
+| `t:` | `t:trainer` | Category: Pokémon, Trainer, or Energy |
+| `t:` | `t:supporter` | Trainer subtype (also `t:item`, `t:stadium`, `t:tool`) |
+| `is:` | `is:team-plasma` | Pokémon subtype tag |
+| `is:` | `is:gen5`, `is:legendary` | Generation or legendary/mythical |
+| `is:` | `is:starter`, `is:baby`, `is:paradox` | Species groups (`eeveelution`, `fossil`, `ultra-beast`, `pseudo-legendary`, `regional`) |
+| `has:` | `has:ability` | Cards with an Ability |
+| `e:` / `type:` | `e:grass` | Pokémon energy type |
+| `set:` / `series:` | `set:me01`, `series:me` | Set or TCG block |
+| `r:` | `r:ultra` | Rarity |
+| `dex:` | `dex:591` | National Dex # |
+| `stage:` | `stage:basic` | Evolution stage |
+| `prize:` | `prize:2` | KO prize count (`1` / `2` / `3`; Radiant = 1, Mega Evolution Mega ex = 3) |
+
+Combine with names: `t:trainer t:supporter Iono`. Advanced panel filters use the same fields.
 
 ## Credit price note
 

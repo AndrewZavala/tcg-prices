@@ -3,7 +3,10 @@
   const limit = 50;
   let offset = 0;
   let lastTotal = 0;
+  let sealedOffset = 0;
+  let sealedTotal = 0;
   let searchTimer = null;
+  let sealedTimer = null;
   let metaRowCount = 0;
   let activeTab = "cards";
   let sellerData = [];
@@ -16,10 +19,23 @@
     kpiRoi: document.getElementById("kpiRoi"),
     kpiCount: document.getElementById("kpiCount"),
     tabCards: document.getElementById("tabCards"),
+    tabSealed: document.getElementById("tabSealed"),
     tabSellers: document.getElementById("tabSellers"),
     panelCards: document.getElementById("panelCards"),
+    panelSealed: document.getElementById("panelSealed"),
     panelSellers: document.getElementById("panelSellers"),
     q: document.getElementById("q"),
+    sealedQ: document.getElementById("sealedQ"),
+    sealedSort: document.getElementById("sealedSort"),
+    sealedMinProfit: document.getElementById("sealed_min_profit"),
+    sealedSummary: document.getElementById("sealedSummary"),
+    sealedPageInfo: document.getElementById("sealedPageInfo"),
+    sealedPrevBtn: document.getElementById("sealedPrevBtn"),
+    sealedNextBtn: document.getElementById("sealedNextBtn"),
+    sealedStatus: document.getElementById("sealedStatus"),
+    sealedResults: document.getElementById("sealedResults"),
+    sealedTableWrap: document.getElementById("sealedTableWrap"),
+    sealedEmpty: document.getElementById("sealedEmpty"),
     seller: document.getElementById("seller"),
     minProfit: document.getElementById("min_profit"),
     minRoi: document.getElementById("min_roi"),
@@ -604,20 +620,109 @@
 
   function switchTab(tab) {
     activeTab = tab;
-    const isCards = tab === "cards";
-    els.tabCards.classList.toggle("is-active", isCards);
-    els.tabSellers.classList.toggle("is-active", !isCards);
-    els.tabCards.setAttribute("aria-selected", String(isCards));
-    els.tabSellers.setAttribute("aria-selected", String(!isCards));
-    els.panelCards.hidden = !isCards;
-    els.panelSellers.hidden = isCards;
-    if (!isCards) {
+    const tabs = [
+      { key: "cards", btn: els.tabCards, panel: els.panelCards },
+      { key: "sealed", btn: els.tabSealed, panel: els.panelSealed },
+      { key: "sellers", btn: els.tabSellers, panel: els.panelSellers },
+    ];
+    tabs.forEach(({ key, btn, panel }) => {
+      if (!btn || !panel) return;
+      const on = key === tab;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-selected", String(on));
+      panel.hidden = !on;
+    });
+    if (tab === "sellers") {
       if (!sellerData.length) loadSellers();
       else filterSellerRows();
+      if (els.sellerQ) els.sellerQ.focus();
+    } else if (tab === "sealed") {
+      searchSealed();
+      if (els.sealedQ) els.sealedQ.focus();
+    } else if (els.q) {
+      els.q.focus();
     }
     updateSelectionUi();
-    if (isCards) els.q.focus();
-    else els.sellerQ.focus();
+  }
+
+  function buildSealedParams() {
+    const p = new URLSearchParams();
+    p.set("limit", String(limit));
+    p.set("offset", String(sealedOffset));
+    p.set("sort", els.sealedSort?.value || "profit_desc");
+    if (els.sealedQ?.value.trim()) p.set("q", els.sealedQ.value.trim());
+    if (els.sealedMinProfit?.value !== "") p.set("min_profit", els.sealedMinProfit.value);
+    return p;
+  }
+
+  function renderSealedRow(row) {
+    const profit = row.order_profit;
+    const profitClass = (profit ?? 0) >= 0 ? "is-pos" : "is-neg";
+    const roiClass = (row.order_roi ?? 0) >= 0 ? "is-pos" : "is-neg";
+    const tcgUrl = row.tcg_url ? escapeHtml(row.tcg_url) : "";
+    const ckUrl = row.ck_url ? escapeHtml(row.ck_url) : "";
+    const matchPct =
+      row.match_score != null ? `${Math.round(Number(row.match_score) * 100)}%` : "—";
+    const meta = [row.set_name, row.tcg_name && row.tcg_name !== row.name ? `TCG: ${row.tcg_name}` : ""]
+      .map((p) => String(p || "").trim())
+      .filter(Boolean)
+      .join(" · ");
+    return `
+      <tr class="opp-row" data-tcg-url="${tcgUrl}" tabindex="0">
+        <td class="opp-card-cell">
+          <div class="opp-card-name">${escapeHtml(row.name)}</div>
+          <div class="opp-card-meta">${escapeHtml(meta || "—")}</div>
+          <div class="opp-card-seller">${escapeHtml(row.seller || "")}</div>
+        </td>
+        <td class="num price-cash">${fmtUsd(row.ck_cash)}</td>
+        <td class="num price-tcg" title="${escapeHtml(landedPriceTitle(row))}">${fmtUsd(landedPrice(row))}</td>
+        <td class="num">${row.ck_max_qty ?? "—"}</td>
+        <td class="num opp-profit ${profitClass}">${fmtUsd(profit)}</td>
+        <td class="num ${roiClass}">${fmtPct(row.order_roi)}</td>
+        <td class="num">${escapeHtml(matchPct)}</td>
+        <td class="opp-actions">
+          ${ckUrl ? `<a class="opp-link" href="${ckUrl}" target="_blank" rel="noopener" title="Card Kingdom">CK</a>` : ""}
+          ${tcgUrl ? `<a class="opp-link opp-link-primary" href="${tcgUrl}" target="_blank" rel="noopener" title="TCGplayer">TCG</a>` : ""}
+        </td>
+      </tr>`;
+  }
+
+  async function searchSealed() {
+    if (!els.sealedResults) return;
+    setStatusLoading(els.sealedStatus, true, "Loading sealed…");
+    try {
+      const res = await fetch(`/api/sealed-opportunities?${buildSealedParams()}`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      sealedTotal = data.total || 0;
+      const rows = data.results || [];
+      els.sealedResults.innerHTML = rows.map(renderSealedRow).join("");
+      animateTableRows(els.sealedResults);
+      els.sealedTableWrap.hidden = rows.length === 0;
+      els.sealedEmpty.hidden = rows.length !== 0;
+      const page = Math.floor(sealedOffset / limit) + 1;
+      const pages = Math.max(1, Math.ceil(sealedTotal / limit));
+      els.sealedPageInfo.textContent = `${page} / ${pages}`;
+      els.sealedPrevBtn.disabled = sealedOffset <= 0;
+      els.sealedNextBtn.disabled = sealedOffset + limit >= sealedTotal;
+      els.sealedSummary.textContent =
+        sealedTotal === 0
+          ? "No sealed opportunities"
+          : `${sealedTotal.toLocaleString()} sealed opportunit${sealedTotal === 1 ? "y" : "ies"}`;
+      if (data.snapshot_date && activeTab === "sealed") {
+        els.meta.textContent = `Sealed snapshot ${data.snapshot_date}`;
+      }
+      setStatusLoading(els.sealedStatus, false);
+    } catch (err) {
+      els.sealedStatus.textContent = err.message || String(err);
+      els.sealedStatus.className = "opp-status error";
+    }
+  }
+
+  function scheduleSealedSearch(resetOffset = true) {
+    if (resetOffset) sealedOffset = 0;
+    clearTimeout(sealedTimer);
+    sealedTimer = setTimeout(searchSealed, 280);
   }
 
   els.q.addEventListener("input", () => scheduleSearch(true));
@@ -653,7 +758,23 @@
   els.sellerQ.addEventListener("input", filterSellerRows);
 
   els.tabCards.addEventListener("click", () => switchTab("cards"));
+  if (els.tabSealed) els.tabSealed.addEventListener("click", () => switchTab("sealed"));
   els.tabSellers.addEventListener("click", () => switchTab("sellers"));
+  if (els.sealedQ) els.sealedQ.addEventListener("input", () => scheduleSealedSearch(true));
+  if (els.sealedSort) els.sealedSort.addEventListener("change", () => scheduleSealedSearch(true));
+  if (els.sealedMinProfit) els.sealedMinProfit.addEventListener("change", () => scheduleSealedSearch(true));
+  if (els.sealedPrevBtn) {
+    els.sealedPrevBtn.addEventListener("click", () => {
+      sealedOffset = Math.max(0, sealedOffset - limit);
+      searchSealed();
+    });
+  }
+  if (els.sealedNextBtn) {
+    els.sealedNextBtn.addEventListener("click", () => {
+      sealedOffset += limit;
+      searchSealed();
+    });
+  }
 
   els.filtersToggle.addEventListener("click", () => {
     togglePanel(els.filtersToggle, els.advancedFilters);

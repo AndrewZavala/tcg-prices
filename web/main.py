@@ -21,6 +21,9 @@ from starlette.responses import Response
 from opportunity_sellers import SELLER_SORT_KEYS, SELLER_TOP_N, build_seller_summary
 from inventory_api import init_inventory_api, router as inventory_router
 from data_api import init_data_api, router as data_router
+from collection_api import init_collection_api, router as collection_router
+from sealed_api import init_sealed_api, router as sealed_router
+from pokemon_api import init_pokemon_api, router as pokemon_router
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -42,11 +45,14 @@ class DevNoCacheMiddleware(BaseHTTPMiddleware):
             "/opportunities",
             "/inventory",
             "/returns",
+            "/sell-list",
             "/match",
             "/charts",
             "/data",
             "/architecture",
             "/architecture/model",
+            "/pokemon",
+            "/star-piece",
         ):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
@@ -66,8 +72,14 @@ app.add_middleware(
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 init_inventory_api(engine)
 init_data_api(engine)
+init_collection_api(engine)
+init_sealed_api(engine)
+init_pokemon_api(engine)
 app.include_router(inventory_router)
 app.include_router(data_router)
+app.include_router(collection_router)
+app.include_router(sealed_router)
+app.include_router(pokemon_router)
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -220,6 +232,60 @@ def _apply_migration_019(conn) -> None:
         conn.execute(text(open(mig, encoding="utf-8").read()))
 
 
+def _apply_migration_020(conn) -> None:
+    mig = os.path.join(os.path.dirname(__file__), "..", "migrations", "020_inventory_problem_status.sql")
+    if os.path.isfile(mig):
+        conn.execute(text(open(mig, encoding="utf-8").read()))
+
+
+def _apply_migration_021(conn) -> None:
+    mig = os.path.join(os.path.dirname(__file__), "..", "migrations", "021_collection_cards.sql")
+    if os.path.isfile(mig):
+        conn.execute(text(open(mig, encoding="utf-8").read()))
+
+
+def _apply_migration_022(conn) -> None:
+    mig = os.path.join(os.path.dirname(__file__), "..", "migrations", "022_lock_fulfillment_ck_adj.sql")
+    if os.path.isfile(mig):
+        conn.execute(text(open(mig, encoding="utf-8").read()))
+
+
+def _apply_migration_023(conn) -> None:
+    mig = os.path.join(os.path.dirname(__file__), "..", "migrations", "023_collection_keep.sql")
+    if os.path.isfile(mig):
+        conn.execute(text(open(mig, encoding="utf-8").read()))
+
+
+def _apply_migration_024(conn) -> None:
+    mig = os.path.join(os.path.dirname(__file__), "..", "migrations", "024_sealed_opportunities.sql")
+    if os.path.isfile(mig):
+        conn.execute(text(open(mig, encoding="utf-8").read()))
+
+
+def _apply_migration_025(conn) -> None:
+    mig = os.path.join(os.path.dirname(__file__), "..", "migrations", "025_pokemon_catalog.sql")
+    if os.path.isfile(mig):
+        conn.execute(text(open(mig, encoding="utf-8").read()))
+
+
+def _apply_migration_026(conn) -> None:
+    mig = os.path.join(os.path.dirname(__file__), "..", "migrations", "026_pokemon_oracle.sql")
+    if os.path.isfile(mig):
+        conn.execute(text(open(mig, encoding="utf-8").read()))
+
+
+def _apply_migration_029(conn) -> None:
+    mig = os.path.join(os.path.dirname(__file__), "..", "migrations", "029_pokemon_tcgplayer.sql")
+    if os.path.isfile(mig):
+        conn.execute(text(open(mig, encoding="utf-8").read()))
+
+
+def _apply_migration_030(conn) -> None:
+    mig = os.path.join(os.path.dirname(__file__), "..", "migrations", "030_pokemon_species_groups.sql")
+    if os.path.isfile(mig):
+        conn.execute(text(open(mig, encoding="utf-8").read()))
+
+
 @app.on_event("startup")
 def startup_migrations() -> None:
     try:
@@ -242,6 +308,15 @@ def startup_migrations() -> None:
             _apply_migration_017(conn)
             _apply_migration_018(conn)
             _apply_migration_019(conn)
+            _apply_migration_020(conn)
+            _apply_migration_021(conn)
+            _apply_migration_022(conn)
+            _apply_migration_023(conn)
+            _apply_migration_024(conn)
+            _apply_migration_025(conn)
+            _apply_migration_026(conn)
+            _apply_migration_029(conn)
+            _apply_migration_030(conn)
     except Exception:
         pass  # indexes/columns may already exist
 
@@ -1632,6 +1707,11 @@ def match_page():
     return _page("match.html")
 
 
+@app.get("/sell-list")
+def sell_list_page():
+    return _page("sell-list.html")
+
+
 @app.get("/charts")
 def charts_page():
     return _page("charts.html")
@@ -1665,6 +1745,16 @@ def architecture_page():
 @app.get("/architecture/model")
 def architecture_model_page():
     return _page("architecture-model.html")
+
+
+@app.get("/pokemon")
+def pokemon_page():
+    return _page("pokemon.html")
+
+
+@app.get("/star-piece")
+def star_piece_page():
+    return _page("pokemon.html")
 
 
 @app.get("/purchases")

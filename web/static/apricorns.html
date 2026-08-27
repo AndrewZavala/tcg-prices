@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Apricorns — Pokémon TCG Search (mock)</title>
+  <meta name="description" content="Temporary mockup: Apricorns Pokémon TCG search." />
+  <meta name="robots" content="noindex" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,700;0,800;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/star-piece.css?v=page-jump1" />
+  <link rel="stylesheet" href="/static/apricorns.css?v=1" />
+  <link rel="icon" href="/static/apricorns-logo.png" type="image/png" />
+</head>
+<body class="sp-body ap-body">
+  <p class="ap-mock-banner">
+    Temporary mock · <a href="/pokemon">Back to Star Piece</a>
+  </p>
+  <div class="sp-stars" aria-hidden="true"></div>
+
+  <div class="sp-topbar">
+    <nav class="sp-topbar-nav" aria-label="Primary">
+      <a href="/apricorns" class="sp-topbar-link is-active" aria-current="page">Search</a>
+      <span class="sp-topbar-link is-placeholder" title="Coming soon">Decks</span>
+      <span class="sp-topbar-link is-placeholder" title="Coming soon">Sets</span>
+    </nav>
+    <div class="sp-topbar-account">
+      <button type="button" class="sp-topbar-login" disabled title="Coming soon">Sign in</button>
+    </div>
+  </div>
+
+  <header class="sp-nav">
+    <a class="sp-brand ap-brand" href="/apricorns" aria-label="Apricorns home">
+      <img
+        src="/static/apricorns-logo.png"
+        alt=""
+        class="sp-brand-logo ap-mascot"
+        width="120"
+        height="92"
+      />
+      <img
+        src="/static/apricorns-wordmark.png"
+        alt="Apricorns"
+        class="ap-wordmark"
+        width="400"
+        height="118"
+      />
+    </a>
+    <p class="sp-tagline">Harvest your TCG collection</p>
+  </header>
+
+  <main class="sp-main">
+    <section class="sp-panel sp-search">
+      <div class="sp-search-orbit" aria-hidden="true">
+        <div class="sp-shooting-star sp-shooting-star-a"></div>
+        <div class="sp-shooting-star sp-shooting-star-b"></div>
+      </div>
+      <div class="sp-search-row">
+        <label class="sp-field sp-field-grow">
+          <span class="sp-label">Search</span>
+          <input type="search" id="q" placeholder="Name… t:trainer t:supporter is:team-plasma" autocomplete="off" />
+        </label>
+        <button type="button" class="sp-adv-toggle" id="advToggle" aria-expanded="false" aria-controls="advPanel">
+          Advanced
+        </button>
+        <label class="sp-field sp-field-sort">
+          <span class="sp-label">Sort</span>
+          <select id="sort">
+            <option value="name">Name</option>
+            <option value="set">Set</option>
+            <option value="dex">Dex #</option>
+            <option value="hp_desc">HP ↓</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="sp-adv-panel" id="advPanel" hidden>
+        <div class="sp-adv-grid">
+          <label class="sp-field">
+            <span class="sp-label">Series</span>
+            <select id="seriesId">
+              <option value="">All series</option>
+            </select>
+          </label>
+          <label class="sp-field">
+            <span class="sp-label">Set</span>
+            <select id="setId">
+              <option value="">All sets</option>
+            </select>
+          </label>
+          <label class="sp-field sp-field-narrow">
+            <span class="sp-label">Dex #</span>
+            <input type="number" id="dexId" placeholder="#" min="1" max="1025" />
+          </label>
+          <label class="sp-field">
+            <span class="sp-label">Rarity</span>
+            <select id="rarity">
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label class="sp-field">
+            <span class="sp-label">Category</span>
+            <select id="category">
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label class="sp-field">
+            <span class="sp-label">Type</span>
+            <select id="cardType">
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label class="sp-field">
+            <span class="sp-label">Stage</span>
+            <select id="stage">
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label class="sp-field">
+            <span class="sp-label">Subtype</span>
+            <select id="subtype">
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label class="sp-field">
+            <span class="sp-label">Generation</span>
+            <select id="generation">
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label class="sp-field">
+            <span class="sp-label">Pokémon</span>
+            <select id="pokemonSpecial">
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label class="sp-field">
+            <span class="sp-label">Species group</span>
+            <select id="speciesGroup">
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label class="sp-field">
+            <span class="sp-label">Has</span>
+            <select id="hasFilter">
+              <option value="">Any</option>
+            </select>
+          </label>
+        </div>
+        <div class="sp-adv-actions">
+          <button type="button" class="sp-clear-btn" id="clearFilters">Clear filters</button>
+        </div>
+        <div class="sp-active-filters" id="activeFilters" hidden></div>
+
+        <details class="sp-syntax-help" id="syntaxHelp">
+          <summary>Search syntax</summary>
+          <div class="sp-syntax-body">
+            <p>Combine filters with spaces (AND). Works like <a href="https://pkmncards.com/" rel="noopener">pkmncards</a> — type in the search box or use Advanced.</p>
+
+            <h4>Card type <code>t:</code></h4>
+            <ul>
+              <li><button type="button" class="sp-linkish" data-quick="t:pokemon">t:pokemon</button> — Pokémon cards</li>
+              <li><button type="button" class="sp-linkish" data-quick="t:trainer">t:trainer</button> — Trainer cards</li>
+              <li><button type="button" class="sp-linkish" data-quick="t:energy">t:energy</button> — Energy cards</li>
+            </ul>
+
+            <h4>Trainer subtypes <code>t:</code></h4>
+            <ul>
+              <li><button type="button" class="sp-linkish" data-quick="t:supporter">t:supporter</button></li>
+              <li><button type="button" class="sp-linkish" data-quick="t:item">t:item</button></li>
+              <li><button type="button" class="sp-linkish" data-quick="t:stadium">t:stadium</button></li>
+              <li><button type="button" class="sp-linkish" data-quick="t:tool">t:tool</button> — Pokémon Tool</li>
+            </ul>
+
+            <h4>Pokémon subtypes <code>is:</code></h4>
+            <ul>
+              <li><button type="button" class="sp-linkish" data-quick="is:basic">is:basic</button> · <button type="button" class="sp-linkish" data-quick="is:ex">is:ex</button> · <button type="button" class="sp-linkish" data-quick="is:stage-1">is:stage-1</button></li>
+              <li><button type="button" class="sp-linkish" data-quick="is:team-plasma">is:team-plasma</button> · <button type="button" class="sp-linkish" data-quick="is:restored">is:restored</button></li>
+            </ul>
+
+            <h4>Other filters</h4>
+            <ul class="sp-syntax-compact">
+              <li><code>e:grass</code> or <code>type:fire</code> — energy type</li>
+              <li><code>set:me01</code> · <code>series:me</code> — TCG block / set</li>
+              <li><code>r:rare</code> · <code>r:ultra</code> — rarity</li>
+              <li><code>dex:591</code> — Pokédex number</li>
+              <li><code>stage:basic</code> · <code>stage:stage1</code></li>
+              <li><code>is:gen5</code> — Pokémon generation</li>
+              <li><code>is:legendary</code> · <code>is:mythical</code></li>
+              <li><button type="button" class="sp-linkish" data-quick="is:starter">is:starter</button> · <button type="button" class="sp-linkish" data-quick="is:baby">is:baby</button> · <button type="button" class="sp-linkish" data-quick="is:eeveelution">is:eeveelution</button></li>
+              <li><button type="button" class="sp-linkish" data-quick="is:paradox">is:paradox</button> · <button type="button" class="sp-linkish" data-quick="is:ultra-beast">is:ultra-beast</button> · <button type="button" class="sp-linkish" data-quick="is:fossil">is:fossil</button></li>
+              <li><button type="button" class="sp-linkish" data-quick="is:pseudo-legendary">is:pseudo-legendary</button> · <button type="button" class="sp-linkish" data-quick="is:regional">is:regional</button></li>
+              <li><button type="button" class="sp-linkish" data-quick="has:ability">has:ability</button> — cards with an Ability</li>
+            </ul>
+
+            <p class="sp-syntax-note">Example: <code>t:trainer t:supporter N</code> finds Supporter cards with “N” in the name. Click subtype pills on a card to filter instantly.</p>
+          </div>
+        </details>
+      </div>
+
+      <div class="sp-view-row">
+        <span class="sp-label">View</span>
+        <div class="sp-segment" role="tablist" aria-label="Result grouping">
+          <button type="button" class="sp-segment-btn" data-unique="pokemon" role="tab" aria-selected="false">Pokémon</button>
+          <button type="button" class="sp-segment-btn active" data-unique="cards" role="tab" aria-selected="true">Cards</button>
+          <button type="button" class="sp-segment-btn" data-unique="art" role="tab" aria-selected="false">Unique Arts</button>
+        </div>
+        <span class="sp-result-count" id="resultCount"></span>
+        <div class="sp-zoom" role="group" aria-label="Card size">
+          <button type="button" class="sp-zoom-btn" id="zoomOut" aria-label="Smaller cards">−</button>
+          <button type="button" class="sp-zoom-btn" id="zoomIn" aria-label="Larger cards">+</button>
+        </div>
+      </div>
+
+      <p class="sp-hint">
+        <em>Pokémon</em> rolls up by Dex #.
+        <em>Cards</em> needs an <strong>exact</strong> gameplay match — try
+        <button type="button" class="sp-linkish" data-quick="Dusknoir">Dusknoir</button>.
+      </p>
+    </section>
+
+    <nav class="sp-pagination" data-pagination aria-label="Results pages (top)" hidden>
+      <button type="button" class="sp-page-btn" data-page-prev disabled>← Previous</button>
+      <span class="sp-page-info" data-page-info></span>
+      <label class="sp-page-jump">
+        <span class="sp-visually-hidden">Jump to page</span>
+        <span aria-hidden="true">Go to</span>
+        <input type="number" class="sp-page-jump-input" data-page-jump min="1" value="1" inputmode="numeric" />
+        <button type="button" class="sp-page-btn" data-page-go>Go</button>
+      </label>
+      <button type="button" class="sp-page-btn" data-page-next disabled>Next →</button>
+    </nav>
+
+    <div id="cardGrid" class="sp-grid" aria-live="polite"></div>
+
+    <nav class="sp-pagination" data-pagination aria-label="Results pages" hidden>
+      <button type="button" class="sp-page-btn" data-page-prev disabled>← Previous</button>
+      <span class="sp-page-info" data-page-info></span>
+      <label class="sp-page-jump">
+        <span class="sp-visually-hidden">Jump to page</span>
+        <span aria-hidden="true">Go to</span>
+        <input type="number" class="sp-page-jump-input" data-page-jump min="1" value="1" inputmode="numeric" />
+        <button type="button" class="sp-page-btn" data-page-go>Go</button>
+      </label>
+      <button type="button" class="sp-page-btn" data-page-next disabled>Next →</button>
+    </nav>
+
+    <footer class="sp-footer">
+      <p>
+        <strong>Apricorns</strong> — temporary mockup (not a real brand).
+        Same catalog as <a href="/pokemon">Star Piece</a>.
+        Card data via <a href="https://tcgdex.dev" rel="noopener">TCGdex</a>.
+      </p>
+    </footer>
+  </main>
+
+  <dialog id="cardModal" class="sp-modal">
+    <div class="sp-modal-inner">
+      <button type="button" class="sp-modal-close" id="modalClose" aria-label="Close">×</button>
+      <div id="modalBody"></div>
+    </div>
+  </dialog>
+
+  <script src="/static/pokemon.js?v=url1"></script>
+</body>
+</html>

@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 
 try:
     from tcg_condition import effective_profit_qty, strip_seller_from_tcg_url
@@ -24,7 +25,7 @@ except ImportError:
         ck_cap = float(ck_max_qty)
         if qty <= ck_cap:
             return qty
-        return min(qty, ck_cap * 2)
+        return min(qty, ck_cap)
 
     def strip_seller_from_tcg_url(url: str | None) -> str | None:
         if not url or not str(url).strip():
@@ -48,10 +49,10 @@ except ImportError:
         ) or raw
 
 
-INVENTORY_STATUSES = ("ordered", "inbound", "on_hand", "depleted", "cancelled")
+INVENTORY_STATUSES = ("ordered", "inbound", "on_hand", "problem", "depleted", "cancelled")
 FULFILLMENT_STATUSES = ("planned", "packed", "sent", "paid", "rejected", "cancelled")
-LIFECYCLE_STAGES = ("inbound", "need_to_sell", "to_pack", "to_ship", "awaiting_payment", "paid")
-LIFECYCLE_LOT_STAGES = ("inbound", "need_to_sell")
+LIFECYCLE_STAGES = ("inbound", "need_to_sell", "problem", "to_pack", "to_ship", "awaiting_payment", "paid")
+LIFECYCLE_LOT_STAGES = ("inbound", "need_to_sell", "problem")
 LIFECYCLE_FULFILLMENT_STAGES = ("to_pack", "to_ship", "awaiting_payment", "paid")
 NEED_TO_SELL_DAYS = 5
 # CK buylist / "fulfilled today" calendar — match Pacific business day, not UTC CURRENT_DATE.
@@ -183,6 +184,29 @@ class FulfillmentUpdate(BaseModel):
     notes: str | None = None
 
 
+class InventoryOrderUpdate(BaseModel):
+    ck_order_id: str
+    status: str
+
+
+class InventoryOrderPaidLine(BaseModel):
+    fulfillment_id: int
+    nm: int = 0
+    ex: int = 0
+    vg: int = 0
+    g: int = 0
+    nm_unit: float | None = None
+    ex_unit: float | None = None
+    vg_unit: float | None = None
+    g_unit: float | None = None
+    ck_adj: float | None = None
+
+
+class InventoryOrderMarkPaid(BaseModel):
+    ck_order_id: str
+    lines: list[InventoryOrderPaidLine]
+
+
 class InventoryBatchLink(BaseModel):
     lot_ids: list[int]
     tcg_order_id: str | None = None
@@ -286,7 +310,7 @@ def _fulfillment_detail_select() -> str:
             ROUND(
                 COALESCE(
                     cf.paid_amount,
-                    cf.qty * COALESCE(cf.ck_adj, il.ck_adj, 0)
+                    cf.qty * COALESCE(cf.ck_adj, 0)
                 ),
                 2
             ) AS fulfillment_revenue,
@@ -299,7 +323,7 @@ def _fulfillment_detail_select() -> str:
             ROUND(
                 COALESCE(
                     cf.paid_amount,
-                    cf.qty * COALESCE(cf.ck_adj, il.ck_adj, 0)
+                    cf.qty * COALESCE(cf.ck_adj, 0)
                 )
                 - (
                     cf.qty * COALESCE(il.seller_price, 0)
@@ -408,6 +432,8 @@ def _apply_lifecycle_lot_filter(lifecycle: str, clauses: list[str]) -> None:
         clauses.append("status IN ('ordered', 'inbound')")
     elif lifecycle == "need_to_sell":
         clauses.append(_need_to_sell_lot_predicate())
+    elif lifecycle == "problem":
+        clauses.append("status = 'problem'")
     else:
         raise HTTPException(status_code=400, detail="Invalid lifecycle for lot list")
 
@@ -756,8 +782,8 @@ def _apply_fulfillment_qty_change(
     cur_status = row["status"]
     if next_qty == 0:
         lot_status = "depleted"
-    elif cur_status in ("ordered", "inbound", "on_hand"):
-        # Keep acquisition stage for remaining free copies.
+    elif cur_status in ("ordered", "inbound", "on_hand", "problem"):
+        # Keep acquisition / problem stage for remaining free copies.
         lot_status = cur_status
     else:
         lot_status = "on_hand"
@@ -766,7 +792,10 @@ def _apply_fulfillment_qty_change(
             """
             UPDATE inventory_lots
             SET qty_on_hand = :qty_on_hand,
-                status = CASE WHEN status = 'cancelled' THEN status ELSE :lot_status END,
+                status = CASE
+                    WHEN status IN ('cancelled', 'problem') THEN status
+                    ELSE :lot_status
+                END,
                 updated_at = NOW()
             WHERE id = :id
             """
@@ -981,6 +1010,14 @@ def inventory_lifecycle_summary() -> dict[str, Any]:
                 """
             )
         ).scalar() or 0
+        problem = conn.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM inventory_lots
+                WHERE status = 'problem'
+                """
+            )
+        ).scalar() or 0
         awaiting = conn.execute(
             text(
                 """
@@ -1020,6 +1057,7 @@ def inventory_lifecycle_summary() -> dict[str, Any]:
         "to_pack": int(to_pack),
         "to_ship": int(to_ship),
         "need_to_sell": int(need_to_sell),
+        "problem": int(problem),
         "awaiting_payment": int(awaiting),
         "paid": int(paid_row["n"]) if paid_row else 0,
         "paid_revenue": float(paid_row["revenue"]) if paid_row else 0.0,
@@ -1217,12 +1255,18 @@ def _open_book_positions_sql() -> str:
         )
     """
     free_revenue = """
-        ROUND(il.qty_on_hand * COALESCE(il.ck_adj, 0), 2)
+        ROUND(
+            CASE
+                WHEN il.status = 'problem' THEN 0
+                ELSE il.qty_on_hand * COALESCE(il.ck_adj, 0)
+            END,
+            2
+        )
     """
     detail = _fulfillment_detail_select()
     return f"""
         SELECT
-            'free'::text AS stage,
+            CASE WHEN il.status = 'problem' THEN 'problem' ELSE 'free' END AS stage,
             il.id AS lot_id,
             il.name,
             il.finish,
@@ -1470,6 +1514,444 @@ def inventory_linking_summary() -> dict[str, Any]:
             }
             for r in ck_batches
         ],
+    }
+
+
+def _ck_order_key_sql(alias: str = "cf") -> str:
+    """Prefer CK order # (ck_ref); fall back to batch id when ref is empty."""
+    return f"""
+        COALESCE(
+            NULLIF(BTRIM({alias}.ck_ref), ''),
+            NULLIF(BTRIM({alias}.ck_batch_id), '')
+        )
+    """
+
+
+def _order_pipeline_status(
+    *,
+    ff_planned: int,
+    ff_packed: int,
+    ff_sent: int,
+    ff_paid: int,
+) -> str:
+    """Furthest-behind open CK sell stage (action needed first)."""
+    if ff_planned > 0:
+        return "planned"
+    if ff_packed > 0:
+        return "packed"
+    if ff_sent > 0:
+        return "sent"
+    if ff_paid > 0:
+        return "paid"
+    return "planned"
+
+
+@router.get("/api/inventory/orders")
+def list_inventory_orders(
+    q: str = Query("", description="Filter by CK order #, batch, or card name"),
+    status: str = Query("", description="Filter by pipeline status: planned|packed|sent|paid"),
+) -> dict[str, Any]:
+    """Card Kingdom sell orders rolled up by ck_ref (or ck_batch_id)."""
+    assert _engine is not None
+    needle = q.strip()
+    status_filter = (status or "").strip()
+    if status_filter and status_filter not in {"planned", "packed", "sent", "paid"}:
+        raise HTTPException(
+            status_code=400,
+            detail="status must be planned, packed, sent, or paid",
+        )
+    params: dict[str, Any] = {}
+    q_clause = ""
+    if needle:
+        q_clause = """
+          AND (
+            COALESCE(cf.ck_ref, '') ILIKE :q
+            OR COALESCE(cf.ck_batch_id, '') ILIKE :q
+            OR COALESCE(il.name, '') ILIKE :q
+          )
+        """
+        params["q"] = f"%{needle}%"
+
+    order_key = _ck_order_key_sql("cf")
+
+    with _engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT
+                    {order_key} AS ck_order_id,
+                    MAX(cf.ck_ref) AS ck_ref,
+                    MAX(cf.ck_batch_id) AS ck_batch_id,
+                    COUNT(*) AS line_count,
+                    COUNT(DISTINCT cf.inventory_lot_id) AS lot_count,
+                    COALESCE(SUM(cf.qty), 0) AS qty_total,
+                    COALESCE(SUM(cf.qty) FILTER (WHERE cf.status = 'planned'), 0) AS qty_planned,
+                    COALESCE(SUM(cf.qty) FILTER (WHERE cf.status = 'packed'), 0) AS qty_packed,
+                    COALESCE(SUM(cf.qty) FILTER (WHERE cf.status = 'sent'), 0) AS qty_sent,
+                    COALESCE(SUM(cf.qty) FILTER (WHERE cf.status = 'paid'), 0) AS qty_paid,
+                    MIN(cf.created_at) AS created_at,
+                    MAX(cf.updated_at) AS updated_at
+                FROM ck_fulfillments cf
+                JOIN inventory_lots il ON il.id = cf.inventory_lot_id
+                WHERE cf.status NOT IN ('cancelled', 'rejected')
+                  AND {order_key} IS NOT NULL
+                  {q_clause}
+                GROUP BY {order_key}
+                ORDER BY MAX(cf.updated_at) DESC NULLS LAST, {order_key}
+                """
+            ),
+            params,
+        ).mappings().all()
+
+        samples = conn.execute(
+            text(
+                f"""
+                SELECT
+                    {order_key} AS ck_order_id,
+                    cf.id AS fulfillment_id,
+                    cf.inventory_lot_id AS lot_id,
+                    il.name,
+                    cf.qty,
+                    cf.status AS fulfillment_status,
+                    cf.ck_adj
+                FROM ck_fulfillments cf
+                JOIN inventory_lots il ON il.id = cf.inventory_lot_id
+                WHERE cf.status NOT IN ('cancelled', 'rejected')
+                  AND {order_key} IS NOT NULL
+                  {q_clause}
+                ORDER BY {order_key}, il.name, cf.id
+                """
+            ),
+            params,
+        ).mappings().all()
+
+    samples_by_order: dict[str, list[dict[str, Any]]] = {}
+    for s in samples:
+        oid = s["ck_order_id"]
+        samples_by_order.setdefault(oid, []).append(
+            {
+                "fulfillment_id": int(s["fulfillment_id"]),
+                "lot_id": int(s["lot_id"]),
+                "name": s["name"],
+                "qty": int(s["qty"] or 0),
+                "status": s["fulfillment_status"],
+                "ck_adj": float(s["ck_adj"]) if s["ck_adj"] is not None else None,
+            }
+        )
+
+    results = []
+    for r in rows:
+        ff_planned = int(r["qty_planned"] or 0)
+        ff_packed = int(r["qty_packed"] or 0)
+        ff_sent = int(r["qty_sent"] or 0)
+        ff_paid = int(r["qty_paid"] or 0)
+        status = _order_pipeline_status(
+            ff_planned=ff_planned,
+            ff_packed=ff_packed,
+            ff_sent=ff_sent,
+            ff_paid=ff_paid,
+        )
+        created_at = r["created_at"]
+        updated_at = r["updated_at"]
+        results.append(
+            {
+                "ck_order_id": r["ck_order_id"],
+                "ck_ref": r["ck_ref"],
+                "ck_batch_id": r["ck_batch_id"],
+                "line_count": int(r["line_count"] or 0),
+                "lot_count": int(r["lot_count"] or 0),
+                "qty_total": int(r["qty_total"] or 0),
+                "qty_planned": ff_planned,
+                "qty_packed": ff_packed,
+                "qty_sent": ff_sent,
+                "qty_paid": ff_paid,
+                "status": status,
+                "created_at": created_at.isoformat() if created_at is not None else None,
+                "updated_at": updated_at.isoformat() if updated_at is not None else None,
+                "lines": samples_by_order.get(r["ck_order_id"], []),
+            }
+        )
+
+    if status_filter:
+        results = [row for row in results if row["status"] == status_filter]
+
+    return {"total": len(results), "results": results}
+
+
+def _patch_fulfillment_status_row(conn, current: dict[str, Any], new_status: str) -> None:
+    """Apply status change + qty reservation side effects for one fulfillment row."""
+    lot_id = int(current["inventory_lot_id"])
+    old_status = current["status"]
+    qty = int(current["qty"])
+    if old_status == new_status:
+        return
+    if new_status not in FULFILLMENT_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid fulfillment status")
+    _apply_fulfillment_qty_change(conn, lot_id, old_status, new_status, qty, qty)
+    conn.execute(
+        text(
+            """
+            UPDATE ck_fulfillments
+            SET status = :status,
+                packed_at = CASE
+                    WHEN :status = 'planned' THEN NULL
+                    WHEN :status IN ('packed', 'sent', 'paid') THEN COALESCE(packed_at, NOW())
+                    ELSE packed_at
+                END,
+                sent_at = CASE
+                    WHEN :status IN ('planned', 'packed') THEN NULL
+                    WHEN :status IN ('sent', 'paid') THEN COALESCE(sent_at, NOW())
+                    ELSE sent_at
+                END,
+                paid_at = CASE
+                    WHEN :status = 'paid' THEN COALESCE(paid_at, NOW())
+                    ELSE NULL
+                END,
+                updated_at = NOW()
+            WHERE id = :id
+            """
+        ),
+        {"id": current["id"], "status": new_status},
+    )
+
+
+# CK buylist grade payout vs NM buy price (locked on the sell line as ck_adj).
+CK_GRADE_MULT: dict[str, float] = {
+    "nm": 1.0,
+    "ex": 0.75,
+    "vg": 0.5,
+    "g": 0.25,
+}
+
+
+def _paid_from_unit_prices(
+    nm: int,
+    ex: int,
+    vg: int,
+    g: int,
+    nm_unit: float,
+    ex_unit: float,
+    vg_unit: float,
+    g_unit: float,
+) -> float:
+    total = nm * nm_unit + ex * ex_unit + vg * vg_unit + g * g_unit
+    return round(total, 2)
+
+
+def _paid_from_grades(ck_adj: float | None, nm: int, ex: int, vg: int, g: int) -> float:
+    base = float(ck_adj or 0)
+    return _paid_from_unit_prices(
+        nm,
+        ex,
+        vg,
+        g,
+        base * CK_GRADE_MULT["nm"],
+        base * CK_GRADE_MULT["ex"],
+        base * CK_GRADE_MULT["vg"],
+        base * CK_GRADE_MULT["g"],
+    )
+
+
+@router.patch("/api/inventory/orders")
+def update_inventory_order(body: InventoryOrderUpdate) -> dict[str, Any]:
+    """Set pipeline status for every CK sell line under a CK order # / batch."""
+    assert _engine is not None
+    order_id = (body.ck_order_id or "").strip()
+    if not order_id:
+        raise HTTPException(status_code=400, detail="ck_order_id required")
+    status = (body.status or "").strip()
+    if status not in {"planned", "packed", "sent", "paid"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Status must be planned, packed, sent, or paid",
+        )
+    if status == "paid":
+        raise HTTPException(
+            status_code=400,
+            detail="Use Mark paid (condition breakdown) to move an order to Paid",
+        )
+
+    order_key = _ck_order_key_sql("cf")
+    with _engine.begin() as conn:
+        fulfillments = conn.execute(
+            text(
+                f"""
+                SELECT cf.*
+                FROM ck_fulfillments cf
+                WHERE cf.status NOT IN ('cancelled', 'rejected')
+                  AND {order_key} = :oid
+                FOR UPDATE OF cf
+                """
+            ),
+            {"oid": order_id},
+        ).mappings().all()
+        if not fulfillments:
+            raise HTTPException(status_code=404, detail="No CK lines found for that order")
+
+        updated = 0
+        for ff in fulfillments:
+            if ff["status"] == status:
+                continue
+            _patch_fulfillment_status_row(conn, dict(ff), status)
+            updated += 1
+
+    return {
+        "ck_order_id": order_id,
+        "status": status,
+        "updated_fulfillments": updated,
+        "line_count": len(fulfillments),
+    }
+
+
+@router.post("/api/inventory/orders/mark-paid")
+def mark_inventory_order_paid(body: InventoryOrderMarkPaid) -> dict[str, Any]:
+    """Mark a CK order paid using NM/EX/VG/G qty × locked sell-line ck_adj."""
+    assert _engine is not None
+    order_id = (body.ck_order_id or "").strip()
+    if not order_id:
+        raise HTTPException(status_code=400, detail="ck_order_id required")
+    if not body.lines:
+        raise HTTPException(status_code=400, detail="lines required")
+
+    order_key = _ck_order_key_sql("cf")
+    line_by_id = {int(x.fulfillment_id): x for x in body.lines}
+
+    with _engine.begin() as conn:
+        fulfillments = conn.execute(
+            text(
+                f"""
+                SELECT cf.*
+                FROM ck_fulfillments cf
+                WHERE cf.status NOT IN ('cancelled', 'rejected')
+                  AND {order_key} = :oid
+                FOR UPDATE OF cf
+                """
+            ),
+            {"oid": order_id},
+        ).mappings().all()
+        if not fulfillments:
+            raise HTTPException(status_code=404, detail="No CK lines found for that order")
+
+        ff_ids = {int(ff["id"]) for ff in fulfillments}
+        missing = [fid for fid in line_by_id if fid not in ff_ids]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Fulfillment lines not on this order: {missing}",
+            )
+        uncovered = [int(ff["id"]) for ff in fulfillments if int(ff["id"]) not in line_by_id]
+        if uncovered:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing grade breakdown for fulfillment lines: {uncovered}",
+            )
+
+        results = []
+        order_paid = 0.0
+        for ff in fulfillments:
+            grade = line_by_id[int(ff["id"])]
+            nm, ex, vg, g = int(grade.nm), int(grade.ex), int(grade.vg), int(grade.g)
+            for label, n in (("nm", nm), ("ex", ex), ("vg", vg), ("g", g)):
+                if n < 0:
+                    raise HTTPException(status_code=400, detail=f"{label} qty must be >= 0")
+            total_qty = nm + ex + vg + g
+            expected_qty = int(ff["qty"])
+            if total_qty != expected_qty:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Line {ff['id']}: NM+EX+VG+G must equal {expected_qty} "
+                        f"(got {total_qty})"
+                    ),
+                )
+            if grade.ck_adj is not None:
+                if float(grade.ck_adj) < 0:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Line {ff['id']}: ck_adj must be >= 0",
+                    )
+                locked_nm = round(float(grade.ck_adj), 2)
+            else:
+                locked_nm = round(float(ff.get("ck_adj") or 0), 2)
+
+            def _unit(raw: float | None, fallback_mult: float) -> float:
+                if raw is not None:
+                    val = float(raw)
+                    if val < 0:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Line {ff['id']}: unit price must be >= 0",
+                        )
+                    return round(val, 2)
+                return round(locked_nm * fallback_mult, 2)
+
+            nm_unit = _unit(grade.nm_unit, CK_GRADE_MULT["nm"])
+            ex_unit = _unit(grade.ex_unit, CK_GRADE_MULT["ex"])
+            vg_unit = _unit(grade.vg_unit, CK_GRADE_MULT["vg"])
+            g_unit = _unit(grade.g_unit, CK_GRADE_MULT["g"])
+            # Persist NM list price from the NM unit (editable), not fixed % of lock.
+            ck_base = nm_unit
+            paid_amount = _paid_from_unit_prices(
+                nm, ex, vg, g, nm_unit, ex_unit, vg_unit, g_unit
+            )
+            grade_note = (
+                f"CK grade: NM×{nm}@${nm_unit:.2f} EX×{ex}@${ex_unit:.2f} "
+                f"VG×{vg}@${vg_unit:.2f} G×{g}@${g_unit:.2f}"
+            )
+            old_notes = (ff.get("notes") or "").strip()
+            # Replace prior grade note if re-marking paid; keep other notes.
+            if "CK grade:" in old_notes:
+                kept = [
+                    part.strip()
+                    for part in old_notes.split("·")
+                    if part.strip() and not part.strip().startswith("CK grade:")
+                ]
+                notes = " · ".join([*kept, grade_note]) if kept else grade_note
+            else:
+                notes = f"{old_notes} · {grade_note}".strip(" ·") if old_notes else grade_note
+
+            _patch_fulfillment_status_row(conn, dict(ff), "paid")
+            conn.execute(
+                text(
+                    """
+                    UPDATE ck_fulfillments
+                    SET paid_amount = :paid_amount,
+                        ck_adj = :ck_adj,
+                        notes = :notes,
+                        updated_at = NOW()
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "id": ff["id"],
+                    "paid_amount": paid_amount,
+                    "ck_adj": ck_base,
+                    "notes": notes,
+                },
+            )
+            order_paid += paid_amount
+            results.append(
+                {
+                    "fulfillment_id": int(ff["id"]),
+                    "qty": expected_qty,
+                    "nm": nm,
+                    "ex": ex,
+                    "vg": vg,
+                    "g": g,
+                    "ck_adj": ck_base,
+                    "nm_unit": nm_unit,
+                    "ex_unit": ex_unit,
+                    "vg_unit": vg_unit,
+                    "g_unit": g_unit,
+                    "paid_amount": paid_amount,
+                }
+            )
+
+    return {
+        "ck_order_id": order_id,
+        "status": "paid",
+        "order_paid": round(order_paid, 2),
+        "lines": results,
     }
 
 
@@ -1847,10 +2329,15 @@ def update_inventory_lot(lot_id: int, body: InventoryUpdate) -> dict[str, Any]:
 
         if "condition" in fields_set:
             condition = (body.condition or "Near Mint").strip()
-            merged["condition_display"] = condition
             merged["condition_raw"] = condition
-            updates.extend(["condition_display = :condition_display", "condition_raw = :condition_raw"])
-            params["condition_display"] = condition
+            # Keep richer opportunity display labels when the base condition is unchanged.
+            display = (merged.get("condition_display") or "").strip()
+            if not display.lower().startswith(condition.lower()):
+                merged["condition_display"] = condition
+            updates.extend(
+                ["condition_display = :condition_display", "condition_raw = :condition_raw"]
+            )
+            params["condition_display"] = merged["condition_display"]
             params["condition_raw"] = condition
 
         if "seller_price" in fields_set:
@@ -1986,10 +2473,22 @@ def update_inventory_lot(lot_id: int, body: InventoryUpdate) -> dict[str, Any]:
             raise HTTPException(status_code=400, detail="No fields to update")
 
         updates.append("updated_at = NOW()")
-        conn.execute(
-            text(f"UPDATE inventory_lots SET {', '.join(updates)} WHERE id = :id"),
-            params,
-        )
+        try:
+            conn.execute(
+                text(f"UPDATE inventory_lots SET {', '.join(updates)} WHERE id = :id"),
+                params,
+            )
+        except IntegrityError as exc:
+            msg = str(getattr(exc, "orig", exc))
+            if "idx_inventory_lots_active_dedup" in msg:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Another active lot already exists for this product, finish, "
+                        "condition, and seller. Check that condition was not changed by mistake."
+                    ),
+                ) from exc
+            raise HTTPException(status_code=409, detail="Update conflicts with an existing lot") from exc
 
     with _engine.connect() as conn:
         lot = _inventory_view_row(conn, lot_id)
@@ -2050,11 +2549,23 @@ def _create_fulfillment_row(
         raise HTTPException(status_code=400, detail="Invalid fulfillment status")
 
     lot = conn.execute(
-        text("SELECT id, name, ck_adj FROM inventory_lots WHERE id = :id FOR UPDATE"),
+        text(
+            """
+            SELECT id, name, ck_adj, ck_cash, condition_display, status
+            FROM inventory_lots
+            WHERE id = :id
+            FOR UPDATE
+            """
+        ),
         {"id": lot_id},
     ).mappings().first()
     if not lot:
         raise HTTPException(status_code=404, detail=f"Inventory lot {lot_id} not found")
+    if lot["status"] in ("problem", "cancelled"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot fulfill {lot.get('name') or lot_id} — status is {lot['status']}",
+        )
 
     if _fulfillment_decrements_inventory(status):
         on_hand = conn.execute(
@@ -2067,7 +2578,28 @@ def _create_fulfillment_row(
                 detail=f"Not enough qty on hand for {lot.get('name') or lot_id}",
             )
 
-    resolved_adj = ck_adj if ck_adj is not None else lot.get("ck_adj")
+    # Snapshot CK adj at sell-order time — do not track live buylist after this.
+    resolved_adj = ck_adj
+    if resolved_adj is None:
+        resolved_adj = lot.get("ck_adj")
+    if resolved_adj is None and lot.get("ck_cash") is not None:
+        mult = MANUAL_CONDITION_MULT.get(lot.get("condition_display") or "Near Mint", 1.0)
+        # condition_display may be "Lightly Played (LP…)" — match longest known prefix.
+        display = (lot.get("condition_display") or "Near Mint").strip()
+        for label, m in MANUAL_CONDITION_MULT.items():
+            if display == label or display.startswith(f"{label} ") or display.startswith(f"{label}("):
+                mult = m
+                break
+        resolved_adj = round(float(lot["ck_cash"]) * mult, 2)
+    if resolved_adj is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No CK buy price to lock for {lot.get('name') or lot_id}. "
+                "Refresh inventory CK prices or enter CK adj on the fulfill form."
+            ),
+        )
+    resolved_adj = round(float(resolved_adj), 2)
     row = conn.execute(
         text(
             """
@@ -2090,7 +2622,7 @@ def _create_fulfillment_row(
             "qty": qty,
             "ck_batch_id": _normalize_link_field(ck_batch_id),
             "ck_ref": _normalize_link_field(ck_ref),
-            "ck_adj": round(float(resolved_adj), 2) if resolved_adj is not None else None,
+            "ck_adj": resolved_adj,
             "status": status,
             "paid_amount": round(float(paid_amount), 2) if paid_amount is not None else None,
             "notes": notes.strip() if notes else None,
