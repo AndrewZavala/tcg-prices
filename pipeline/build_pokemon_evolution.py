@@ -60,6 +60,7 @@ def card_type_for_dex(conn, dex_id: int) -> str | None:
               AND c.dex_ids[1] = :dex_id
               AND c.types IS NOT NULL
               AND cardinality(c.types) > 0
+              AND c.name !~* '[δΔ]| delta'
             ORDER BY
               CASE c.stage
                 WHEN 'Stage2' THEN 3
