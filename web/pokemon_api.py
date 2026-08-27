@@ -256,6 +256,54 @@ def _attach_card_images(row: dict[str, Any], raw: dict[str, Any]) -> None:
     )
 
 
+def _tokenize_search_query(q: str) -> list[str]:
+    """Split a search string on whitespace, keeping quoted segments intact."""
+    tokens: list[str] = []
+    i = 0
+    n = len(q)
+    while i < n:
+        while i < n and q[i].isspace():
+            i += 1
+        if i >= n:
+            break
+        start = i
+        while i < n:
+            if q[i] == '"':
+                i += 1
+                while i < n and q[i] != '"':
+                    if q[i] == "\\" and i + 1 < n:
+                        i += 2
+                    else:
+                        i += 1
+                if i < n:
+                    i += 1
+            elif q[i].isspace():
+                break
+            else:
+                i += 1
+        tokens.append(q[start:i])
+    return tokens
+
+
+def _parse_oracle_text_value(raw: str) -> dict[str, str] | None:
+    """Parse o: value — word, quoted phrase, or /regex/."""
+    val = raw.strip()
+    if not val:
+        return None
+    if val.startswith("/") and val.count("/") >= 2:
+        end = val.rfind("/")
+        if end > 0:
+            pattern = val[1:end]
+            try:
+                re.compile(pattern, re.IGNORECASE)
+            except re.error:
+                return None
+            return {"mode": "regex", "pattern": pattern}
+    if val.startswith('"') and val.endswith('"') and len(val) >= 2:
+        return {"mode": "phrase", "pattern": val[1:-1].replace('\\"', '"')}
+    return {"mode": "word", "pattern": val}
+
+
 def _parse_search_query(
     q: str | None,
 ) -> dict[str, Any]:
@@ -267,6 +315,8 @@ def _parse_search_query(
         "name_q": None,
         "tags": [],
         "exclude_tags": [],
+        "oracle_text": [],
+        "exclude_oracle_text": [],
         "oracle_tags": [],
         "exclude_oracle_tags": [],
         "art_tags": [],
@@ -342,9 +392,12 @@ def _parse_search_query(
     }
 
     name_parts: list[str] = []
-    for token in q.strip().split():
+    for token in _tokenize_search_query(q.strip()):
         if ":" not in token:
-            name_parts.append(token)
+            if token.startswith('"') and token.endswith('"') and len(token) >= 2:
+                name_parts.append(token[1:-1].replace('\\"', '"'))
+            else:
+                name_parts.append(token)
             continue
 
         prefix, raw_val = token.split(":", 1)
@@ -471,6 +524,13 @@ def _parse_search_query(
                     result["exclude_prizes"].append(n)
                 else:
                     result["prizes"].append(n)
+        elif prefix == "o":
+            spec = _parse_oracle_text_value(val)
+            if spec:
+                if negated:
+                    result["exclude_oracle_text"].append(spec)
+                else:
+                    result["oracle_text"].append(spec)
         else:
             name_parts.append(token)
 
@@ -550,6 +610,55 @@ def _sql_prize_count(n: int) -> str:
     if n == 3:
         return _sql_prize_three()
     raise ValueError(f"unsupported prize count: {n}")
+
+
+def _oracle_searchable_text_sql() -> str:
+    """Rules text blob for o: search — oracle gameplay or card-level fallback."""
+    return """(
+        CASE WHEN o.id IS NOT NULL THEN o.gameplay::text
+        ELSE trim(
+            COALESCE(c.description, '') || ' ' ||
+            COALESCE(c.attacks::text, '') || ' ' ||
+            COALESCE(c.abilities::text, '')
+        )
+        END
+    )"""
+
+
+def _apply_oracle_text_filters(
+    filters: list[str],
+    params: dict[str, Any],
+    *,
+    oracle_text: list[dict[str, str]],
+    exclude_oracle_text: list[dict[str, str]],
+) -> None:
+    text_sql = _oracle_searchable_text_sql()
+    for idx, spec in enumerate(oracle_text):
+        key = f"otext_{idx}"
+        mode = spec["mode"]
+        pattern = spec["pattern"]
+        if mode == "regex":
+            params[key] = pattern
+            filters.append(f"{text_sql} ~* CAST(:{key} AS text)")
+        elif mode == "phrase":
+            params[key] = f"%{pattern}%"
+            filters.append(f"{text_sql} ILIKE :{key}")
+        else:
+            params[key] = rf"\y{re.escape(pattern)}\y"
+            filters.append(f"{text_sql} ~* CAST(:{key} AS text)")
+    for idx, spec in enumerate(exclude_oracle_text):
+        key = f"xotext_{idx}"
+        mode = spec["mode"]
+        pattern = spec["pattern"]
+        if mode == "regex":
+            params[key] = pattern
+            filters.append(f"NOT ({text_sql} ~* CAST(:{key} AS text))")
+        elif mode == "phrase":
+            params[key] = f"%{pattern}%"
+            filters.append(f"NOT ({text_sql} ILIKE :{key})")
+        else:
+            params[key] = rf"\y{re.escape(pattern)}\y"
+            filters.append(f"NOT ({text_sql} ~* CAST(:{key} AS text))")
 
 
 def _apply_prize_filters(
@@ -1057,6 +1166,13 @@ def search_pokemon_cards(
             "NOT (c.abilities IS NOT NULL AND jsonb_typeof(c.abilities) = 'array' "
             "AND jsonb_array_length(c.abilities) > 0)"
         )
+
+    _apply_oracle_text_filters(
+        filters,
+        params,
+        oracle_text=list(parsed.get("oracle_text") or []),
+        exclude_oracle_text=list(parsed.get("exclude_oracle_text") or []),
+    )
 
     eff_set = (set_id or parsed["set_id"] or "").strip().lower() or None
     eff_series = (series_id or parsed["series_id"] or "").strip().lower() or None

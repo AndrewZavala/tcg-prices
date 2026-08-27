@@ -110,11 +110,30 @@ def correct_attacks(card_id: str, attacks: list[Any] | None) -> list[Any]:
     return rows
 
 
+def correct_category(card: dict[str, Any]) -> str:
+    """Fix Pokémon mislabeled Trainer when hp/stage/types/dex are present."""
+    category = str(card.get("category") or "Unknown")
+    if category == "Pokemon":
+        return category
+    hp = card.get("hp")
+    if hp is None or (isinstance(hp, (int, float)) and hp <= 0):
+        return category
+    stage = str(card.get("stage") or "").strip()
+    types = card.get("types") or []
+    dex = card.get("dexId") or card.get("dex_ids") or []
+    if stage or types or dex:
+        return "Pokemon"
+    return category
+
+
 def apply_card_corrections(card: dict[str, Any]) -> dict[str, Any]:
     """Mutate and return a card dict with known corrections applied."""
     card_id = str(card.get("id") or "")
     if not card_id:
         return card
+
+    if "category" in card:
+        card["category"] = correct_category(card)
 
     if "abilities" in card:
         card["abilities"] = correct_abilities(card_id, card.get("abilities"))
@@ -127,6 +146,8 @@ def apply_card_corrections(card: dict[str, Any]) -> dict[str, Any]:
 
     data = card.get("card_data")
     if isinstance(data, dict):
+        if "category" in data:
+            data["category"] = correct_category({**card, **data})
         if "abilities" in data:
             data["abilities"] = correct_abilities(card_id, data.get("abilities"))
         if "attacks" in data:

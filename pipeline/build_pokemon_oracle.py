@@ -627,8 +627,38 @@ def persist_card_corrections(engine) -> int:
     return fixed
 
 
+def persist_category_corrections(engine) -> int:
+    """Reclassify Pokémon mislabeled Trainer/Energy (hp + stage/types/dex)."""
+    with engine.begin() as conn:
+        result = conn.execute(
+            text(
+                """
+                UPDATE pokemon_cards
+                SET category = 'Pokemon',
+                    card_data = CASE
+                        WHEN card_data ? 'category'
+                        THEN jsonb_set(card_data, '{category}', '"Pokemon"')
+                        ELSE card_data
+                    END
+                WHERE category != 'Pokemon'
+                  AND hp > 0
+                  AND (
+                    (stage IS NOT NULL AND stage <> '')
+                    OR (types IS NOT NULL AND types <> '{}')
+                    OR (dex_ids IS NOT NULL AND dex_ids <> '{}')
+                  )
+                """
+            )
+        )
+        fixed = result.rowcount or 0
+    if fixed:
+        print(f"Reclassified {fixed} mislabeled Pokémon card(s).")
+    return fixed
+
+
 def build_oracles(engine) -> dict[str, int]:
     # Corrections first, committed separately — never share a lock with DELETE oracles.
+    persist_category_corrections(engine)
     persist_card_corrections(engine)
 
     with engine.begin() as conn:
@@ -830,6 +860,7 @@ def build_oracles_for_sets(engine, set_ids: list[str]) -> dict[str, int]:
     if not normalized:
         return {"cards": 0, "oracles": 0, "oracles_created": 0, "evolve_from_backfilled": 0}
 
+    persist_category_corrections(engine)
     persist_card_corrections(engine)
 
     with engine.begin() as conn:

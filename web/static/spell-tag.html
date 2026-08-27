@@ -182,13 +182,16 @@
               <li><button type="button" class="sp-linkish" data-quick="is:paradox">is:paradox</button> · <button type="button" class="sp-linkish" data-quick="is:ultra-beast">is:ultra-beast</button> · <button type="button" class="sp-linkish" data-quick="is:fossil">is:fossil</button></li>
               <li><button type="button" class="sp-linkish" data-quick="is:pseudo-legendary">is:pseudo-legendary</button> · <button type="button" class="sp-linkish" data-quick="is:regional">is:regional</button></li>
               <li><button type="button" class="sp-linkish" data-quick="has:ability">has:ability</button> — cards with an Ability</li>
+              <li><code>o:active</code> — rules text contains word <em>active</em></li>
+              <li><code>o:"active spot"</code> — rules text contains phrase</li>
+              <li><code>o:/pattern/</code> — rules text matches regex (case-insensitive)</li>
             </ul>
 
             <h4>Negation <code>-</code></h4>
             <ul>
               <li><button type="button" class="sp-linkish" data-quick="t:trainer -t:stadium">t:trainer -t:stadium</button> — trainers that aren’t Stadiums</li>
               <li><button type="button" class="sp-linkish" data-quick="t:pokemon -e:fire">t:pokemon -e:fire</button> — Pokémon that aren’t Fire-type</li>
-              <li>Works with most filters: <code>-t:</code> <code>-is:</code> <code>-e:</code> <code>-otag:</code> <code>-art:</code> <code>-set:</code> <code>-prize:</code></li>
+              <li>Works with most filters: <code>-t:</code> <code>-is:</code> <code>-e:</code> <code>-o:</code> <code>-otag:</code> <code>-art:</code> <code>-set:</code> <code>-prize:</code></li>
             </ul>
 
             <p class="sp-syntax-note">Example: <code>t:trainer t:supporter N</code> finds Supporter cards with “N” in the name. Click subtype pills on a card to filter instantly.</p>
@@ -214,7 +217,7 @@
         <em>Pokémon</em> rolls up by Dex #.
         <em>Cards</em> needs an <strong>exact</strong> gameplay match — try
         <button type="button" class="sp-linkish" data-quick="Dusknoir">Dusknoir</button>.
-        Oracle tags: <code>otag:rain-dance</code> · Art tags: <code>art:night</code> · Prizes: <code>prize:2</code>
+        Oracle tags: <code>otag:rain-dance</code> · Art tags: <code>art:night</code> · Prizes: <code>prize:2</code> · Rules text: <code>o:"draw a card"</code>
       </p>
     </section>
 

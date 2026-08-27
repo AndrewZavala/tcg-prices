@@ -64,6 +64,7 @@ POKEMON_MIGRATIONS = (
     "035_art_tags.sql",
     "036_tag_hierarchy.sql",
     "037_collection_tags.sql",
+    "038_collection_item_tags.sql",
 )
 
 

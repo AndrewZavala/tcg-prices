@@ -459,6 +459,10 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
     patched = apply_card_corrections(
         {
             "id": card_id,
+            "category": card.get("category"),
+            "hp": card.get("hp"),
+            "types": card.get("types"),
+            "dexId": card.get("dexId"),
             "abilities": abilities,
             "attacks": attacks,
             "stage": stage,
@@ -522,7 +526,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
             "set_id": (card.get("set") or {}).get("id") or card["id"].split("-", 1)[0],
             "local_id": unquote(str(card.get("localId", "") or "")),
             "name": card.get("name"),
-            "category": card.get("category") or "Unknown",
+            "category": patched.get("category") or card.get("category") or "Unknown",
             "hp": card.get("hp"),
             "types": card.get("types"),
             "stage": stage,

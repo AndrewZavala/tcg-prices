@@ -931,6 +931,14 @@
   padding: 0.5rem 0.65rem;
 }
 
+.st-body .sp-card-tags-panel {
+  margin: 0.75rem 0 1rem;
+}
+
+.st-body .sp-card-tags-panel .sp-hint {
+  margin: 0.2rem 0 0.5rem;
+}
+
 .st-body .sp-collection-search {
   display: flex;
   flex-wrap: wrap;
