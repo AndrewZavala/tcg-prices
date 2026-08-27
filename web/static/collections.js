@@ -28,7 +28,6 @@
   let detailSort = "saved";
   let detailGroup = "none";
   let detailView = "spoiler";
-  let detailTagFilter = "";
   let detailKnownTags = [];
   let detailIsOwner = true;
   let listSort = "name";
@@ -82,15 +81,10 @@
     }
   }
 
-  function detailTagFromUrl() {
-    return new URLSearchParams(location.search).get("tag") || "";
-  }
-
   function writeCollectionDetailToUrl() {
     const params = new URLSearchParams();
     const q = String(detailQuery || "").trim();
     if (q) params.set("q", q);
-    if (detailTagFilter) params.set("tag", detailTagFilter);
     if (detailSort && detailSort !== "saved") params.set("sort", detailSort);
     if (detailGroup && detailGroup !== "none") params.set("group", detailGroup);
     if (detailView && detailView !== "spoiler") params.set("view", detailView);
@@ -251,10 +245,12 @@
   }
 
   function filteredDetailCards() {
-    return detailCards.filter((c) => {
-      if (detailTagFilter && !(c.tags || []).includes(detailTagFilter)) return false;
-      return cardMatchesQuery(c, detailQuery);
-    });
+    return detailCards.filter((c) => cardMatchesQuery(c, detailQuery));
+  }
+
+  function defaultPreviewCard() {
+    const visible = filteredDetailCards();
+    return visible.length ? visible[0] : null;
   }
 
   function bindModalUi() {
@@ -418,7 +414,6 @@
     const params = new URLSearchParams();
     if (detailSort !== "saved") params.set("sort", detailSort);
     if (detailGroup && detailGroup !== "none") params.set("group", detailGroup);
-    if (detailTagFilter) params.set("tag", detailTagFilter);
     const qs = params.toString();
     const suffix = qs ? `?${qs}` : "";
 
@@ -854,16 +849,16 @@
       mount.hidden = false;
       if (emptyEl) emptyEl.hidden = true;
       bindCollectionGrid(collectionId, mount);
+      updatePreviewPanel(defaultPreviewCard());
     } else {
       mount.innerHTML = "";
       mount.hidden = true;
+      updatePreviewPanel(null);
       if (emptyEl) {
         emptyEl.hidden = false;
         emptyEl.textContent = detailQuery
           ? `No cards match “${detailQuery}”.`
-          : detailTagFilter
-            ? `No cards tagged “${detailTagFilter}”.`
-            : "No cards in this collection.";
+          : "No cards in this collection.";
       }
     }
   }
@@ -939,7 +934,6 @@
     detailView = collectionViewFromUrl() || "spoiler";
     if (detailView !== "stacks") detailView = "spoiler";
     detailQuery = collectionSearchFromUrl();
-    detailTagFilter = detailTagFromUrl();
 
     const data = await fetchCollectionDetail(ref);
     detailCollectionId = data.collection.id;
@@ -949,18 +943,10 @@
     detailIsOwner = data.is_owner !== false;
     if (data.sort) detailSort = data.sort;
     if (data.group) detailGroup = data.group;
-    if (data.tag) detailTagFilter = data.tag;
 
     const coll = detailColl;
     const isFav = coll.kind === "favorites";
     const ownerName = coll.owner?.name;
-    const tagOptions = [
-      '<option value="">All tags</option>',
-      ...detailKnownTags.map(
-        (tag) =>
-          `<option value="${esc(tag)}"${tag === detailTagFilter ? " selected" : ""}>${esc(tag)}</option>`
-      ),
-    ].join("");
 
     const sharePanel =
       detailIsOwner && !isFav
@@ -1019,14 +1005,6 @@
             />
             <span class="sp-collection-search-count" id="collectionSearchCount"></span>
           </div>
-          ${
-            detailIsOwner
-              ? `<label class="sp-collection-control">
-                  <span class="sp-label">Tag</span>
-                  <select id="detailTagFilter">${tagOptions}</select>
-                </label>`
-              : ""
-          }
           <label class="sp-collection-control">
             <span class="sp-label">View</span>
             <select id="detailView">
@@ -1082,13 +1060,11 @@
                </div>
              </div>`
           : `<p class="sp-empty">${
-              detailTagFilter
-                ? `No cards tagged “${esc(detailTagFilter)}”.`
-                : isFav
-                  ? "No favorites yet. Open a card on Search and tap ♡ Favorite, or use Add cards."
-                  : detailIsOwner
-                    ? "No cards yet. Use Add cards to search and tap printings to save them here, or import a cube JSON."
-                    : "This collection is empty."
+              isFav
+                ? "No favorites yet. Open a card on Search and tap ♡ Favorite, or use Add cards."
+                : detailIsOwner
+                  ? "No cards yet. Use Add cards to search and tap printings to save them here, or import a cube JSON."
+                  : "This collection is empty."
             }</p>`
       }`;
 
@@ -1102,11 +1078,6 @@
         renderDetailGrid(detailCollectionId);
       });
     }
-    document.getElementById("detailTagFilter")?.addEventListener("change", async (e) => {
-      detailTagFilter = e.target.value;
-      writeCollectionDetailToUrl();
-      await renderDetail(ref);
-    });
     document.getElementById("detailGroup")?.addEventListener("change", async (e) => {
       detailGroup = e.target.value;
       writeCollectionDetailToUrl();
@@ -1124,7 +1095,7 @@
     });
     if (detailCards.length) {
       document.getElementById("collectionGridMount")?.addEventListener("mouseleave", () => {
-        updatePreviewPanel(null);
+        updatePreviewPanel(defaultPreviewCard());
       });
       renderDetailGrid(detailCollectionId);
     }
