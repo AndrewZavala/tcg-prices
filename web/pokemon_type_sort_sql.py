@@ -34,6 +34,23 @@ def build_card_type_sort_sql(alias: str = "c", *, include_category_bucket: bool 
   WHEN 'Energy' THEN ({energy_rank})
   ELSE 99 END"""
 
+    # Group evolution lines by root dex (not species name — avoids Gardevoir before Ralts).
+    line_group = f"""CASE WHEN {a}.category = 'Pokemon'
+  THEN COALESCE(ps.chain_root_dex_id, {a}.dex_ids[1], 999999)
+  ELSE 0 END"""
+
+    # Prefer pipeline stage order; fall back to card stage when metadata is missing.
+    line_stage = f"""CASE WHEN {a}.category = 'Pokemon' THEN COALESCE(
+  CASE WHEN ps.chain_root_dex_id IS NOT NULL THEN ps.chain_stage_order END,
+  CASE {a}.stage
+    WHEN 'Basic' THEN 0
+    WHEN 'Stage1' THEN 1
+    WHEN 'Stage2' THEN 2
+    ELSE NULL
+  END,
+  99
+) ELSE 0 END"""
+
     lines: list[str] = []
     if include_category_bucket:
         lines.append(f"CASE {a}.category WHEN 'Pokemon' THEN 0 WHEN 'Trainer' THEN 1 ELSE 2 END")
@@ -43,20 +60,19 @@ def build_card_type_sort_sql(alias: str = "c", *, include_category_bucket: bool 
         f"AND NOT ('special' = ANY(COALESCE({a}.tags, ARRAY[]::text[]))) "
         f"THEN ({tcg_type_rank}) ELSE 0 END"
     )
-    lines.append(
-        f"CASE WHEN {a}.category = 'Pokemon' "
-        f"THEN COALESCE(ps_root.name, ps.name, {a}.name) ELSE '' END"
-    )
-    lines.append(
-        f"CASE WHEN {a}.category = 'Pokemon' THEN COALESCE(ps.chain_stage_order, 99) ELSE 0 END"
-    )
+    lines.append(line_group)
+    lines.append(line_stage)
+    lines.append(f"{a}.dex_ids[1] ASC NULLS LAST")
     lines.append(f"{a}.name ASC")
     lines.append("s.release_date ASC NULLS LAST")
-    lines.append(f"{a}.id ASC")
+    lines.append(f"{a}.id ASC NULLS LAST")
     return ",\n                ".join(lines)
 
 
 COLLECTION_SPECIES_JOINS = """
             LEFT JOIN pokemon_species ps ON ps.dex_id = pc.dex_ids[1]
-            LEFT JOIN pokemon_species ps_root ON ps_root.dex_id = ps.chain_root_dex_id
+"""
+
+SEARCH_SPECIES_JOINS = """
+LEFT JOIN pokemon_species ps ON ps.dex_id = c.dex_ids[1]
 """

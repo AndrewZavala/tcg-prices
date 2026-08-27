@@ -14,6 +14,7 @@ from sqlalchemy import text
 META_CACHE_CONTROL = "public, max-age=3600"
 
 from tcgplayer_links import pokemon_buy_url
+from pokemon_type_sort_sql import SEARCH_SPECIES_JOINS, build_card_type_sort_sql
 
 router = APIRouter(tags=["pokemon"])
 
@@ -132,87 +133,9 @@ SORT_SQL = {
     "hp_desc": "c.hp DESC NULLS LAST, c.name ASC",
 }
 
-TYPE_SORT_RANK_SQL = """
-CASE COALESCE(
-  CASE WHEN c.category = 'Pokemon' THEN ps.chain_sort_type ELSE NULL END,
-  c.types[1],
-  'Colorless'
-)
-  WHEN 'Grass' THEN 1
-  WHEN 'Fire' THEN 2
-  WHEN 'Water' THEN 3
-  WHEN 'Lightning' THEN 4
-  WHEN 'Psychic' THEN 5
-  WHEN 'Fighting' THEN 6
-  WHEN 'Darkness' THEN 7
-  WHEN 'Metal' THEN 8
-  WHEN 'Fairy' THEN 9
-  WHEN 'Dragon' THEN 10
-  WHEN 'Colorless' THEN 11
-  ELSE 99
-END
-"""
+SORT_SQL["type"] = build_card_type_sort_sql("c", include_category_bucket=True)
 
-TCG_TYPE_NAME_RANK_SQL = """
-CASE COALESCE(c.types[1], 'Colorless')
-  WHEN 'Grass' THEN 1
-  WHEN 'Fire' THEN 2
-  WHEN 'Water' THEN 3
-  WHEN 'Lightning' THEN 4
-  WHEN 'Psychic' THEN 5
-  WHEN 'Fighting' THEN 6
-  WHEN 'Darkness' THEN 7
-  WHEN 'Metal' THEN 8
-  WHEN 'Fairy' THEN 9
-  WHEN 'Dragon' THEN 10
-  WHEN 'Colorless' THEN 11
-  ELSE 99
-END
-"""
-
-TRAINER_SUBTYPE_RANK_SQL = """
-CASE
-  WHEN 'supporter' = ANY(COALESCE(c.tags, ARRAY[]::text[])) THEN 1
-  WHEN 'item' = ANY(COALESCE(c.tags, ARRAY[]::text[])) THEN 2
-  WHEN 'pokemon-tool' = ANY(COALESCE(c.tags, ARRAY[]::text[])) THEN 3
-  WHEN 'stadium' = ANY(COALESCE(c.tags, ARRAY[]::text[])) THEN 4
-  ELSE 99
-END
-"""
-
-ENERGY_KIND_RANK_SQL = """
-CASE
-  WHEN 'special' = ANY(COALESCE(c.tags, ARRAY[]::text[])) THEN 2
-  ELSE 1
-END
-"""
-
-TYPE_SORT_PRIMARY_RANK_SQL = f"""
-CASE c.category
-  WHEN 'Pokemon' THEN ({TYPE_SORT_RANK_SQL.strip()})
-  WHEN 'Trainer' THEN ({TRAINER_SUBTYPE_RANK_SQL.strip()})
-  WHEN 'Energy' THEN ({ENERGY_KIND_RANK_SQL.strip()})
-  ELSE 99
-END
-"""
-
-SORT_SQL["type"] = (
-    "CASE c.category WHEN 'Pokemon' THEN 0 WHEN 'Trainer' THEN 1 ELSE 2 END, "
-    f"{TYPE_SORT_PRIMARY_RANK_SQL}, "
-    "CASE WHEN c.category = 'Energy' "
-    "AND NOT ('special' = ANY(COALESCE(c.tags, ARRAY[]::text[]))) "
-    f"THEN ({TCG_TYPE_NAME_RANK_SQL.strip()}) ELSE 0 END, "
-    "CASE WHEN c.category = 'Pokemon' THEN COALESCE(ps_root.name, ps.name, c.name) ELSE '' END ASC, "
-    "CASE WHEN c.category = 'Pokemon' THEN COALESCE(ps.chain_stage_order, 99) ELSE 0 END, "
-    "c.name ASC, "
-    "s.release_date ASC NULLS LAST, "
-    "c.local_id ASC NULLS LAST"
-)
-
-SPECIES_SORT_JOINS = """
-LEFT JOIN pokemon_species ps ON ps.dex_id = c.dex_ids[1]
-LEFT JOIN pokemon_species ps_root ON ps_root.dex_id = ps.chain_root_dex_id
-"""
+SPECIES_SORT_JOINS = SEARCH_SPECIES_JOINS
 
 
 class PokemonMetaResponse(BaseModel):
