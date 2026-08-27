@@ -1438,37 +1438,43 @@
 }
 
 .st-body .sp-collection-stack-columns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 1.25rem;
+  align-items: start;
 }
 
 .st-body .sp-collection-stack-column {
-  flex: 1 1 11rem;
-  min-width: 10rem;
-  max-width: 14rem;
+  min-width: 0;
+}
+
+.st-body .sp-collection-stack-column .sp-collection-group-title {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  margin: 0 0 0.45rem;
+  padding: 0.35rem 0 0.5rem;
+  background: linear-gradient(180deg, rgba(12, 12, 16, 0.98) 70%, rgba(12, 12, 16, 0));
 }
 
 .st-body .sp-collection-stack {
+  --stack-bar-h: 26px;
+  --stack-overlap: 22px;
   display: flex;
   flex-direction: column;
-  padding-bottom: 0.5rem;
+  padding-bottom: 0.35rem;
 }
 
 .st-body .sp-collection-stack-solo {
-  max-width: 14rem;
+  max-width: 13rem;
 }
 
 .st-body .sp-collection-stack-card {
   position: relative;
-  margin-top: -128px;
-  border-radius: 8px;
-  overflow: hidden;
+  margin-top: calc(-1 * var(--stack-overlap));
+  border-radius: 6px;
   cursor: pointer;
-  background: rgba(18, 18, 24, 0.95);
-  border: 1px solid rgba(196, 168, 232, 0.28);
-  transition: transform 0.12s ease, box-shadow 0.12s ease, margin 0.12s ease, z-index 0s;
+  transition: margin 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
 }
 
 .st-body .sp-collection-stack-card:first-child {
@@ -1478,26 +1484,50 @@
 .st-body .sp-collection-stack-card:hover,
 .st-body .sp-collection-stack-card:focus-visible {
   margin-top: 0;
-  z-index: 20;
-  transform: scale(1.01);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  outline: 2px solid rgba(196, 168, 232, 0.55);
-  outline-offset: 2px;
+  z-index: 30;
+  transform: scale(1.015);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
 }
 
 .st-body .sp-stack-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.35rem;
-  padding: 0.35rem 0.5rem;
-  background: rgba(12, 12, 16, 0.94);
-  font-size: 0.78rem;
+  gap: 0.4rem;
+  min-height: var(--stack-bar-h);
+  padding: 0.2rem 0.45rem 0.2rem 0.3rem;
+  border-radius: 6px;
+  background: rgba(14, 14, 18, 0.96);
+  border: 1px solid rgba(196, 168, 232, 0.22);
+  font-size: 0.76rem;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.15;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.st-body .sp-collection-stack-card.is-pokemon .sp-stack-bar {
+  border-left: 3px solid #f5c518;
+}
+
+.st-body .sp-collection-stack-card.is-trainer .sp-stack-bar {
+  border-left: 3px solid #8b7fd4;
+}
+
+.st-body .sp-collection-stack-card.is-energy .sp-stack-bar {
+  border-left: 3px solid #4ade80;
+}
+
+.st-body .sp-stack-art {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  background-size: cover;
+  background-position: center top;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .st-body .sp-stack-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1507,21 +1537,40 @@
 .st-body .sp-stack-meta {
   flex-shrink: 0;
   color: var(--sp-muted);
+  font-size: 0.72rem;
   font-weight: 600;
+}
+
+.st-body .sp-stack-body {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.18s ease, opacity 0.12s ease;
+}
+
+.st-body .sp-collection-stack-card:hover .sp-stack-body,
+.st-body .sp-collection-stack-card:focus-visible .sp-stack-body {
+  max-height: 420px;
+  opacity: 1;
 }
 
 .st-body .sp-collection-stack-card .sp-stack-img {
   display: block;
   width: 100%;
-  max-height: 24px;
-  object-fit: cover;
-  object-position: top center;
-  transition: max-height 0.15s ease;
+  height: auto;
+  margin-top: 0.2rem;
+  border-radius: 6px;
+  border: 1px solid rgba(196, 168, 232, 0.25);
 }
 
-.st-body .sp-collection-stack-card:hover .sp-stack-img,
-.st-body .sp-collection-stack-card:focus-visible .sp-stack-img {
-  max-height: 420px;
+.st-body .sp-collection-stack-card:hover,
+.st-body .sp-collection-stack-card:focus-visible {
+  outline: none;
+}
+
+.st-body .sp-collection-stack-card:focus-visible .sp-stack-bar {
+  outline: 2px solid rgba(196, 168, 232, 0.55);
+  outline-offset: 1px;
 }
 
 @media (max-width: 900px) {

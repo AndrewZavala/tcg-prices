@@ -745,15 +745,27 @@
       </article>`;
   }
 
+  function stackCategoryClass(c) {
+    const cat = String(c.category || "").toLowerCase();
+    if (cat === "pokemon") return "is-pokemon";
+    if (cat === "trainer") return "is-trainer";
+    if (cat === "energy") return "is-energy";
+    return "";
+  }
+
   function renderCardStack(c) {
     const label = `${c.name} — ${c.set_name} #${c.local_id}`;
+    const art = esc(c.image_url || CARD_IMG_FALLBACK);
     return `
-      <article class="sp-collection-stack-card" data-id="${esc(c.id)}" tabindex="0" aria-label="${esc(label)}">
+      <article class="sp-collection-stack-card ${stackCategoryClass(c)}" data-id="${esc(c.id)}" tabindex="0" aria-label="${esc(label)}">
         <div class="sp-stack-bar">
+          <span class="sp-stack-art" style="background-image:url('${art}')" aria-hidden="true"></span>
           <span class="sp-stack-name">${esc(c.name)}</span>
           <span class="sp-stack-meta">#${esc(c.local_id || "—")}</span>
         </div>
-        ${cardImg(c.image_url, label, "sp-stack-img")}
+        <div class="sp-stack-body">
+          ${cardImg(c.image_url, label, "sp-stack-img")}
+        </div>
       </article>`;
   }
 
