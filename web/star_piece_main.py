@@ -66,6 +66,7 @@ POKEMON_MIGRATIONS = (
     "037_collection_tags.sql",
     "038_collection_item_tags.sql",
     "039_collection_visibility.sql",
+    "040_pokemon_evolution_sort.sql",
 )
 
 

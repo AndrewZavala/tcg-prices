@@ -23,7 +23,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, text
 
-from config import DATABASE_URL, MIGRATIONS_DIR
+from config import DATABASE_URL, HELPER_DIR, MIGRATIONS_DIR
 
 PIPELINE_DIR = Path(__file__).resolve().parent
 POKEMON_MIGRATIONS = (
@@ -58,6 +58,7 @@ def run_enrich(
     skip_migration: bool = False,
     skip_subtypes: bool = False,
     skip_species: bool = False,
+    skip_evolution: bool = False,
     species_full: bool = False,
     skip_oracle: bool = False,
 ) -> int:
@@ -84,6 +85,14 @@ def run_enrich(
             _run_step("Species (PokeAPI missing dex ids)", "build_pokemon_species.py", [*common, "--missing-only"])
     else:
         print("\n=== Species — skipped ===")
+
+    if not skip_evolution:
+        evo_args = [*common]
+        if (HELPER_DIR / "pokemon_evolution_chains.json").exists():
+            evo_args.append("--from-cache")
+        _run_step("Evolution chains (type sort)", "build_pokemon_evolution.py", evo_args)
+    else:
+        print("\n=== Evolution chains — skipped ===")
 
     if skip_oracle:
         if set_ids:
@@ -115,6 +124,7 @@ def main() -> int:
     parser.add_argument("--skip-migration", action="store_true", help="Skip applying 025–028 migrations")
     parser.add_argument("--skip-subtypes", action="store_true")
     parser.add_argument("--skip-species", action="store_true")
+    parser.add_argument("--skip-evolution", action="store_true", help="Skip evolution chain type-sort metadata")
     parser.add_argument(
         "--species-full",
         action="store_true",
@@ -138,6 +148,7 @@ def main() -> int:
         skip_migration=args.skip_migration,
         skip_subtypes=args.skip_subtypes,
         skip_species=args.skip_species,
+        skip_evolution=args.skip_evolution,
         species_full=args.species_full,
         skip_oracle=args.skip_oracle,
     )
