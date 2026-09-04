@@ -21,7 +21,12 @@ import requests
 from sqlalchemy import create_engine, text
 
 from config import DATABASE_URL, MIGRATIONS_DIR
-from pokemon_card_corrections import correct_abilities, correct_attacks, apply_card_corrections, compute_is_multicolor
+from pokemon_card_corrections import (
+    correct_abilities,
+    correct_attacks,
+    apply_card_corrections,
+    compute_is_multicolor,
+)
 
 TCGDEX_BASE = "https://api.tcgdex.net/v2"
 USER_AGENT = "TCGPokemonCatalog/1.0"
@@ -476,6 +481,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
     abilities = patched.get("abilities") or []
     attacks = patched.get("attacks") or []
     stage = patched.get("stage")
+    types = patched.get("types") if "types" in patched else card.get("types")
     if isinstance(cleaned, dict):
         cleaned = patched.get("card_data") or cleaned
     category = patched.get("category") or card.get("category") or "Unknown"
@@ -483,7 +489,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
         {
             "id": card_id,
             "category": category,
-            "types": card.get("types"),
+            "types": types,
             "attacks": attacks,
             "abilities": patched.get("abilities") or abilities,
             "description": card.get("description") or card.get("effect"),
@@ -545,7 +551,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
             "name": card.get("name"),
             "category": category,
             "hp": card.get("hp"),
-            "types": card.get("types"),
+            "types": types,
             "stage": stage,
             "evolve_from": card.get("evolveFrom"),
             "dex_ids": card.get("dexId"),

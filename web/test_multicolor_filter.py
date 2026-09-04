@@ -37,6 +37,17 @@ def test_sql_uses_cached_column() -> None:
     assert "category = 'Pokemon'" in sql
 
 
+def test_flavor_psychic_energy_ignored_by_compute() -> None:
+    assert not compute_is_multicolor(
+        {
+            "category": "Pokemon",
+            "types": ["Water"],
+            "attacks": [{"cost": ["Water"], "name": "Splash"}],
+            "description": "It fires the psychic energy from its mouth.",
+        }
+    )
+
+
 def test_apply_multicolor_filter() -> None:
     filters: list[str] = []
     _apply_multicolor_filter(filters, multicolor=True)

@@ -557,16 +557,21 @@ def persist_card_corrections(engine) -> int:
     from pokemon_card_corrections import (
         ABILITY_TYPE_BY_NAME,
         ATTACK_FIELD_BY_NAME,
+        ATTACKS_BY_ID,
         DROP_NAMELESS_ATTACKS,
         STAGE_BY_ID,
+        TYPES_BY_ID,
         apply_card_corrections,
+        compute_is_multicolor,
     )
 
     ids = sorted(
         set(ABILITY_TYPE_BY_NAME)
         | set(ATTACK_FIELD_BY_NAME)
+        | set(ATTACKS_BY_ID)
         | set(DROP_NAMELESS_ATTACKS)
         | set(STAGE_BY_ID)
+        | set(TYPES_BY_ID)
     )
     if not ids:
         return 0
@@ -576,7 +581,8 @@ def persist_card_corrections(engine) -> int:
         rows = conn.execute(
             text(
                 """
-                SELECT id, abilities, attacks, stage
+                SELECT id, category, types, description, card_data,
+                       abilities, attacks, stage
                 FROM pokemon_cards
                 WHERE id = ANY(:ids)
                 """
@@ -591,17 +597,33 @@ def persist_card_corrections(engine) -> int:
                 abilities = json.loads(abilities)
             if isinstance(attacks, str):
                 attacks = json.loads(attacks)
+            card_data = row.get("card_data")
+            if isinstance(card_data, str):
+                card_data = json.loads(card_data)
+            before_types = list(row.get("types") or [])
             before = {
                 "id": cid,
+                "category": row.get("category"),
+                "types": before_types,
+                "description": row.get("description"),
+                "card_data": card_data if isinstance(card_data, dict) else {},
                 "abilities": list(abilities or []),
                 "attacks": list(attacks or []),
                 "stage": row.get("stage"),
             }
             after = apply_card_corrections(dict(before))
+            is_multi = compute_is_multicolor(after)
+            changed = (
+                after.get("abilities") != before["abilities"]
+                or after.get("attacks") != before["attacks"]
+                or after.get("stage") != before["stage"]
+                or list(after.get("types") or []) != before_types
+            )
             if (
-                after.get("abilities") == before["abilities"]
-                and after.get("attacks") == before["attacks"]
-                and after.get("stage") == before["stage"]
+                not changed
+                and cid not in ATTACK_FIELD_BY_NAME
+                and cid not in TYPES_BY_ID
+                and cid not in ATTACKS_BY_ID
             ):
                 continue
             conn.execute(
@@ -610,7 +632,10 @@ def persist_card_corrections(engine) -> int:
                     UPDATE pokemon_cards
                     SET abilities = CAST(:abilities AS jsonb),
                         attacks = CAST(:attacks AS jsonb),
-                        stage = :stage
+                        stage = :stage,
+                        types = :types,
+                        card_data = CAST(:card_data AS jsonb),
+                        is_multicolor = :is_multicolor
                     WHERE id = :id
                     """
                 ),
@@ -619,6 +644,13 @@ def persist_card_corrections(engine) -> int:
                     "abilities": json.dumps(after.get("abilities") or []),
                     "attacks": json.dumps(after.get("attacks") or []),
                     "stage": after.get("stage"),
+                    "types": list(after.get("types") or before_types),
+                    "card_data": json.dumps(
+                        after.get("card_data")
+                        if isinstance(after.get("card_data"), dict)
+                        else (card_data if isinstance(card_data, dict) else {})
+                    ),
+                    "is_multicolor": is_multi,
                 },
             )
             fixed += 1
@@ -660,7 +692,7 @@ def persist_category_corrections(engine) -> int:
 
 
 def persist_multicolor_flags(engine) -> int:
-    """Recompute pokemon_cards.is_multicolor (same rules as migration 044)."""
+    """Recompute pokemon_cards.is_multicolor (effects only — not flavor description)."""
     with engine.begin() as conn:
         conn.execute(text("UPDATE pokemon_cards SET is_multicolor = FALSE"))
         result = conn.execute(
@@ -696,7 +728,6 @@ def persist_multicolor_flags(engine) -> int:
                       SELECT v.color
                       FROM (
                         SELECT
-                          COALESCE(c.description, '') || ' ' ||
                           COALESCE(c.card_data->>'effect', '') || ' ' ||
                           COALESCE(c.attacks::text, '') || ' ' ||
                           COALESCE(c.abilities::text, '') AS txt
@@ -732,8 +763,8 @@ def persist_multicolor_flags(engine) -> int:
 def build_oracles(engine) -> dict[str, int]:
     # Corrections first, committed separately — never share a lock with DELETE oracles.
     persist_category_corrections(engine)
-    persist_multicolor_flags(engine)
     persist_card_corrections(engine)
+    persist_multicolor_flags(engine)
 
     with engine.begin() as conn:
         cards = load_cards(conn)

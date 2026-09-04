@@ -37,14 +37,13 @@ BEGIN
 
           UNION
 
-          SELECT v.color
-          FROM (
-            SELECT
-              COALESCE(c.description, '') || ' ' ||
-              COALESCE(c.card_data->>'effect', '') || ' ' ||
-              COALESCE(c.attacks::text, '') || ' ' ||
-              COALESCE(c.abilities::text, '') AS txt
-          ) AS rules
+                      SELECT v.color
+                      FROM (
+                        SELECT
+                          COALESCE(c.card_data->>'effect', '') || ' ' ||
+                          COALESCE(c.attacks::text, '') || ' ' ||
+                          COALESCE(c.abilities::text, '') AS txt
+                      ) AS rules
           CROSS JOIN (
             VALUES
               ('Grass', 'G'),

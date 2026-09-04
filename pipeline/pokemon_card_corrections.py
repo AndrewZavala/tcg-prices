@@ -77,6 +77,60 @@ ATTACK_FIELD_BY_NAME: dict[str, dict[str, dict[str, Any]]] = {
             ),
         },
     },
+    # TCGdex mislabeled Sonicboom as Grass×2 + Colorless×2 / 40; card is Colorless×2 / 20.
+    "base5-11": {
+        "Sonicboom": {
+            "cost": ["Colorless", "Colorless"],
+            "damage": 20,
+        },
+    },
+    # Neo Discovery Umbreon — Pursuit cost was Metal; card is Darkness.
+    "neo2-32": {
+        "Pursuit": {
+            "cost": ["Darkness", "Colorless", "Colorless"],
+        },
+    },
+    # Emerald Volbeat — Double-edge cost was Lightning; card is Grass.
+    "ex9-42": {
+        "Double-edge": {
+            "cost": ["Grass", "Colorless"],
+        },
+    },
+    # Delta Species Magnemite — Magnetic Blast cost was Grass; card is Lightning.
+    "ex11-74": {
+        "Magnetic Blast": {
+            "cost": ["Lightning", "Colorless"],
+        },
+    },
+    # Legends Awakened Yanmega — Pursue and Turn was Metal×2; card is Colorless×2.
+    "dp6-17": {
+        "Pursue and Turn": {
+            "cost": ["Grass", "Grass", "Colorless", "Colorless"],
+        },
+    },
+}
+
+# card_id → full attacks array replacement (when rows are merged/split wrongly)
+ATTACKS_BY_ID: dict[str, list[dict[str, Any]]] = {
+    # Expedition Hoppip — Sleep Powder garbled into Water/20x + nameless Grass/10.
+    "ecard1-112": [
+        {
+            "cost": ["Grass"],
+            "name": "Sleep Powder",
+            "damage": 10,
+            "effect": (
+                "Flip a coin. If heads, the Defending Pokémon is now Asleep."
+            ),
+        },
+    ],
+}
+
+# card_id → corrected printed types
+TYPES_BY_ID: dict[str, list[str]] = {
+    "ex10-44": ["Fighting"],  # Quagsire Unseen Forces (was Fire)
+    "ex11-44": ["Fighting"],  # Hariyama δ (was Fire)
+    "ex11-82": ["Fighting"],  # Sandshrew δ (was Water)
+    "ecard3-H19": ["Metal"],  # Skyridge Magneton holo (was Lightning; matches ecard3-20)
 }
 
 # card_id → corrected stage (when source omits Basic on Pokémon-EX / TAG TEAM reprints)
@@ -168,6 +222,8 @@ def correct_abilities(
 
 def correct_attacks(card_id: str, attacks: list[Any] | None) -> list[Any]:
     """Return attacks with card-specific field fixes applied."""
+    if card_id in ATTACKS_BY_ID:
+        return copy.deepcopy(ATTACKS_BY_ID[card_id])
     rows = _patch_named_rows(
         attacks,
         ATTACK_FIELD_BY_NAME.get(card_id) or {},
@@ -182,6 +238,16 @@ def correct_attacks(card_id: str, attacks: list[Any] | None) -> list[Any]:
         if len(filtered) != len(rows):
             return filtered
     return rows
+
+
+def correct_types(card_id: str, types: list[Any] | None) -> list[str] | None:
+    """Return corrected printed types when known, else unchanged list (or None)."""
+    fixed = TYPES_BY_ID.get(card_id)
+    if fixed is not None:
+        return list(fixed)
+    if types is None:
+        return None
+    return [str(t) for t in types if t]
 
 
 def correct_category(card: dict[str, Any]) -> str:
@@ -216,9 +282,8 @@ MULTICOLOR_ENERGY_TYPES: tuple[tuple[str, str], ...] = (
 
 
 def _multicolor_rules_text(card: dict[str, Any]) -> str:
-    parts: list[str] = [
-        str(card.get("description") or ""),
-    ]
+    """Attack/ability effects only — not Pokédex flavor (description)."""
+    parts: list[str] = []
     data = card.get("card_data")
     if isinstance(data, dict):
         parts.append(str(data.get("effect") or ""))
@@ -297,6 +362,11 @@ def apply_card_corrections(card: dict[str, Any]) -> dict[str, Any]:
     if "category" in card:
         card["category"] = correct_category(card)
 
+    if "types" in card or card_id in TYPES_BY_ID:
+        fixed_types = correct_types(card_id, card.get("types"))
+        if fixed_types is not None:
+            card["types"] = fixed_types
+
     if "abilities" in card:
         set_id = card.get("set_id")
         if not set_id and isinstance(card.get("set"), dict):
@@ -304,7 +374,7 @@ def apply_card_corrections(card: dict[str, Any]) -> dict[str, Any]:
         card["abilities"] = correct_abilities(
             card_id, card.get("abilities"), set_id=set_id if isinstance(set_id, str) else None
         )
-    if "attacks" in card:
+    if "attacks" in card or card_id in ATTACKS_BY_ID:
         card["attacks"] = correct_attacks(card_id, card.get("attacks"))
 
     stage_fix = STAGE_BY_ID.get(card_id)
@@ -315,6 +385,10 @@ def apply_card_corrections(card: dict[str, Any]) -> dict[str, Any]:
     if isinstance(data, dict):
         if "category" in data:
             data["category"] = correct_category({**card, **data})
+        if "types" in data or card_id in TYPES_BY_ID:
+            fixed_types = correct_types(card_id, data.get("types") or card.get("types"))
+            if fixed_types is not None:
+                data["types"] = fixed_types
         if "abilities" in data:
             set_id = card.get("set_id")
             if not set_id and isinstance(card.get("set"), dict):
@@ -324,7 +398,7 @@ def apply_card_corrections(card: dict[str, Any]) -> dict[str, Any]:
                 data.get("abilities"),
                 set_id=set_id if isinstance(set_id, str) else None,
             )
-        if "attacks" in data:
+        if "attacks" in data or card_id in ATTACKS_BY_ID:
             data["attacks"] = correct_attacks(card_id, data.get("attacks"))
         if stage_fix and not (data.get("stage") or "").strip():
             data["stage"] = stage_fix
