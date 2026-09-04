@@ -54,11 +54,13 @@ def test_apply_has_ability_filters_sql() -> None:
         exclude_kinds=["omega-trait"],
     )
     assert any(_sql_has_any_ability() in f for f in filters)
-    assert any("EXISTS" in f for f in filters)
     assert params["has_ab_1"] == ["ability"]
     assert params["has_ab_2"] == ["pokepower"]
     assert params["xhas_ab_0"] == ["ancienttrait", "omegatrait"]
-    assert "CAST(:has_ab_1 AS text[])" in _sql_has_ability_kind("has_ab_1")
+    poke_power_sql = filters[2]
+    assert "EXISTS" in poke_power_sql
+    assert "base4" in poke_power_sql  # era rewrite for pre-Expedition
+    assert "CAST(:has_ab_2 AS text[])" in poke_power_sql
 
 
 if __name__ == "__main__":

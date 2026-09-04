@@ -453,12 +453,16 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
     legal = card.get("legal") or {}
     cleaned = _strip_pricing(card)
     card_id = str(card.get("id") or "")
-    abilities = correct_abilities(card_id, card.get("abilities") or [])
+    set_obj = card.get("set") if isinstance(card.get("set"), dict) else {}
+    set_id = str(set_obj.get("id") or "") or None
+    abilities = correct_abilities(card_id, card.get("abilities") or [], set_id=set_id)
     attacks = correct_attacks(card_id, card.get("attacks") or [])
     stage = card.get("stage")
     patched = apply_card_corrections(
         {
             "id": card_id,
+            "set_id": set_id,
+            "set": set_obj,
             "category": card.get("category"),
             "hp": card.get("hp"),
             "types": card.get("types"),

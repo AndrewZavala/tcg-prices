@@ -184,6 +184,50 @@ def _norm_ability_type_key(label: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", fold_accents(label or "").lower())
 
 
+# Pre-Expedition (Wizards) sets: BS/JU/FO/B2/RO/G1/G2/N1–N4.
+# Poké-Power did not exist yet — mislabels are rewritten to Pokémon Power.
+# Keep in sync with pipeline/pokemon_card_corrections.PRE_EXPEDITION_POKEMON_POWER_SETS.
+PRE_EXPEDITION_POKEMON_POWER_SETS: frozenset[str] = frozenset(
+    {
+        "base1",
+        "base2",
+        "base3",
+        "base4",
+        "base5",
+        "gym1",
+        "gym2",
+        "neo1",
+        "neo2",
+        "neo3",
+        "neo4",
+    }
+)
+
+
+def remap_pre_expedition_abilities(
+    set_id: str | None, abilities: list[Any] | None
+) -> list[Any]:
+    """Rewrite Poké-Power/Body → Pokemon Power on pre-Expedition prints."""
+    if not abilities:
+        return []
+    sid = (set_id or "").strip()
+    if sid not in PRE_EXPEDITION_POKEMON_POWER_SETS:
+        return list(abilities)
+    out: list[Any] = []
+    for ab in abilities:
+        if not isinstance(ab, dict):
+            out.append(ab)
+            continue
+        token = _norm_ability_type_key(str(ab.get("type") or ""))
+        if token in ("pokepower", "pokebody") and ab.get("type") != "Pokemon Power":
+            patched = dict(ab)
+            patched["type"] = "Pokemon Power"
+            out.append(patched)
+        else:
+            out.append(ab)
+    return out
+
+
 # has: filters — aliases → canonical slug; slug → normalized type keys (empty = any).
 ABILITY_HAS_ALIASES: dict[str, str] = {
     "ability-any": "ability-any",
@@ -228,16 +272,27 @@ ABILITY_HAS_FACETS: list[dict[str, str]] = [
 ]
 
 
+def _sql_ability_type_norm_expr() -> str:
+    """Normalized ability type key, with pre-Expedition Poké-Power → pokemonpower."""
+    folded = _sql_accent_fold("COALESCE(elem->>'type', '')")
+    raw = f"regexp_replace({folded}, '[^a-z0-9]', '', 'g')"
+    sets_sql = ", ".join(f"'{s}'" for s in sorted(PRE_EXPEDITION_POKEMON_POWER_SETS))
+    return f"""CASE
+      WHEN c.set_id IN ({sets_sql}) AND {raw} IN ('pokepower', 'pokebody')
+      THEN 'pokemonpower'
+      ELSE {raw}
+    END"""
+
+
 def _sql_has_ability_kind(param_key: str) -> str:
     """Match abilities[].type against normalized keys in :param_key (text[])."""
-    folded = _sql_accent_fold("COALESCE(elem->>'type', '')")
+    norm = _sql_ability_type_norm_expr()
     return f"""EXISTS (
       SELECT 1
       FROM jsonb_array_elements(
         CASE WHEN jsonb_typeof(c.abilities) = 'array' THEN c.abilities ELSE '[]'::jsonb END
       ) AS elem
-      WHERE regexp_replace({folded}, '[^a-z0-9]', '', 'g')
-            = ANY(CAST(:{param_key} AS text[]))
+      WHERE {norm} = ANY(CAST(:{param_key} AS text[]))
     )"""
 
 
@@ -376,6 +431,36 @@ def _pokemontcg_image_fallback(card_id: str | None, local_id: str | None = None)
     return f"https://images.pokemontcg.io/{api_set}/{num}_hires.png"
 
 
+# Official pokemon.com CMS promo folders (keep in sync with pipeline/pokemon_image_urls.py).
+_POKEMON_COM_PROMO_CODES: dict[str, str] = {
+    "swshp": "SWSHP",
+    "smp": "SMP",
+    "svp": "SVP",
+    "xyp": "XYP",
+    "bwp": "BWP",
+    "mep": "MEP",
+    "hgssp": "HGSSP",
+    "dpp": "DPP",
+    "np": "NP",
+}
+
+
+def _pokemon_com_image_fallback(card_id: str | None, local_id: str | None = None) -> str | None:
+    """Official pokemon.com art — fills gaps like SWSH301 where TCGdex/pokemontcg lack files."""
+    if not card_id or "-" not in card_id:
+        return None
+    set_part, local = card_id.split("-", 1)
+    if local_id:
+        local = str(local_id)
+    code = _POKEMON_COM_PROMO_CODES.get(set_part.lower())
+    if not code:
+        return None
+    num = local
+    if local.isdigit():
+        num = str(int(local))
+    return f"https://assets.pokemon.com/assets/cms2/img/cards/web/{code}/{code}_EN_{num}.png"
+
+
 def _remote_image_url(
     base: str | None,
     *,
@@ -389,7 +474,10 @@ def _remote_image_url(
             return base
         suffix = "low.webp" if size == "low" else "high.webp"
         return f"{base}/{suffix}"
-    return _pokemontcg_image_fallback(card_id, local_id)
+    return (
+        _pokemon_com_image_fallback(card_id, local_id)
+        or _pokemontcg_image_fallback(card_id, local_id)
+    )
 
 
 def _local_image_urls(card_id: str) -> tuple[str, str]:
@@ -1108,7 +1196,9 @@ def _card_row(raw: dict[str, Any]) -> dict[str, Any]:
         "printing_count": raw.get("printing_count") or 1,
         "art_variant_count": raw.get("art_variant_count") or 1,
         "attacks": raw.get("attacks") or [],
-        "abilities": raw.get("abilities") or [],
+        "abilities": remap_pre_expedition_abilities(
+            raw.get("set_id"), raw.get("abilities") or []
+        ),
         "tcgplayer_product_id": raw.get("tcgplayer_product_id"),
         "oracle_tags": raw.get("oracle_tags") or [],
     }

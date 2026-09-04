@@ -194,6 +194,15 @@ git pull --ff-only origin spell-tag
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build star-piece caddy
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual build star-piece-pipeline
 
+# Re-ingest SWSH Black Star Promos (picks up cards TCGdex added without art, e.g. SWSH303–305)
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
+  python pipeline/refresh_tcgdex.py --set swshp
+
+# Mirror missing art (uses pokemontcg.io + official pokemon.com fallbacks for promo gaps like SWSH301)
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
+  python pipeline/download_pokemon_images.py --set swshp
+```
+
 # Full mirror (~19k cards, polite delay — run in screen/tmux)
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
   python pipeline/download_pokemon_images.py

@@ -1,19 +1,69 @@
 """Per-card source data fixes (TCGdex / upstream mislabels).
 
-Keep these narrow — do not normalize era terms globally (Poké-Power ≠ Pokémon Power).
+Poké-Power ≠ Pokémon Power: only remap within Wizards-era sets where upstream
+often mislabels Pokémon Powers as Poké-POWER / Poké-BODY.
 """
 
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
+# Wizards of the Coast era (before Expedition / e-Card). Ability text is
+# "Pokémon Power" only — TCGdex often mislabels these as Poké-POWER.
+# User list: BS, JU, FO, B2, RO, G1, G2, N1–N4.
+# Keep in sync with web/pokemon_api.py PRE_EXPEDITION_POKEMON_POWER_SETS.
+PRE_EXPEDITION_POKEMON_POWER_SETS: frozenset[str] = frozenset(
+    {
+        "base1",  # Base Set (BS)
+        "base2",  # Jungle (JU)
+        "base3",  # Fossil (FO)
+        "base4",  # Base Set 2 (B2)
+        "base5",  # Team Rocket (RO)
+        "gym1",   # Gym Heroes (G1)
+        "gym2",   # Gym Challenge (G2)
+        "neo1",   # Neo Genesis (N1)
+        "neo2",   # Neo Discovery (N2)
+        "neo3",   # Neo Revelation (N3)
+        "neo4",   # Neo Destiny (N4)
+    }
+)
+
+# Backward-compatible alias
+WIZARDS_POKEMON_POWER_SETS = PRE_EXPEDITION_POKEMON_POWER_SETS
+
+
+def _set_id_from_card_id(card_id: str) -> str | None:
+    cid = (card_id or "").strip()
+    if "-" not in cid:
+        return None
+    return cid.rsplit("-", 1)[0] or None
+
+
+def _norm_ability_type_token(label: str) -> str:
+    folded = (label or "").replace("é", "e").replace("É", "E").lower()
+    return re.sub(r"[^a-z0-9]+", "", folded)
+
+
+def is_pre_expedition_pokemon_power_set(set_id: str | None) -> bool:
+    return bool(set_id) and set_id.strip() in PRE_EXPEDITION_POKEMON_POWER_SETS
+
+
+def remap_pre_expedition_ability_type(set_id: str | None, type_label: str | None) -> str | None:
+    """Poké-Power/Body on pre-Expedition sets → Pokemon Power."""
+    if type_label is None:
+        return None
+    if not is_pre_expedition_pokemon_power_set(set_id):
+        return type_label
+    token = _norm_ability_type_token(type_label)
+    if token in ("pokepower", "pokebody"):
+        return "Pokemon Power"
+    return type_label
+
+
 # card_id → ability name → corrected type label (as stored in jsonb)
-ABILITY_TYPE_BY_NAME: dict[str, dict[str, str]] = {
-    # Base Set 2 Blastoise — Rain Dance is a Pokémon Power (same as Base Set),
-    # but some sources mislabel it as Poké-Power.
-    "base4-2": {"Rain Dance": "Pokemon Power"},
-}
+ABILITY_TYPE_BY_NAME: dict[str, dict[str, str]] = {}
 
 # card_id → attack name → field → corrected value
 ATTACK_FIELD_BY_NAME: dict[str, dict[str, dict[str, Any]]] = {
@@ -87,9 +137,33 @@ def _patch_named_rows(
     return out if changed else list(rows)
 
 
-def correct_abilities(card_id: str, abilities: list[Any] | None) -> list[Any]:
-    """Return abilities with card-specific type fixes applied."""
-    return _patch_named_rows(abilities, ABILITY_TYPE_BY_NAME.get(card_id) or {})
+def correct_abilities(
+    card_id: str,
+    abilities: list[Any] | None,
+    *,
+    set_id: str | None = None,
+) -> list[Any]:
+    """Return abilities with card-specific and pre-Expedition type fixes applied."""
+    rows = _patch_named_rows(abilities, ABILITY_TYPE_BY_NAME.get(card_id) or {})
+    sid = (set_id or "").strip() or _set_id_from_card_id(card_id)
+    if not is_pre_expedition_pokemon_power_set(sid) or not rows:
+        return list(rows or [])
+
+    out: list[Any] = []
+    changed = False
+    for row in rows:
+        if not isinstance(row, dict):
+            out.append(row)
+            continue
+        want = remap_pre_expedition_ability_type(sid, str(row.get("type") or "") or None)
+        if want and row.get("type") != want:
+            patched = copy.deepcopy(row)
+            patched["type"] = want
+            out.append(patched)
+            changed = True
+        else:
+            out.append(row)
+    return out if changed else list(rows)
 
 
 def correct_attacks(card_id: str, attacks: list[Any] | None) -> list[Any]:
@@ -136,7 +210,12 @@ def apply_card_corrections(card: dict[str, Any]) -> dict[str, Any]:
         card["category"] = correct_category(card)
 
     if "abilities" in card:
-        card["abilities"] = correct_abilities(card_id, card.get("abilities"))
+        set_id = card.get("set_id")
+        if not set_id and isinstance(card.get("set"), dict):
+            set_id = card["set"].get("id")
+        card["abilities"] = correct_abilities(
+            card_id, card.get("abilities"), set_id=set_id if isinstance(set_id, str) else None
+        )
     if "attacks" in card:
         card["attacks"] = correct_attacks(card_id, card.get("attacks"))
 
@@ -149,7 +228,14 @@ def apply_card_corrections(card: dict[str, Any]) -> dict[str, Any]:
         if "category" in data:
             data["category"] = correct_category({**card, **data})
         if "abilities" in data:
-            data["abilities"] = correct_abilities(card_id, data.get("abilities"))
+            set_id = card.get("set_id")
+            if not set_id and isinstance(card.get("set"), dict):
+                set_id = card["set"].get("id")
+            data["abilities"] = correct_abilities(
+                card_id,
+                data.get("abilities"),
+                set_id=set_id if isinstance(set_id, str) else None,
+            )
         if "attacks" in data:
             data["attacks"] = correct_attacks(card_id, data.get("attacks"))
         if stage_fix and not (data.get("stage") or "").strip():

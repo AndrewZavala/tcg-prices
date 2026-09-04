@@ -44,6 +44,20 @@ POKEMONTCG_SET_ALIASES: dict[str, str] = {
     "cel25cc": "cel25c",
 }
 
+# Official pokemon.com CMS paths for promo sets (TCGdex/pokemontcg often lag).
+# https://assets.pokemon.com/assets/cms2/img/cards/web/{CODE}/{CODE}_EN_{num}.png
+POKEMON_COM_PROMO_CODES: dict[str, str] = {
+    "swshp": "SWSHP",
+    "smp": "SMP",
+    "svp": "SVP",
+    "xyp": "XYP",
+    "bwp": "BWP",
+    "mep": "MEP",
+    "hgssp": "HGSSP",
+    "dpp": "DPP",
+    "np": "NP",
+}
+
 
 def pokemontcg_image_urls(card_id: str | None, local_id: str | None = None) -> list[str]:
     """Candidate pokemontcg.io URLs (standard then hires)."""
@@ -71,6 +85,48 @@ def pokemontcg_image_urls(card_id: str | None, local_id: str | None = None) -> l
     return out
 
 
+def pokemon_com_image_urls(card_id: str | None, local_id: str | None = None) -> list[str]:
+    """Candidate assets.pokemon.com URLs (best for missing promo art)."""
+    if not card_id or "-" not in card_id:
+        return []
+    set_part, local = card_id.split("-", 1)
+    if local_id:
+        local = str(local_id)
+    code = POKEMON_COM_PROMO_CODES.get(set_part.lower())
+    if not code:
+        return []
+
+    nums: list[str] = [local]
+    # SVP / numeric promos on pokemon.com are often unpadded ("1" not "001").
+    if local.isdigit():
+        nums.append(str(int(local)))
+    upper = local.upper()
+    if upper.startswith("SWSH") and upper[4:].isdigit():
+        nums.append(upper[4:])
+        nums.append(str(int(upper[4:])))
+    if upper.startswith("SM") and upper[2:].isdigit():
+        nums.append(f"SM{int(upper[2:]):02d}")
+        nums.append(f"SM{upper[2:]}")
+    if upper.startswith("XY") and upper[2:].isdigit():
+        nums.append(f"XY{int(upper[2:]):02d}")
+    if upper.startswith("BW") and upper[2:].isdigit():
+        nums.append(f"BW{int(upper[2:]):02d}")
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for num in nums:
+        if not num or num in seen:
+            continue
+        seen.add(num)
+        out.append(
+            f"https://assets.pokemon.com/assets/cms2/img/cards/web/{code}/{code}_EN_{num}.png"
+        )
+        out.append(
+            f"https://www.pokemon.com/static-assets/content-assets/cms2/img/cards/web/{code}/{code}_EN_{num}.png"
+        )
+    return out
+
+
 def remote_image_bases(
     image_url: str | None,
     *,
@@ -82,9 +138,9 @@ def remote_image_bases(
     base = (image_url or "").strip()
     if base:
         bases.append(base)
-    # Always allow pokemontcg fallbacks for gaps / bad TCGdex URLs
+    # Always allow pokemontcg + official pokemon.com fallbacks for gaps / bad TCGdex URLs
     bases.extend(pokemontcg_image_urls(card_id, local_id))
-    # unique
+    bases.extend(pokemon_com_image_urls(card_id, local_id))
     seen: set[str] = set()
     out: list[str] = []
     for b in bases:
