@@ -19,6 +19,20 @@
   const hasFilterEl = document.getElementById("hasFilter");
   const sortEl = document.getElementById("sort");
   const pageSizeEl = document.getElementById("pageSize");
+  let shuffleSeed = "";
+
+  function newShuffleSeed() {
+    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function ensureShuffleSeed({ reshuffle = false } = {}) {
+    if (sortEl.value !== "shuffle") {
+      shuffleSeed = "";
+      return "";
+    }
+    if (reshuffle || !shuffleSeed) shuffleSeed = newShuffleSeed();
+    return shuffleSeed;
+  }
   const advToggle = document.getElementById("advToggle");
   const advPanel = document.getElementById("advPanel");
   const clearFiltersBtn = document.getElementById("clearFilters");
@@ -59,6 +73,8 @@
     catalogFacets[facetsKey] = rows;
   }
   let cardZoomPx = CARD_ZOOM_DEFAULT;
+  let lastSearchCardIds = [];
+  let modalNavBusy = false;
 
   function addCollectionIdFromPath() {
     const m = location.pathname.match(/^\/collections\/([^/]+)\/add\/?$/);
@@ -874,6 +890,20 @@
     resetOffsetAndSearch();
   }
 
+  function abilityTypeToHasId(type) {
+    const n = String(type || "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "");
+    if (n === "ability") return "ability";
+    if (n === "pokepower") return "poke-power";
+    if (n === "pokebody") return "poke-body";
+    if (n === "pokemonpower") return "pokemon-power";
+    if (n === "ancienttrait" || n === "omegatrait") return "omega-trait";
+    return "";
+  }
+
   function searchByHas(hasVal) {
     if (!hasVal) return;
     hasFilterEl.value = hasVal;
@@ -924,9 +954,21 @@
       );
     }
     if (card.has_ability) {
-      pills.push(
-        `<button type="button" class="sp-subtype sp-pokemon-meta" data-has="ability" title="Filter cards with an Ability">Ability</button>`
-      );
+      const seen = new Set();
+      for (const ab of card.abilities || []) {
+        const hasId = abilityTypeToHasId(ab?.type);
+        if (!hasId || seen.has(hasId)) continue;
+        seen.add(hasId);
+        const label = ab.type || hasId;
+        pills.push(
+          `<button type="button" class="sp-subtype sp-pokemon-meta" data-has="${esc(hasId)}" title="Filter ${esc(label)}">${esc(label)}</button>`
+        );
+      }
+      if (!seen.size) {
+        pills.push(
+          `<button type="button" class="sp-subtype sp-pokemon-meta" data-has="ability-any" title="Filter cards with ability-like text">Ability</button>`
+        );
+      }
     }
     if (!pills.length) return "";
     return `<div class="sp-subtypes sp-pokemon-meta-row" aria-label="Pokémon metadata">${pills.join("")}</div>`;
@@ -1110,6 +1152,7 @@
       return;
     }
     const card = await resp.json();
+    modal.dataset.cardId = card.id || id;
     const showSpeciesPrints = unique === "pokemon" && (card.species_printings || []).length > 1;
     const related = showSpeciesPrints
       ? (card.species_printings || [])
@@ -1386,7 +1429,7 @@
     if (dexEl.value) entries.push({ key: "dex", label: `Dex #${dexEl.value}`, clear: () => { dexEl.value = ""; } });
     if (rarityEl.value) entries.push({ key: "rarity", label: rarityEl.value, clear: () => { rarityEl.value = ""; } });
     if (categoryEl.value) entries.push({ key: "category", label: categoryEl.value, clear: () => { categoryEl.value = ""; } });
-    if (typeEl.value) entries.push({ key: "type", label: typeEl.value, clear: () => { typeEl.value = ""; } });
+    if (typeEl.value) entries.push({ key: "color", label: typeEl.value, clear: () => { typeEl.value = ""; } });
     if (stageEl.value) entries.push({ key: "stage", label: stageEl.value, clear: () => { stageEl.value = ""; } });
     if (subtypeEl.value) entries.push({ key: "subtype", label: tagLabel(subtypeEl.value), clear: () => { subtypeEl.value = ""; } });
     if (generationEl.value) {
@@ -1566,13 +1609,16 @@
     params.set("sort", sortEl.value);
     params.set("limit", String(pageSize));
     params.set("offset", String(offset));
+    if (sortEl.value === "shuffle") {
+      params.set("seed", ensureShuffleSeed());
+    }
     if (qEl.value.trim()) params.set("q", qEl.value.trim());
     if (setEl.value) params.set("set_id", setEl.value);
     else if (seriesEl.value) params.set("series_id", seriesEl.value);
     if (dexEl.value) params.set("dex_id", dexEl.value);
     if (rarityEl.value) params.set("rarity", rarityEl.value);
     if (categoryEl.value) params.set("category", categoryEl.value);
-    if (typeEl.value) params.set("type", typeEl.value);
+    if (typeEl.value) params.set("color", typeEl.value);
     if (stageEl.value) params.set("stage", stageEl.value);
     if (subtypeEl.value) params.set("tag", subtypeEl.value);
     if (generationEl.value) params.set("generation", generationEl.value);
@@ -1588,12 +1634,13 @@
     if (qEl.value.trim()) params.set("q", qEl.value.trim());
     if (unique && unique !== "cards") params.set("unique", unique);
     if (sortEl.value && sortEl.value !== "name") params.set("sort", sortEl.value);
+    if (sortEl.value === "shuffle" && shuffleSeed) params.set("seed", shuffleSeed);
     if (setEl.value) params.set("set", setEl.value);
     else if (seriesEl.value) params.set("series", seriesEl.value);
     if (dexEl.value) params.set("dex", dexEl.value);
     if (rarityEl.value) params.set("rarity", rarityEl.value);
     if (categoryEl.value) params.set("category", categoryEl.value);
-    if (typeEl.value) params.set("type", typeEl.value);
+    if (typeEl.value) params.set("color", typeEl.value);
     if (stageEl.value) params.set("stage", stageEl.value);
     if (subtypeEl.value) params.set("tag", subtypeEl.value);
     if (generationEl.value) params.set("generation", generationEl.value);
@@ -1630,6 +1677,11 @@
       const sortVal = params.get("sort") || "";
       if ([...sortEl.options].some((o) => o.value === sortVal)) sortEl.value = sortVal;
     }
+    if (sortEl.value === "shuffle") {
+      shuffleSeed = (params.get("seed") || "").trim() || newShuffleSeed();
+    } else {
+      shuffleSeed = "";
+    }
     if (params.has("limit")) {
       pageSize = normalizePageSize(params.get("limit"));
       if (pageSizeEl) pageSizeEl.value = String(pageSize);
@@ -1642,7 +1694,8 @@
     if (params.has("dex")) dexEl.value = params.get("dex") || "";
     if (params.has("rarity")) rarityEl.value = params.get("rarity") || "";
     if (params.has("category")) categoryEl.value = params.get("category") || "";
-    if (params.has("type")) typeEl.value = params.get("type") || "";
+    if (params.has("color")) typeEl.value = params.get("color") || "";
+    else if (params.has("type")) typeEl.value = params.get("type") || "";
     if (params.has("stage")) stageEl.value = params.get("stage") || "";
     if (params.has("tag")) subtypeEl.value = params.get("tag") || "";
     if (params.has("generation")) generationEl.value = params.get("generation") || "";
@@ -1710,10 +1763,12 @@
     updatePagination(data.total, data.offset, data.limit);
 
     if (!data.cards.length) {
+      lastSearchCardIds = [];
       gridEl.innerHTML = '<p class="sp-empty">No cards in this constellation.</p>';
       return;
     }
 
+    lastSearchCardIds = data.cards.map((c) => c.id).filter(Boolean);
     gridEl.innerHTML = data.cards.map(renderCard).join("");
     bindCardClicks();
 
@@ -1812,7 +1867,10 @@
   bindZoomHold(zoomInBtn, CARD_ZOOM_STEP);
 
   qEl.addEventListener("input", scheduleSearch);
-  sortEl.addEventListener("change", resetOffsetAndSearch);
+  sortEl.addEventListener("change", () => {
+    ensureShuffleSeed({ reshuffle: sortEl.value === "shuffle" });
+    resetOffsetAndSearch();
+  });
   pageSizeEl?.addEventListener("change", () => {
     syncPageSizeFromControl();
     persistPageSize();
@@ -1922,6 +1980,40 @@
   modalClose.addEventListener("click", () => modal.close());
   modal.addEventListener("click", (e) => {
     if (e.target === modal) modal.close();
+  });
+
+  function isTypingTarget(el) {
+    if (!el || el === document.body) return false;
+    const tag = (el.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return true;
+    if (el.isContentEditable) return true;
+    return false;
+  }
+
+  async function navigateModalCard(delta) {
+    if (!modal.open || modalNavBusy || addModeActive) return;
+    const ids = lastSearchCardIds;
+    if (!ids.length) return;
+    const currentId = modal.dataset.cardId || "";
+    const idx = ids.indexOf(currentId);
+    if (idx < 0) return;
+    const nextIdx = idx + delta;
+    if (nextIdx < 0 || nextIdx >= ids.length) return;
+    modalNavBusy = true;
+    try {
+      await openCard(ids[nextIdx]);
+      if (modalBody) modalBody.scrollTop = 0;
+    } finally {
+      modalNavBusy = false;
+    }
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (!modal.open) return;
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    if (isTypingTarget(e.target)) return;
+    e.preventDefault();
+    navigateModalCard(e.key === "ArrowRight" ? 1 : -1);
   });
 
   // Swipe-down to close (mobile sheet)

@@ -114,6 +114,17 @@ def _normalize_name(name: str) -> str:
     return s.lower()
 
 
+# Keep in sync with pokemon_api._ACCENT_FROM / _ACCENT_TO (Pokémon ↔ Pokemon, etc.)
+_ACCENT_FROM = (
+    "àáâãäåāăąèéêëēĕėęěìíîïīĭįıòóôõöøōŏőùúûüūŭůűųýÿñç"
+)
+_ACCENT_TO = "aaaaaaaaaeeeeeeeeeeiiiiiiiiiooooooooouuuuuuuuuuyync"
+
+
+def _sql_name_folded(expr: str = "c.name") -> str:
+    return f"translate(lower({expr}), '{_ACCENT_FROM}', '{_ACCENT_TO}')"
+
+
 def parse_face_url(face_url: str) -> tuple[str, str] | None:
     """Return (api_set, card_number) from a cube card face image URL."""
     url = unquote(face_url or "")
@@ -215,12 +226,12 @@ def _load_cards_by_name_in_sets(
         return []
     rows = conn.execute(
         text(
-            """
+            f"""
             SELECT c.id, c.name, c.set_id, c.local_id, s.name AS set_name
             FROM pokemon_cards c
             INNER JOIN pokemon_sets s ON s.id = c.set_id
             WHERE c.set_id = ANY(:set_ids)
-              AND lower(c.name) = :name
+              AND {_sql_name_folded("c.name")} = :name
             """
         ),
         {"set_ids": set_ids, "name": norm},
@@ -230,12 +241,12 @@ def _load_cards_by_name_in_sets(
     like = f"%{norm}%"
     rows = conn.execute(
         text(
-            """
+            f"""
             SELECT c.id, c.name, c.set_id, c.local_id, s.name AS set_name
             FROM pokemon_cards c
             INNER JOIN pokemon_sets s ON s.id = c.set_id
             WHERE c.set_id = ANY(:set_ids)
-              AND c.name ILIKE :like
+              AND {_sql_name_folded("c.name")} LIKE :like
             ORDER BY length(c.name) ASC
             LIMIT 5
             """

@@ -180,6 +180,8 @@ def _card_sort_clause(sort: str, *, group: str = "none") -> str:
             FROM collection_item_tags cit
             WHERE cit.collection_id = i.collection_id AND cit.card_id = i.card_id
         ), 'zzz') ASC, pc.name ASC, pc.id ASC"""
+    if key in ("shuffle", "random"):
+        return "random(), pc.id ASC"
     return "i.created_at DESC, pc.id ASC"
 
 
@@ -735,14 +737,19 @@ def update_item_bucket(
 def get_collection(
     request: Request,
     collection_id: str,
-    sort: str = Query("saved", description="saved | name | set | number | tag | type"),
+    sort: str = Query("saved", description="saved | name | set | number | tag | type | shuffle"),
     group: str = Query("none", description="none | category"),
     tag: str | None = Query(None, description="Filter to cards with this tag"),
 ):
     user = require_user(request)
     sort_key = (sort or "saved").lower()
-    if sort_key not in ("saved", "name", "set", "number", "tag", "type"):
-        raise HTTPException(status_code=400, detail="sort must be saved, name, set, number, tag, or type")
+    if sort_key == "random":
+        sort_key = "shuffle"
+    if sort_key not in ("saved", "name", "set", "number", "tag", "type", "shuffle"):
+        raise HTTPException(
+            status_code=400,
+            detail="sort must be saved, name, set, number, tag, type, or shuffle",
+        )
     group_key = (group or "none").lower()
     if group_key not in ("none", "category"):
         raise HTTPException(status_code=400, detail="group must be none or category")
@@ -781,13 +788,15 @@ def get_collection(
 def get_shared_collection(
     request: Request,
     id_or_slug: str,
-    sort: str = Query("saved", description="saved | name | set | number | tag | type"),
+    sort: str = Query("saved", description="saved | name | set | number | tag | type | shuffle"),
     group: str = Query("none", description="none | category"),
     tag: str | None = Query(None, description="Filter to cards with this tag (owner only)"),
 ):
     """Public read for unlisted/public collections; owners see tags when signed in."""
     viewer = current_user(request)
     sort_key = (sort or "saved").lower()
+    if sort_key == "random":
+        sort_key = "shuffle"
     group_key = (group or "none").lower()
     if group_key not in ("none", "category"):
         raise HTTPException(status_code=400, detail="group must be none or category")
@@ -803,12 +812,10 @@ def get_shared_collection(
         if visibility == "private" and not is_owner:
             raise HTTPException(status_code=404, detail="Collection not found")
 
-        allowed_sorts = ("saved", "name", "set", "number", "tag", "type") if is_owner else (
-            "saved",
-            "name",
-            "set",
-            "number",
-            "type",
+        allowed_sorts = (
+            ("saved", "name", "set", "number", "tag", "type", "shuffle")
+            if is_owner
+            else ("saved", "name", "set", "number", "type", "shuffle")
         )
         if sort_key not in allowed_sorts:
             raise HTTPException(

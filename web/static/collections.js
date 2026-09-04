@@ -31,6 +31,7 @@
   let detailKnownTags = [];
   let detailIsOwner = true;
   let listSort = "name";
+  let modalNavBusy = false;
 
   function esc(s) {
     return String(s ?? "")
@@ -225,22 +226,30 @@
     });
   }
 
-  function cardMatchesQuery(card, query) {
-    const q = String(query || "").trim().toLowerCase();
-    if (!q) return true;
-    const hay = [
-      card.name,
-      card.set_name,
-      card.set_id,
-      card.local_id,
-      card.id,
-      card.rarity,
-      card.illustrator,
-      ...(card.tags || []),
-    ]
-      .filter(Boolean)
-      .join(" ")
+  function foldAccents(s) {
+    return String(s ?? "")
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "")
       .toLowerCase();
+  }
+
+  function cardMatchesQuery(card, query) {
+    const q = foldAccents(String(query || "").trim());
+    if (!q) return true;
+    const hay = foldAccents(
+      [
+        card.name,
+        card.set_name,
+        card.set_id,
+        card.local_id,
+        card.id,
+        card.rarity,
+        card.illustrator,
+        ...(card.tags || []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
     return hay.includes(q);
   }
 
@@ -290,6 +299,42 @@
     cardModal?.addEventListener("click", (e) => {
       if (e.target === cardModal) cardModal.close();
     });
+
+    function isTypingTarget(el) {
+      if (!el || el === document.body) return false;
+      const tag = (el.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return true;
+      if (el.isContentEditable) return true;
+      return false;
+    }
+
+    async function navigateModalCard(delta) {
+      if (!cardModal?.open || modalNavBusy) return;
+      const ids = filteredDetailCards()
+        .map((c) => c.id)
+        .filter(Boolean);
+      if (!ids.length) return;
+      const currentId = cardModal.dataset.cardId || "";
+      const idx = ids.indexOf(currentId);
+      if (idx < 0) return;
+      const nextIdx = idx + delta;
+      if (nextIdx < 0 || nextIdx >= ids.length) return;
+      modalNavBusy = true;
+      try {
+        await openCardDetail(ids[nextIdx], detailIsOwner ? detailCollectionId : null);
+        if (modalBody) modalBody.scrollTop = 0;
+      } finally {
+        modalNavBusy = false;
+      }
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (!cardModal?.open) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (isTypingTarget(e.target)) return;
+      e.preventDefault();
+      navigateModalCard(e.key === "ArrowRight" ? 1 : -1);
+    });
   }
 
   function renderCardText(card) {
@@ -335,6 +380,7 @@
     if (!cardModal || !modalBody) return;
     modalBody.innerHTML = `<p class="sp-empty">Loading…</p>`;
     cardModal.showModal();
+    cardModal.dataset.cardId = cardId;
     const savedRow = detailCards.find((c) => c.id === cardId);
     const initialTags = savedRow?.tags || [];
     const bucket = cardBucket(savedRow);
@@ -1148,6 +1194,7 @@
               <option value="set"${detailSort === "set" ? " selected" : ""}>Set</option>
               <option value="number"${detailSort === "number" ? " selected" : ""}>Number</option>
               <option value="type"${detailSort === "type" ? " selected" : ""}>Type</option>
+              <option value="shuffle"${detailSort === "shuffle" ? " selected" : ""}>Shuffle</option>
               ${
                 detailIsOwner
                   ? `<option value="tag"${detailSort === "tag" ? " selected" : ""}>Tag</option>`

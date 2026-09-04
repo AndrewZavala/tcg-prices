@@ -222,8 +222,11 @@ pkmncards-style filters in the search box:
 | `is:` | `is:team-plasma` | Pokémon subtype tag |
 | `is:` | `is:gen5`, `is:legendary` | Generation or legendary/mythical |
 | `is:` | `is:starter`, `is:baby`, `is:paradox` | Species groups (`eeveelution`, `fossil`, `ultra-beast`, `pseudo-legendary`, `regional`) |
-| `has:` | `has:ability` | Cards with an Ability |
-| `e:` / `type:` | `e:grass` | Pokémon energy type |
+| `has:` | `has:ability`, `has:ability-any` | Ability-like text: `ability` (modern only), `ability-any` (all eras), also `poke-power`, `poke-body`, `pokemon-power`, `omega-trait` |
+| `c:` / `color:` | `c:grass`, `c:r` | Pokémon energy color (letters: `g r w l p f d m y n c`) |
+| `weakness:` / `weak:` | `weakness:l`, `weakness:fighting` | Weakness type |
+| `resistance:` / `resist:` / `res:` | `resistance:f` | Resistance type |
+| `retreat:` | `retreat:0`, `retreat:2` | Retreat cost (`0` = free / unset) |
 | `set:` / `series:` | `set:me01`, `series:me` | Set or TCG block |
 | `r:` | `r:ultra` | Rarity |
 | `dex:` | `dex:591` | National Dex # |

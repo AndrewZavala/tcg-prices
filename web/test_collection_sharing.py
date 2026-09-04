@@ -67,6 +67,11 @@ def test_order_by_group_then_sort() -> None:
     assert "s.name ASC" in sql
 
 
+def test_order_by_shuffle() -> None:
+    sql = _card_order_by("shuffle", "none")
+    assert "random()" in sql
+
+
 if __name__ == "__main__":
     test_normalize_visibility_values()
     test_normalize_visibility_rejects_invalid()
@@ -76,4 +81,5 @@ if __name__ == "__main__":
     test_public_url_unlisted_with_slug()
     test_group_order_category()
     test_order_by_group_then_sort()
+    test_order_by_shuffle()
     print("ok")

@@ -71,6 +71,7 @@
             <option value="set">Set</option>
             <option value="dex">Dex #</option>
             <option value="hp_desc">HP ↓</option>
+            <option value="shuffle">Shuffle</option>
           </select>
         </label>
       </div>
@@ -106,7 +107,7 @@
             </select>
           </label>
           <label class="sp-field">
-            <span class="sp-label">Type</span>
+            <span class="sp-label">Color</span>
             <select id="cardType">
               <option value="">Any</option>
             </select>
@@ -181,7 +182,7 @@
 
             <h4>Other filters</h4>
             <ul class="sp-syntax-compact">
-              <li><code>e:grass</code> or <code>type:fire</code> — energy type</li>
+              <li><code>c:grass</code> or <code>c:r</code> — energy color (<code>c:l</code> = Lightning)</li>
               <li><code>set:me01</code> · <code>series:me</code> — TCG block / set</li>
               <li><code>r:rare</code> · <code>r:ultra</code> — rarity</li>
               <li><code>dex:591</code> — Pokédex number</li>
@@ -191,7 +192,9 @@
               <li><button type="button" class="sp-linkish" data-quick="is:starter">is:starter</button> · <button type="button" class="sp-linkish" data-quick="is:baby">is:baby</button> · <button type="button" class="sp-linkish" data-quick="is:eeveelution">is:eeveelution</button></li>
               <li><button type="button" class="sp-linkish" data-quick="is:paradox">is:paradox</button> · <button type="button" class="sp-linkish" data-quick="is:ultra-beast">is:ultra-beast</button> · <button type="button" class="sp-linkish" data-quick="is:fossil">is:fossil</button></li>
               <li><button type="button" class="sp-linkish" data-quick="is:pseudo-legendary">is:pseudo-legendary</button> · <button type="button" class="sp-linkish" data-quick="is:regional">is:regional</button></li>
-              <li><button type="button" class="sp-linkish" data-quick="has:ability">has:ability</button> — cards with an Ability</li>
+              <li><button type="button" class="sp-linkish" data-quick="has:ability">has:ability</button> — modern Ability only</li>
+              <li><button type="button" class="sp-linkish" data-quick="has:ability-any">has:ability-any</button> — any ability-like</li>
+              <li><code>has:poke-power</code> · <code>has:poke-body</code> · <code>has:pokemon-power</code> · <code>has:omega-trait</code></li>
             </ul>
 
             <p class="sp-syntax-note">Example: <code>t:trainer t:supporter N</code> finds Supporter cards with “N” in the name. Click subtype pills on a card to filter instantly.</p>
@@ -262,6 +265,6 @@
     </div>
   </dialog>
 
-  <script src="/static/pokemon.js?v=url1"></script>
+  <script src="/static/pokemon.js?v=has-ab1"></script>
 </body>
 </html>

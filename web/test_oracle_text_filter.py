@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pokemon_api import (  # noqa: E402
     _apply_oracle_text_filters,
+    _energy_symbol_regex,
+    _oracle_searchable_text_sql,
     _parse_oracle_text_value,
     _parse_search_query,
     _tokenize_search_query,
@@ -72,6 +74,50 @@ def test_invalid_regex_ignored() -> None:
     assert _parse_oracle_text_value("/(/") is None
 
 
+def test_parse_energy_symbol_quoted() -> None:
+    parsed = _parse_search_query('o:"{L}"')
+    assert parsed["oracle_text"][0]["mode"] == "regex"
+    assert parsed["oracle_text"][0]["pattern"] == r"\{(?:L|Lightning)\}"
+
+
+def test_parse_energy_symbol_unquoted() -> None:
+    parsed = _parse_search_query("o:{L}")
+    assert parsed["oracle_text"][0]["mode"] == "regex"
+    assert "Lightning" in parsed["oracle_text"][0]["pattern"]
+
+
+def test_parse_energy_symbol_full_name() -> None:
+    assert _energy_symbol_regex("{Lightning}") == r"\{(?:L|Lightning)\}"
+    assert _energy_symbol_regex("{Fire}") == r"\{(?:R|Fire)\}"
+    assert _energy_symbol_regex("{X}") is None
+    assert _energy_symbol_regex("active") is None
+
+
+def test_oracle_searchable_text_excludes_costs() -> None:
+    sql = _oracle_searchable_text_sql()
+    assert "attacks::text" not in sql
+    assert "abilities::text" not in sql
+    assert "gameplay" not in sql
+    assert "->>'effect'" in sql
+    assert "c.description" in sql
+
+
+def test_apply_energy_symbol_filter() -> None:
+    filters: list[str] = []
+    params: dict = {}
+    _apply_oracle_text_filters(
+        filters,
+        params,
+        oracle_text=[{"mode": "regex", "pattern": r"\{(?:L|Lightning)\}"}],
+        exclude_oracle_text=[],
+    )
+    assert len(filters) == 1
+    assert "~*" in filters[0]
+    assert "->>'effect'" in filters[0]
+    assert "attacks::text" not in filters[0]
+    assert params["otext_0"] == r"\{(?:L|Lightning)\}"
+
+
 if __name__ == "__main__":
     test_tokenize_quoted_phrase()
     test_parse_oracle_word()
@@ -81,4 +127,9 @@ if __name__ == "__main__":
     test_parse_quoted_name()
     test_apply_oracle_text_filters_word_and_phrase()
     test_invalid_regex_ignored()
+    test_parse_energy_symbol_quoted()
+    test_parse_energy_symbol_unquoted()
+    test_parse_energy_symbol_full_name()
+    test_oracle_searchable_text_excludes_costs()
+    test_apply_energy_symbol_filter()
     print("ok")

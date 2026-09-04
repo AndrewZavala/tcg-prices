@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
+import unicodedata
 from typing import Any, Literal
 from urllib.parse import urlencode
 
@@ -17,6 +19,24 @@ from tcgplayer_links import pokemon_buy_url
 from pokemon_type_sort_sql import SEARCH_SPECIES_JOINS, build_card_type_sort_sql
 
 router = APIRouter(tags=["pokemon"])
+
+# Fold Latin accents for name search (Pokémon ↔ Pokemon, Flabébé ↔ Flabebe, …).
+# Must stay 1:1 for PostgreSQL translate(); keep in sync with fold_accents().
+_ACCENT_FROM = (
+    "àáâãäåāăąèéêëēĕėęěìíîïīĭįıòóôõöøōŏőùúûüūŭůűųýÿñç"
+)
+_ACCENT_TO = "aaaaaaaaaeeeeeeeeeeiiiiiiiiiooooooooouuuuuuuuuuyync"
+
+
+def fold_accents(text: str) -> str:
+    """Strip combining marks so accented and plain spellings match."""
+    decomposed = unicodedata.normalize("NFKD", text or "")
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
+def _sql_accent_fold(expr: str) -> str:
+    """SQL expression: lower + latin accent fold (mirrors fold_accents for TCG names)."""
+    return f"translate(lower({expr}), '{_ACCENT_FROM}', '{_ACCENT_TO}')"
 
 _TCG_NAME_SUFFIX_RE = re.compile(
     r"""
@@ -121,6 +141,152 @@ REGIONAL_NAME_SQL = (
     "c.name ~* '(^|[[:space:]])(Alolan|Galarian|Hisuian|Paldean)[[:space:]]'"
 )
 
+# Pokémon energy colors for c: / color: (letters match cost-symbol abbreviations).
+COLOR_NAMES: dict[str, str] = {
+    "grass": "Grass",
+    "g": "Grass",
+    "fire": "Fire",
+    "r": "Fire",
+    "water": "Water",
+    "w": "Water",
+    "lightning": "Lightning",
+    "l": "Lightning",
+    "psychic": "Psychic",
+    "p": "Psychic",
+    "fighting": "Fighting",
+    "f": "Fighting",
+    "darkness": "Darkness",
+    "dark": "Darkness",
+    "d": "Darkness",
+    "metal": "Metal",
+    "m": "Metal",
+    "fairy": "Fairy",
+    "y": "Fairy",
+    "dragon": "Dragon",
+    "n": "Dragon",
+    "colorless": "Colorless",
+    "c": "Colorless",
+}
+
+
+def normalize_color_name(raw: str | None) -> str | None:
+    """Map c:r / Fire / fire → canonical type string, or None if unknown."""
+    if raw is None:
+        return None
+    key = raw.strip().lower()
+    if not key:
+        return None
+    return COLOR_NAMES.get(key) or (raw.strip().title() if raw.strip() else None)
+
+
+def _norm_ability_type_key(label: str) -> str:
+    """Collapse ability type labels for matching (Poké-POWER ≈ poke-power)."""
+    return re.sub(r"[^a-z0-9]+", "", fold_accents(label or "").lower())
+
+
+# has: filters — aliases → canonical slug; slug → normalized type keys (empty = any).
+ABILITY_HAS_ALIASES: dict[str, str] = {
+    "ability-any": "ability-any",
+    "ability_any": "ability-any",
+    "any-ability": "ability-any",
+    "abilityany": "ability-any",
+    "ability": "ability",
+    "poke-power": "poke-power",
+    "pokepower": "poke-power",
+    "poke_power": "poke-power",
+    "poke-body": "poke-body",
+    "pokebody": "poke-body",
+    "poke_body": "poke-body",
+    "pokemon-power": "pokemon-power",
+    "pokemonpower": "pokemon-power",
+    "pokemon_power": "pokemon-power",
+    # TCGdex: Ancient Trait; Ω prints often say Omega Trait.
+    "ancient-trait": "omega-trait",
+    "omega-trait": "omega-trait",
+    "ancienttrait": "omega-trait",
+    "omegatrait": "omega-trait",
+    "ancient": "omega-trait",
+    "omega": "omega-trait",
+}
+
+ABILITY_HAS_NORMS: dict[str, tuple[str, ...]] = {
+    "ability-any": (),
+    "ability": ("ability",),
+    "poke-power": ("pokepower",),
+    "poke-body": ("pokebody",),
+    "pokemon-power": ("pokemonpower",),
+    "omega-trait": ("ancienttrait", "omegatrait"),
+}
+
+ABILITY_HAS_FACETS: list[dict[str, str]] = [
+    {"id": "ability-any", "name": "Any ability-like"},
+    {"id": "ability", "name": "Ability"},
+    {"id": "poke-power", "name": "Poké-Power"},
+    {"id": "poke-body", "name": "Poké-Body"},
+    {"id": "pokemon-power", "name": "Pokémon Power"},
+    {"id": "omega-trait", "name": "Omega / Ancient Trait"},
+]
+
+
+def _sql_has_ability_kind(param_key: str) -> str:
+    """Match abilities[].type against normalized keys in :param_key (text[])."""
+    folded = _sql_accent_fold("COALESCE(elem->>'type', '')")
+    return f"""EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(
+        CASE WHEN jsonb_typeof(c.abilities) = 'array' THEN c.abilities ELSE '[]'::jsonb END
+      ) AS elem
+      WHERE regexp_replace({folded}, '[^a-z0-9]', '', 'g')
+            = ANY(CAST(:{param_key} AS text[]))
+    )"""
+
+
+def _sql_has_any_ability() -> str:
+    return (
+        "c.abilities IS NOT NULL AND jsonb_typeof(c.abilities) = 'array' "
+        "AND jsonb_array_length(c.abilities) > 0"
+    )
+
+
+def _resolve_has_ability_kind(raw: str) -> str | None:
+    """Return canonical has-kind slug, or None if unknown."""
+    key = (raw or "").strip().lower().replace("_", "-")
+    if key in ABILITY_HAS_ALIASES:
+        return ABILITY_HAS_ALIASES[key]
+    collapsed = re.sub(r"[^a-z0-9]+", "", key)
+    return ABILITY_HAS_ALIASES.get(collapsed)
+
+
+def _apply_has_ability_filters(
+    filters: list[str],
+    params: dict[str, Any],
+    *,
+    kinds: list[str],
+    exclude_kinds: list[str],
+) -> None:
+    """AND together has:/−has: ability-kind filters."""
+    for idx, kind in enumerate(kinds):
+        if kind not in ABILITY_HAS_NORMS:
+            continue
+        norms = ABILITY_HAS_NORMS[kind]
+        if not norms:
+            filters.append(_sql_has_any_ability())
+            continue
+        key = f"has_ab_{idx}"
+        params[key] = list(norms)
+        filters.append(_sql_has_ability_kind(key))
+    for idx, kind in enumerate(exclude_kinds):
+        if kind not in ABILITY_HAS_NORMS:
+            continue
+        norms = ABILITY_HAS_NORMS[kind]
+        if not norms:
+            filters.append(f"NOT ({_sql_has_any_ability()})")
+            continue
+        key = f"xhas_ab_{idx}"
+        params[key] = list(norms)
+        filters.append(f"NOT ({_sql_has_ability_kind(key)})")
+
+
 SORT_SQL = {
     "name": "c.name ASC, s.release_date ASC NULLS LAST, c.local_id",
     # local_id is often "SM142" / "TG01" / "RC1" — never cast the whole string to int
@@ -131,6 +297,8 @@ SORT_SQL = {
     ),
     "dex": "c.dex_ids[1] ASC NULLS LAST, c.name ASC",
     "hp_desc": "c.hp DESC NULLS LAST, c.name ASC",
+    # Seeded via :shuffle_seed so pagination stays stable within a shuffle session.
+    "shuffle": "md5(c.id || CAST(:shuffle_seed AS text)) ASC, c.id ASC",
 }
 
 SORT_SQL["type"] = build_card_type_sort_sql("c", include_category_bucket=True)
@@ -291,7 +459,7 @@ def _tokenize_search_query(q: str) -> list[str]:
 
 
 def _parse_oracle_text_value(raw: str) -> dict[str, str] | None:
-    """Parse o: value — word, quoted phrase, or /regex/."""
+    """Parse o: value — word, quoted phrase, /regex/, or {L}-style energy symbol."""
     val = raw.strip()
     if not val:
         return None
@@ -305,8 +473,77 @@ def _parse_oracle_text_value(raw: str) -> dict[str, str] | None:
                 return None
             return {"mode": "regex", "pattern": pattern}
     if val.startswith('"') and val.endswith('"') and len(val) >= 2:
-        return {"mode": "phrase", "pattern": val[1:-1].replace('\\"', '"')}
+        inner = val[1:-1].replace('\\"', '"')
+        energy = _energy_symbol_regex(inner)
+        if energy:
+            return {"mode": "regex", "pattern": energy}
+        return {"mode": "phrase", "pattern": inner}
+    energy = _energy_symbol_regex(val)
+    if energy:
+        return {"mode": "regex", "pattern": energy}
     return {"mode": "word", "pattern": val}
+
+
+# Energy symbols in rules text (TCGdex): {L}, {Fire}, etc. — not attack cost / type / W/R.
+_ENERGY_SYMBOL_LETTER_TO_NAME: dict[str, str] = {
+    "G": "Grass",
+    "R": "Fire",
+    "W": "Water",
+    "L": "Lightning",
+    "P": "Psychic",
+    "F": "Fighting",
+    "D": "Darkness",
+    "M": "Metal",
+    "Y": "Fairy",
+    "N": "Dragon",
+    "C": "Colorless",
+}
+_ENERGY_SYMBOL_NAME_TO_LETTER: dict[str, str] = {
+    name.upper(): letter for letter, name in _ENERGY_SYMBOL_LETTER_TO_NAME.items()
+}
+_ENERGY_SYMBOL_RE = re.compile(r"^\{([A-Za-z]+)\}$")
+
+
+def _energy_symbol_regex(pattern: str) -> str | None:
+    """If pattern is {L} / {Lightning}, return regex matching letter or full-name form."""
+    m = _ENERGY_SYMBOL_RE.match((pattern or "").strip())
+    if not m:
+        return None
+    token = m.group(1)
+    upper = token.upper()
+    if len(token) == 1 and upper in _ENERGY_SYMBOL_LETTER_TO_NAME:
+        letter = upper
+        name = _ENERGY_SYMBOL_LETTER_TO_NAME[upper]
+    elif upper in _ENERGY_SYMBOL_NAME_TO_LETTER:
+        letter = _ENERGY_SYMBOL_NAME_TO_LETTER[upper]
+        name = _ENERGY_SYMBOL_LETTER_TO_NAME[letter]
+    else:
+        return None
+    return rf"\{{(?:{re.escape(letter)}|{re.escape(name)})\}}"
+
+
+def _oracle_searchable_text_sql() -> str:
+    """Rules text for o: search — effects only (not costs, types, weakness/resistance)."""
+    abilities_effects = """COALESCE((
+        SELECT string_agg(COALESCE(elem->>'effect', ''), ' ')
+        FROM jsonb_array_elements(
+          CASE WHEN jsonb_typeof(c.abilities) = 'array' THEN c.abilities ELSE '[]'::jsonb END
+        ) AS elem
+      ), '')"""
+    attacks_effects = """COALESCE((
+        SELECT string_agg(COALESCE(elem->>'effect', ''), ' ')
+        FROM jsonb_array_elements(
+          CASE WHEN jsonb_typeof(c.attacks) = 'array' THEN c.attacks ELSE '[]'::jsonb END
+        ) AS elem
+      ), '')"""
+    return f"""(
+        trim(
+          COALESCE(c.description, '') || ' ' ||
+          COALESCE(c.card_data->>'effect', '') || ' ' ||
+          {abilities_effects} || ' ' ||
+          {attacks_effects}
+        )
+    )"""
 
 
 def _parse_search_query(
@@ -332,8 +569,8 @@ def _parse_search_query(
         "exclude_pokemon_special": None,
         "species_groups": [],
         "exclude_species_groups": [],
-        "has_ability": False,
-        "exclude_has_ability": False,
+        "has_ability_kinds": [],
+        "exclude_has_ability_kinds": [],
         "category": None,
         "exclude_categories": [],
         "set_id": None,
@@ -350,6 +587,12 @@ def _parse_search_query(
         "exclude_stages": [],
         "prizes": [],
         "exclude_prizes": [],
+        "weaknesses": [],
+        "exclude_weaknesses": [],
+        "resistances": [],
+        "exclude_resistances": [],
+        "retreats": [],
+        "exclude_retreats": [],
     }
     if not q or not q.strip():
         return result
@@ -381,20 +624,7 @@ def _parse_search_query(
         "stage-2": "Stage2",
         "restored": "RESTORED",
     }
-    type_names = {
-        "grass": "Grass",
-        "fire": "Fire",
-        "water": "Water",
-        "lightning": "Lightning",
-        "psychic": "Psychic",
-        "fighting": "Fighting",
-        "darkness": "Darkness",
-        "dark": "Darkness",
-        "metal": "Metal",
-        "fairy": "Fairy",
-        "dragon": "Dragon",
-        "colorless": "Colorless",
-    }
+    type_names = COLOR_NAMES
 
     name_parts: list[str] = []
     for token in _tokenize_search_query(q.strip()):
@@ -466,11 +696,12 @@ def _parse_search_query(
                 else:
                     result["tags"].append(tag)
         elif prefix == "has":
-            if val_lower == "ability":
+            kind = _resolve_has_ability_kind(val_lower)
+            if kind:
                 if negated:
-                    result["exclude_has_ability"] = True
+                    result["exclude_has_ability_kinds"].append(kind)
                 else:
-                    result["has_ability"] = True
+                    result["has_ability_kinds"].append(kind)
             else:
                 name_parts.append(token)
         elif prefix == "set":
@@ -489,12 +720,14 @@ def _parse_search_query(
                 result["exclude_rarities"].append(rarity)
             else:
                 result["rarity"] = rarity
-        elif prefix in ("e", "type"):
-            ctype = type_names.get(val_lower, val.title())
-            if negated:
-                result["exclude_card_types"].append(ctype)
-            else:
-                result["card_type"] = ctype
+        elif prefix in ("c", "color"):
+            # Pokémon energy color (Magic-style c:r). Letters: g r w l p f d m y n c
+            ctype = type_names.get(val_lower)
+            if ctype:
+                if negated:
+                    result["exclude_card_types"].append(ctype)
+                else:
+                    result["card_type"] = ctype
         elif prefix == "dex":
             if val.isdigit():
                 dex = int(val)
@@ -529,6 +762,27 @@ def _parse_search_query(
                     result["exclude_prizes"].append(n)
                 else:
                     result["prizes"].append(n)
+        elif prefix in ("weakness", "weak"):
+            wtype = type_names.get(val_lower)
+            if wtype:
+                if negated:
+                    result["exclude_weaknesses"].append(wtype)
+                else:
+                    result["weaknesses"].append(wtype)
+        elif prefix in ("resistance", "resist", "res"):
+            rtype = type_names.get(val_lower)
+            if rtype:
+                if negated:
+                    result["exclude_resistances"].append(rtype)
+                else:
+                    result["resistances"].append(rtype)
+        elif prefix == "retreat":
+            if val_lower.isdigit():
+                n = int(val_lower)
+                if negated:
+                    result["exclude_retreats"].append(n)
+                else:
+                    result["retreats"].append(n)
         elif prefix == "o":
             spec = _parse_oracle_text_value(val)
             if spec:
@@ -558,6 +812,14 @@ def _parse_search_query(
         "exclude_stages",
         "prizes",
         "exclude_prizes",
+        "weaknesses",
+        "exclude_weaknesses",
+        "resistances",
+        "exclude_resistances",
+        "retreats",
+        "exclude_retreats",
+        "has_ability_kinds",
+        "exclude_has_ability_kinds",
     ):
         result[key] = list(dict.fromkeys(result[key]))
     return result
@@ -617,19 +879,6 @@ def _sql_prize_count(n: int) -> str:
     raise ValueError(f"unsupported prize count: {n}")
 
 
-def _oracle_searchable_text_sql() -> str:
-    """Rules text blob for o: search — oracle gameplay or card-level fallback."""
-    return """(
-        CASE WHEN o.id IS NOT NULL THEN o.gameplay::text
-        ELSE trim(
-            COALESCE(c.description, '') || ' ' ||
-            COALESCE(c.attacks::text, '') || ' ' ||
-            COALESCE(c.abilities::text, '')
-        )
-        END
-    )"""
-
-
 def _apply_oracle_text_filters(
     filters: list[str],
     params: dict[str, Any],
@@ -681,6 +930,67 @@ def _apply_prize_filters(
         filters.append("(" + " OR ".join(_sql_prize_count(n) for n in prizes) + ")")
     for n in exclude_prizes:
         filters.append(f"NOT {_sql_prize_count(n)}")
+
+
+def _sql_jsonb_has_type(column: str, param_key: str) -> str:
+    """Match a type string inside weaknesses/resistances JSONB array of {type, value}."""
+    return f"""EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(COALESCE(c.{column}, '[]'::jsonb)) AS elem
+      WHERE elem->>'type' = :{param_key}
+    )"""
+
+
+def _apply_weak_res_filters(
+    filters: list[str],
+    params: dict[str, Any],
+    *,
+    weaknesses: list[str],
+    exclude_weaknesses: list[str],
+    resistances: list[str],
+    exclude_resistances: list[str],
+) -> None:
+    for idx, wtype in enumerate(weaknesses):
+        key = f"weak_{idx}"
+        filters.append(_sql_jsonb_has_type("weaknesses", key))
+        params[key] = wtype
+    for idx, wtype in enumerate(exclude_weaknesses):
+        key = f"xweak_{idx}"
+        filters.append(f"NOT {_sql_jsonb_has_type('weaknesses', key)}")
+        params[key] = wtype
+    for idx, rtype in enumerate(resistances):
+        key = f"resist_{idx}"
+        filters.append(_sql_jsonb_has_type("resistances", key))
+        params[key] = rtype
+    for idx, rtype in enumerate(exclude_resistances):
+        key = f"xresist_{idx}"
+        filters.append(f"NOT {_sql_jsonb_has_type('resistances', key)}")
+        params[key] = rtype
+
+
+def _sql_retreat_eq(param_key: str) -> str:
+    """Retreat cost match — NULL treated as 0; Pokémon only."""
+    return f"(c.category = 'Pokemon' AND COALESCE(c.retreat, 0) = :{param_key})"
+
+
+def _apply_retreat_filters(
+    filters: list[str],
+    params: dict[str, Any],
+    *,
+    retreats: list[int],
+    exclude_retreats: list[int],
+) -> None:
+    if retreats:
+        parts = []
+        for idx, n in enumerate(retreats):
+            key = f"retreat_{idx}"
+            parts.append(_sql_retreat_eq(key))
+            params[key] = n
+        filters.append("(" + " OR ".join(parts) + ")")
+    for idx, n in enumerate(exclude_retreats):
+        key = f"xretreat_{idx}"
+        filters.append(f"NOT {_sql_retreat_eq(key)}")
+        params[key] = n
 
 
 def _apply_species_filters(
@@ -968,9 +1278,7 @@ def pokemon_meta(response: Response) -> PokemonMetaResponse:
                 {"id": gid, "name": label}
                 for gid, label in SPECIES_GROUP_LABELS.items()
             ],
-            "has": [
-                {"id": "ability", "name": "Has Ability"},
-            ],
+            "has": list(ABILITY_HAS_FACETS),
         },
     )
 
@@ -983,7 +1291,12 @@ def search_pokemon_cards(
     dex_id: int | None = Query(None, description="National Pokédex number"),
     rarity: str | None = Query(None, description="Exact rarity match"),
     category: str | None = Query(None, description="Pokemon | Trainer | Energy"),
-    type: str | None = Query(None, description="Energy type, e.g. Grass"),
+    color: str | None = Query(None, description="Energy color, e.g. Grass or Fire"),
+    type: str | None = Query(
+        None,
+        description="Deprecated alias for color",
+        deprecated=True,
+    ),
     stage: str | None = Query(None, description="Basic | Stage1 | Stage2"),
     tag: str | None = Query(None, description="Subtype slug, e.g. team-plasma"),
     otag: str | None = Query(None, description="Oracle tag slug(s), comma-separated, e.g. rain-dance"),
@@ -997,21 +1310,39 @@ def search_pokemon_cards(
         None,
         description="Species group slug, e.g. starter | paradox | baby | regional",
     ),
-    has: str | None = Query(None, description="ability — cards with an Ability"),
+    has: str | None = Query(
+        None,
+        description="ability | ability-any | poke-power | poke-body | pokemon-power | omega-trait",
+    ),
     unique: UniqueMode = Query("cards", description="pokemon | cards | prints | art"),
-    sort: str = Query("name", description="name | set | dex | hp_desc | type"),
+    sort: str = Query("name", description="name | set | dex | hp_desc | type | shuffle"),
+    seed: str | None = Query(
+        None,
+        description="Shuffle seed (stable pagination when sort=shuffle)",
+        max_length=64,
+    ),
     limit: int = Query(48, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
     assert _engine is not None
-    order = SORT_SQL.get(sort, SORT_SQL["name"])
+    sort_key = (sort or "name").strip().lower()
+    if sort_key == "random":
+        sort_key = "shuffle"
 
     filters = ["1=1"]
     params: dict[str, Any] = {"limit": limit, "offset": offset}
+    shuffle_seed: str | None = None
+    if sort_key == "shuffle":
+        shuffle_seed = (seed or "").strip() or secrets.token_hex(8)
+        params["shuffle_seed"] = shuffle_seed
+        order = SORT_SQL["shuffle"]
+    else:
+        order = SORT_SQL.get(sort_key, SORT_SQL["name"])
     parsed = _parse_search_query(q)
     if parsed["name_q"]:
-        filters.append("c.name ILIKE :q")
-        params["q"] = f"%{parsed['name_q']}%"
+        # Accent-insensitive: "pokemon" matches "Pokémon", etc.
+        filters.append(f"{_sql_accent_fold('c.name')} LIKE :q")
+        params["q"] = f"%{fold_accents(parsed['name_q']).lower()}%"
     explicit_tags = [t.strip().lower() for t in (tag or "").split(",") if t.strip()]
     all_tags = list(dict.fromkeys(parsed["tags"] + explicit_tags))
     for idx, t in enumerate(all_tags):
@@ -1161,16 +1492,20 @@ def search_pokemon_cards(
             )
 
     has_vals = {(h.strip().lower()) for h in (has or "").split(",") if h.strip()}
-    if parsed["has_ability"] or "ability" in has_vals:
-        filters.append(
-            "c.abilities IS NOT NULL AND jsonb_typeof(c.abilities) = 'array' "
-            "AND jsonb_array_length(c.abilities) > 0"
-        )
-    if parsed.get("exclude_has_ability"):
-        filters.append(
-            "NOT (c.abilities IS NOT NULL AND jsonb_typeof(c.abilities) = 'array' "
-            "AND jsonb_array_length(c.abilities) > 0)"
-        )
+    has_kinds: list[str] = list(parsed.get("has_ability_kinds") or [])
+    exclude_kinds: list[str] = list(parsed.get("exclude_has_ability_kinds") or [])
+    for raw in has_vals:
+        kind = _resolve_has_ability_kind(raw)
+        if kind:
+            has_kinds.append(kind)
+    has_kinds = list(dict.fromkeys(has_kinds))
+    exclude_kinds = list(dict.fromkeys(exclude_kinds))
+    _apply_has_ability_filters(
+        filters,
+        params,
+        kinds=has_kinds,
+        exclude_kinds=exclude_kinds,
+    )
 
     _apply_oracle_text_filters(
         filters,
@@ -1227,7 +1562,7 @@ def search_pokemon_cards(
         filters.append(f"c.category IS DISTINCT FROM :{key}")
         params[key] = cat
 
-    eff_type = (type or parsed["card_type"] or "").strip() or None
+    eff_type = normalize_color_name(color or type or parsed["card_type"])
     if eff_type:
         filters.append(":card_type = ANY(c.types)")
         params["card_type"] = eff_type
@@ -1250,6 +1585,20 @@ def search_pokemon_cards(
         params,
         prizes=list(parsed.get("prizes") or []),
         exclude_prizes=list(parsed.get("exclude_prizes") or []),
+    )
+    _apply_weak_res_filters(
+        filters,
+        params,
+        weaknesses=list(parsed.get("weaknesses") or []),
+        exclude_weaknesses=list(parsed.get("exclude_weaknesses") or []),
+        resistances=list(parsed.get("resistances") or []),
+        exclude_resistances=list(parsed.get("exclude_resistances") or []),
+    )
+    _apply_retreat_filters(
+        filters,
+        params,
+        retreats=list(parsed.get("retreats") or []),
+        exclude_retreats=list(parsed.get("exclude_retreats") or []),
     )
 
     where_sql = " AND ".join(filters)
@@ -1335,6 +1684,8 @@ def search_pokemon_cards(
         "total": total,
         "limit": limit,
         "offset": offset,
+        "sort": sort_key if sort_key in SORT_SQL else "name",
+        "seed": shuffle_seed,
         "cards": cards,
     }
 
