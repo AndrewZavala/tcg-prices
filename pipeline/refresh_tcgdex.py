@@ -21,7 +21,7 @@ import requests
 from sqlalchemy import create_engine, text
 
 from config import DATABASE_URL, MIGRATIONS_DIR
-from pokemon_card_corrections import correct_abilities, correct_attacks, apply_card_corrections
+from pokemon_card_corrections import correct_abilities, correct_attacks, apply_card_corrections, compute_is_multicolor
 
 TCGDEX_BASE = "https://api.tcgdex.net/v2"
 USER_AGENT = "TCGPokemonCatalog/1.0"
@@ -478,6 +478,18 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
     stage = patched.get("stage")
     if isinstance(cleaned, dict):
         cleaned = patched.get("card_data") or cleaned
+    category = patched.get("category") or card.get("category") or "Unknown"
+    is_multicolor = compute_is_multicolor(
+        {
+            "id": card_id,
+            "category": category,
+            "types": card.get("types"),
+            "attacks": attacks,
+            "abilities": patched.get("abilities") or abilities,
+            "description": card.get("description") or card.get("effect"),
+            "card_data": cleaned if isinstance(cleaned, dict) else {},
+        }
+    )
     conn.execute(
         text(
             """
@@ -486,7 +498,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
                 evolve_from, dex_ids, description, rarity, illustrator,
                 regulation_mark, legal_standard, legal_expanded, image_url,
                 retreat, attacks, abilities, weaknesses, resistances, variants,
-                tcgplayer_product_id, card_data, source_updated_at, synced_at
+                tcgplayer_product_id, card_data, is_multicolor, source_updated_at, synced_at
             ) VALUES (
                 :id, :set_id, :local_id, :name, :category, :hp, :types, :stage,
                 :evolve_from, :dex_ids, :description, :rarity, :illustrator,
@@ -494,7 +506,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
                 :retreat, CAST(:attacks AS jsonb), CAST(:abilities AS jsonb),
                 CAST(:weaknesses AS jsonb), CAST(:resistances AS jsonb),
                 CAST(:variants AS jsonb), :tcgplayer_product_id,
-                CAST(:card_data AS jsonb), :source_updated_at, NOW()
+                CAST(:card_data AS jsonb), :is_multicolor, :source_updated_at, NOW()
             )
             ON CONFLICT (id) DO UPDATE SET
                 set_id = EXCLUDED.set_id,
@@ -521,6 +533,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
                 variants = EXCLUDED.variants,
                 tcgplayer_product_id = EXCLUDED.tcgplayer_product_id,
                 card_data = EXCLUDED.card_data,
+                is_multicolor = EXCLUDED.is_multicolor,
                 source_updated_at = EXCLUDED.source_updated_at,
                 synced_at = NOW()
             """
@@ -530,7 +543,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
             "set_id": (card.get("set") or {}).get("id") or card["id"].split("-", 1)[0],
             "local_id": unquote(str(card.get("localId", "") or "")),
             "name": card.get("name"),
-            "category": patched.get("category") or card.get("category") or "Unknown",
+            "category": category,
             "hp": card.get("hp"),
             "types": card.get("types"),
             "stage": stage,
@@ -551,6 +564,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
             "variants": json.dumps(card.get("variants") or {}),
             "tcgplayer_product_id": _tcgplayer_product_id(card.get("pricing")),
             "card_data": json.dumps(cleaned),
+            "is_multicolor": is_multicolor,
             "source_updated_at": _parse_ts(card.get("updated")),
         },
     )

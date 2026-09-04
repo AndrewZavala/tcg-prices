@@ -200,6 +200,94 @@ def correct_category(card: dict[str, Any]) -> str:
     return category
 
 
+# Colored energies for is:multicolor (Colorless handled specially).
+MULTICOLOR_ENERGY_TYPES: tuple[tuple[str, str], ...] = (
+    ("Grass", "G"),
+    ("Fire", "R"),
+    ("Water", "W"),
+    ("Lightning", "L"),
+    ("Psychic", "P"),
+    ("Fighting", "F"),
+    ("Darkness", "D"),
+    ("Metal", "M"),
+    ("Fairy", "Y"),
+    ("Dragon", "N"),
+)
+
+
+def _multicolor_rules_text(card: dict[str, Any]) -> str:
+    parts: list[str] = [
+        str(card.get("description") or ""),
+    ]
+    data = card.get("card_data")
+    if isinstance(data, dict):
+        parts.append(str(data.get("effect") or ""))
+    for key in ("attacks", "abilities"):
+        rows = card.get(key) or []
+        if isinstance(rows, str):
+            parts.append(rows)
+            continue
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if isinstance(row, dict):
+                parts.append(str(row.get("effect") or ""))
+            else:
+                parts.append(str(row))
+    return " ".join(parts)
+
+
+def compute_is_multicolor(card: dict[str, Any]) -> bool:
+    """True when a Pokémon shows 2+ energy colors (type, attack cost, energy-in-text).
+
+    Colorless is ignored unless the card's printed type includes Colorless.
+    """
+    if str(card.get("category") or "") != "Pokemon":
+        # After correct_category, ingest may pass pre-correct category; still
+        # compute from fields when it looks like a Pokémon.
+        if str(correct_category(card)) != "Pokemon":
+            return False
+
+    types = [str(t) for t in (card.get("types") or []) if t]
+    colors: set[str] = set(types)
+    colorless_type = "Colorless" in colors
+
+    for atk in card.get("attacks") or []:
+        if not isinstance(atk, dict):
+            continue
+        for cost in atk.get("cost") or []:
+            c = str(cost or "")
+            if not c:
+                continue
+            if c == "Colorless":
+                if colorless_type:
+                    colors.add(c)
+            else:
+                colors.add(c)
+
+    if len(colors) >= 2:
+        return True
+
+    text = _multicolor_rules_text(card)
+    if not text.strip():
+        return False
+    text_lower = text.lower()
+    for name, letter in MULTICOLOR_ENERGY_TYPES:
+        if name in colors:
+            continue
+        if (
+            f"{name.lower()} energy" in text_lower
+            or f"{{{letter}}}" in text
+            or f"{{{letter.lower()}}}" in text_lower
+            or f"{{{name}}}" in text
+            or f"{{{name.lower()}}}" in text_lower
+        ):
+            colors.add(name)
+            if len(colors) >= 2:
+                return True
+    return len(colors) >= 2
+
+
 def apply_card_corrections(card: dict[str, Any]) -> dict[str, Any]:
     """Mutate and return a card dict with known corrections applied."""
     card_id = str(card.get("id") or "")

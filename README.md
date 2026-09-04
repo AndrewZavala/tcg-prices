@@ -222,7 +222,7 @@ pkmncards-style filters in the search box:
 | `is:` | `is:team-plasma` | Pokémon subtype tag |
 | `is:` | `is:gen5`, `is:legendary` | Generation or legendary/mythical |
 | `is:` | `is:starter`, `is:baby`, `is:paradox` | Species groups (`eeveelution`, `fossil`, `ultra-beast`, `pseudo-legendary`, `regional`) |
-| `is:` | `is:multicolor` | Two or more energy colors (printed type + attack costs + “Fire Energy” / `{R}` in rules text). Colorless is ignored unless the Pokémon is Colorless-type |
+| `is:` | `is:multicolor` | Two or more energy colors (printed type + attack costs + “Fire Energy” / `{R}` in rules text). Colorless is ignored unless the Pokémon is Colorless-type. Uses a cached `is_multicolor` flag. |
 | `has:` | `has:ability`, `has:ability-any` | Ability-like text: `ability` (modern only), `ability-any` (all eras), also `poke-power`, `poke-body`, `pokemon-power`, `omega-trait` |
 | `c:` / `color:` | `c:grass`, `c:r` | Pokémon energy color (letters: `g r w l p f d m y n c`) |
 | `weakness:` / `weak:` | `weakness:l`, `weakness:fighting` | Weakness type |

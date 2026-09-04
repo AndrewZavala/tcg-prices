@@ -70,6 +70,7 @@ POKEMON_MIGRATIONS = (
     "041_collection_item_bucket.sql",
     "042_pre_expedition_pokemon_power.sql",
     "043_fix_mislabeled_pokemon_category.sql",
+    "044_pokemon_multicolor.sql",
 )
 
 

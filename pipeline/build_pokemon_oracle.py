@@ -659,9 +659,80 @@ def persist_category_corrections(engine) -> int:
     return fixed
 
 
+def persist_multicolor_flags(engine) -> int:
+    """Recompute pokemon_cards.is_multicolor (same rules as migration 044)."""
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE pokemon_cards SET is_multicolor = FALSE"))
+        result = conn.execute(
+            text(
+                """
+                UPDATE pokemon_cards AS c
+                SET is_multicolor = TRUE
+                WHERE c.category = 'Pokemon'
+                  AND (
+                    SELECT COUNT(DISTINCT color) FROM (
+                      SELECT t.color
+                      FROM unnest(COALESCE(c.types, ARRAY[]::text[])) AS t(color)
+                      WHERE t.color IS NOT NULL AND t.color <> ''
+
+                      UNION
+
+                      SELECT cost_row.cost_el AS color
+                      FROM jsonb_array_elements(
+                        CASE WHEN jsonb_typeof(c.attacks) = 'array' THEN c.attacks ELSE '[]'::jsonb END
+                      ) AS atk,
+                      LATERAL jsonb_array_elements_text(
+                        CASE WHEN jsonb_typeof(atk->'cost') = 'array' THEN atk->'cost' ELSE '[]'::jsonb END
+                      ) AS cost_row(cost_el)
+                      WHERE cost_row.cost_el IS NOT NULL
+                        AND cost_row.cost_el <> ''
+                        AND (
+                          cost_row.cost_el <> 'Colorless'
+                          OR 'Colorless' = ANY(COALESCE(c.types, ARRAY[]::text[]))
+                        )
+
+                      UNION
+
+                      SELECT v.color
+                      FROM (
+                        SELECT
+                          COALESCE(c.description, '') || ' ' ||
+                          COALESCE(c.card_data->>'effect', '') || ' ' ||
+                          COALESCE(c.attacks::text, '') || ' ' ||
+                          COALESCE(c.abilities::text, '') AS txt
+                      ) AS rules
+                      CROSS JOIN (
+                        VALUES
+                          ('Grass', 'G'),
+                          ('Fire', 'R'),
+                          ('Water', 'W'),
+                          ('Lightning', 'L'),
+                          ('Psychic', 'P'),
+                          ('Fighting', 'F'),
+                          ('Darkness', 'D'),
+                          ('Metal', 'M'),
+                          ('Fairy', 'Y'),
+                          ('Dragon', 'N')
+                      ) AS v(color, letter)
+                      WHERE rules.txt ILIKE ('%' || v.color || ' Energy%')
+                         OR rules.txt LIKE ('%{' || v.letter || '}%')
+                         OR rules.txt ILIKE ('%{' || v.color || '}%')
+                    ) AS colors
+                    WHERE color IS NOT NULL AND color <> ''
+                  ) >= 2
+                """
+            )
+        )
+        fixed = result.rowcount or 0
+    if fixed:
+        print(f"Flagged {fixed} multicolor Pokémon card(s).")
+    return fixed
+
+
 def build_oracles(engine) -> dict[str, int]:
     # Corrections first, committed separately — never share a lock with DELETE oracles.
     persist_category_corrections(engine)
+    persist_multicolor_flags(engine)
     persist_card_corrections(engine)
 
     with engine.begin() as conn:

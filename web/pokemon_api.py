@@ -669,7 +669,7 @@ def _oracle_searchable_text_sql() -> str:
     )"""
 
 
-# Colored energies for is:multicolor (Colorless handled specially — see helper).
+# Colored energies for is:multicolor docs / VALUES helpers (logic lives on is_multicolor).
 _MULTICOLOR_ENERGY_TYPES: tuple[tuple[str, str], ...] = (
     ("Grass", "G"),
     ("Fire", "R"),
@@ -684,62 +684,9 @@ _MULTICOLOR_ENERGY_TYPES: tuple[tuple[str, str], ...] = (
 )
 
 
-def _sql_multicolor_energy_names_from_text() -> str:
-    """SQL VALUES rows: (color, name, letter) for rules-text energy detection."""
-    rows: list[str] = []
-    for name, letter in _MULTICOLOR_ENERGY_TYPES:
-        # Keep patterns out of string literals that contain ':' — SQLAlchemy text()
-        # treats :name as bind params (e.g. '(?:G|…)' broke as :G).
-        rows.append(f"('{name}', '{name}', '{letter}')")
-    return ", ".join(rows)
-
-
 def _sql_is_multicolor() -> str:
-    """Pokémon with 2+ distinct energies across types, attack costs, and energy-in-text.
-
-    Colorless is ignored everywhere unless the card's printed type includes Colorless
-    (e.g. Secret Wonders Lugia: Colorless type + Psychic attack cost).
-    """
-    text_sql = _oracle_searchable_text_sql()
-    text_values = _sql_multicolor_energy_names_from_text()
-    return f"""(
-      c.category = 'Pokemon'
-      AND (
-        SELECT COUNT(DISTINCT color) FROM (
-          -- Printed types (Colorless only when it is a printed type)
-          SELECT t.color
-          FROM unnest(COALESCE(c.types, ARRAY[]::text[])) AS t(color)
-          WHERE t.color IS NOT NULL AND t.color <> ''
-
-          UNION
-
-          -- Attack costs: drop Colorless unless this is a Colorless-type Pokémon
-          SELECT cost_row.cost_el AS color
-          FROM jsonb_array_elements(
-            CASE WHEN jsonb_typeof(c.attacks) = 'array' THEN c.attacks ELSE '[]'::jsonb END
-          ) AS atk,
-          LATERAL jsonb_array_elements_text(
-            CASE WHEN jsonb_typeof(atk->'cost') = 'array' THEN atk->'cost' ELSE '[]'::jsonb END
-          ) AS cost_row(cost_el)
-          WHERE cost_row.cost_el IS NOT NULL AND cost_row.cost_el <> ''
-            AND (
-              cost_row.cost_el <> 'Colorless'
-              OR 'Colorless' = ANY(COALESCE(c.types, ARRAY[]::text[]))
-            )
-
-          UNION
-
-          -- Rules text: "Fire Energy" / {{R}} / {{Fire}} (never Colorless from text)
-          SELECT v.color
-          FROM (SELECT {text_sql} AS txt) AS rules
-          CROSS JOIN (VALUES {text_values}) AS v(color, name, letter)
-          WHERE rules.txt ~* ('\\y' || v.name || '[[:space:]]+Energy\\y')
-             OR rules.txt ~* ('\\{{' || v.letter || '\\}}')
-             OR rules.txt ~* ('\\{{' || v.name || '\\}}')
-        ) AS colors
-        WHERE color IS NOT NULL AND color <> ''
-      ) >= 2
-    )"""
+    """Use cached pokemon_cards.is_multicolor (see migration 044)."""
+    return "(c.category = 'Pokemon' AND c.is_multicolor = TRUE)"
 
 
 def _apply_multicolor_filter(

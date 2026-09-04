@@ -6,12 +6,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pipeline"))
 
 from pokemon_api import (  # noqa: E402
     _apply_multicolor_filter,
     _parse_search_query,
     _sql_is_multicolor,
 )
+from pokemon_card_corrections import compute_is_multicolor  # noqa: E402
 
 
 def test_parse_multicolor() -> None:
@@ -29,25 +31,17 @@ def test_multicolor_not_treated_as_tag() -> None:
     assert "multicolor" not in parsed["tags"]
 
 
-def test_sql_mentions_colorless_exception() -> None:
+def test_sql_uses_cached_column() -> None:
     sql = _sql_is_multicolor()
-    assert "Colorless" in sql
-    assert "attacks" in sql
-    assert "Fire" in sql
-    assert "Psychic" in sql
-    # Must not embed :Letter bind-looking tokens (SQLAlchemy text() pitfall)
-    assert "?:G" not in sql
-    assert ":G|" not in sql
-    assert "[[:space:]]+Energy" in sql
-    # Patterns built via concat, not inline (? :Letter) groups
-    assert "(?:" not in sql
+    assert "is_multicolor" in sql
+    assert "category = 'Pokemon'" in sql
 
 
 def test_apply_multicolor_filter() -> None:
     filters: list[str] = []
     _apply_multicolor_filter(filters, multicolor=True)
     assert len(filters) == 1
-    assert "category = 'Pokemon'" in filters[0]
+    assert "is_multicolor" in filters[0]
 
     filters = []
     _apply_multicolor_filter(filters, multicolor=False)
@@ -56,3 +50,63 @@ def test_apply_multicolor_filter() -> None:
     filters = []
     _apply_multicolor_filter(filters, multicolor=None)
     assert filters == []
+
+
+def test_compute_hariyama_delta() -> None:
+    assert compute_is_multicolor(
+        {
+            "category": "Pokemon",
+            "types": ["Fire"],
+            "attacks": [
+                {"name": "Slap Push", "cost": ["Colorless", "Colorless"]},
+                {"name": "Brick Smash", "cost": ["Fighting", "Fighting", "Colorless"]},
+            ],
+        }
+    )
+
+
+def test_compute_lugia_colorless_plus_psychic() -> None:
+    assert compute_is_multicolor(
+        {
+            "category": "Pokemon",
+            "types": ["Colorless"],
+            "attacks": [
+                {"name": "Silver Wing", "cost": ["Colorless"]},
+                {
+                    "name": "Psychic Destruction",
+                    "cost": ["Psychic", "Colorless", "Colorless"],
+                },
+            ],
+        }
+    )
+
+
+def test_compute_white_kyurem_fire_in_text() -> None:
+    assert compute_is_multicolor(
+        {
+            "category": "Pokemon",
+            "types": ["Water"],
+            "attacks": [
+                {
+                    "name": "Burning Icicles",
+                    "cost": ["Water", "Colorless"],
+                    "effect": (
+                        "If this Pokémon has any Fire Energy attached to it, "
+                        "this attack does 20 damage to 2 of your opponent's Benched Pokémon."
+                    ),
+                }
+            ],
+        }
+    )
+
+
+def test_compute_mono_fire_not_multicolor() -> None:
+    assert not compute_is_multicolor(
+        {
+            "category": "Pokemon",
+            "types": ["Fire"],
+            "attacks": [
+                {"name": "Ember", "cost": ["Fire", "Colorless"]},
+            ],
+        }
+    )
