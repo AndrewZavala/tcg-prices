@@ -685,15 +685,12 @@ _MULTICOLOR_ENERGY_TYPES: tuple[tuple[str, str], ...] = (
 
 
 def _sql_multicolor_energy_names_from_text() -> str:
-    """SQL VALUES list: detect Type Energy / {L} mentions in rules text → type name."""
+    """SQL VALUES rows: (color, name, letter) for rules-text energy detection."""
     rows: list[str] = []
     for name, letter in _MULTICOLOR_ENERGY_TYPES:
-        # "Fire Energy" / "{R}" / "{Fire}" — not bare "Fire" (avoids "Darkness Pokémon").
-        pat = (
-            rf"\\y{re.escape(name)}\\s+Energy\\y|"
-            rf"\\{{(?:{re.escape(letter)}|{re.escape(name)})\\}}"
-        )
-        rows.append(f"('{name}', '{pat}')")
+        # Keep patterns out of string literals that contain ':' — SQLAlchemy text()
+        # treats :name as bind params (e.g. '(?:G|…)' broke as :G).
+        rows.append(f"('{name}', '{name}', '{letter}')")
     return ", ".join(rows)
 
 
@@ -709,7 +706,7 @@ def _sql_is_multicolor() -> str:
       c.category = 'Pokemon'
       AND (
         SELECT COUNT(DISTINCT color) FROM (
-          -- Printed types (always keep Colorless when it is a printed type)
+          -- Printed types (Colorless only when it is a printed type)
           SELECT t.color
           FROM unnest(COALESCE(c.types, ARRAY[]::text[])) AS t(color)
           WHERE t.color IS NOT NULL AND t.color <> ''
@@ -717,25 +714,28 @@ def _sql_is_multicolor() -> str:
           UNION
 
           -- Attack costs: drop Colorless unless this is a Colorless-type Pokémon
-          SELECT cost_el AS color
+          SELECT cost_row.cost_el AS color
           FROM jsonb_array_elements(
             CASE WHEN jsonb_typeof(c.attacks) = 'array' THEN c.attacks ELSE '[]'::jsonb END
           ) AS atk,
           LATERAL jsonb_array_elements_text(
             CASE WHEN jsonb_typeof(atk->'cost') = 'array' THEN atk->'cost' ELSE '[]'::jsonb END
-          ) AS cost_el
-          WHERE cost_el IS NOT NULL AND cost_el <> ''
+          ) AS cost_row(cost_el)
+          WHERE cost_row.cost_el IS NOT NULL AND cost_row.cost_el <> ''
             AND (
-              cost_el <> 'Colorless'
+              cost_row.cost_el <> 'Colorless'
               OR 'Colorless' = ANY(COALESCE(c.types, ARRAY[]::text[]))
             )
 
           UNION
 
-          -- Rules text: "Fire Energy" / {{R}} style (never Colorless from text)
+          -- Rules text: "Fire Energy" / {{R}} / {{Fire}} (never Colorless from text)
           SELECT v.color
-          FROM (VALUES {text_values}) AS v(color, pat)
-          WHERE {text_sql} ~* v.pat
+          FROM (SELECT {text_sql} AS txt) AS rules
+          CROSS JOIN (VALUES {text_values}) AS v(color, name, letter)
+          WHERE rules.txt ~* ('\\y' || v.name || '[[:space:]]+Energy\\y')
+             OR rules.txt ~* ('\\{{' || v.letter || '\\}}')
+             OR rules.txt ~* ('\\{{' || v.name || '\\}}')
         ) AS colors
         WHERE color IS NOT NULL AND color <> ''
       ) >= 2

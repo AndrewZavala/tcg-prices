@@ -35,8 +35,12 @@ def test_sql_mentions_colorless_exception() -> None:
     assert "attacks" in sql
     assert "Fire" in sql
     assert "Psychic" in sql
-    # Energy-in-text for White Kyurem-style cards
-    assert r"\yFire\s+Energy\y" in sql or "Fire" in sql
+    # Must not embed :Letter bind-looking tokens (SQLAlchemy text() pitfall)
+    assert "?:G" not in sql
+    assert ":G|" not in sql
+    assert "[[:space:]]+Energy" in sql
+    # Patterns built via concat, not inline (? :Letter) groups
+    assert "(?:" not in sql
 
 
 def test_apply_multicolor_filter() -> None:
