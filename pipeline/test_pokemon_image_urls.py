@@ -24,7 +24,16 @@ def test_remote_bases_include_pokemon_com_after_pokemontcg() -> None:
     assert any("assets.pokemon.com" in b and "SWSH301" in b for b in bases)
 
 
+def test_cel25cc_blastoise_uses_reprint_number() -> None:
+    from pokemon_image_urls import pokemontcg_image_urls
+
+    urls = pokemontcg_image_urls("cel25cc-CC001", "CC001")
+    assert "https://images.pokemontcg.io/cel25c/2_A_hires.png" in urls
+    assert "https://images.pokemontcg.io/cel25c/1_A_hires.png" not in urls
+
+
 if __name__ == "__main__":
     test_swshp_pokemon_com_includes_lugia_v()
     test_remote_bases_include_pokemon_com_after_pokemontcg()
+    test_cel25cc_blastoise_uses_reprint_number()
     print("ok")

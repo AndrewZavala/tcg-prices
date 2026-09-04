@@ -414,6 +414,35 @@ _POKEMONTCG_SET_ALIASES: dict[str, str] = {
     "cel25cc": "cel25c",
 }
 
+# Keep in sync with pipeline/pokemon_image_urls.CEL25CC_TO_POKEMONTCG_NUM
+_CEL25CC_TO_POKEMONTCG_NUM: dict[str, str] = {
+    "CC001": "2_A",
+    "CC002": "4_A",
+    "CC003": "15_A",
+    "CC004": "73_A",
+    "CC005": "8_A",
+    "CC006": "15_B",
+    "CC007": "15_C",
+    "CC008": "24_A",
+    "CC009": "20_A",
+    "CC010": "66_A",
+    "CC011": "9_A",
+    "CC012": "86_A",
+    "CC013": "88_A",
+    "CC014": "93_A",
+    "CC015": "17_A",
+    "CC016": "15_D",
+    "CC017": "109_A",
+    "CC018": "145_A",
+    "CC019": "107_A",
+    "CC020": "113_A",
+    "CC021": "114_A",
+    "CC022": "54_A",
+    "CC023": "97_A",
+    "CC024": "76_A",
+    "CC025": "60_A",
+}
+
 
 def _pokemontcg_image_fallback(card_id: str | None, local_id: str | None = None) -> str | None:
     """Best-effort CDN URL when TCGdex has no art. May 404 for very new promos."""
@@ -422,7 +451,13 @@ def _pokemontcg_image_fallback(card_id: str | None, local_id: str | None = None)
     set_part, local = card_id.split("-", 1)
     if local_id:
         local = str(local_id)
-    api_set = _POKEMONTCG_SET_ALIASES.get(set_part.lower(), set_part.lower())
+    set_key = set_part.lower()
+    api_set = _POKEMONTCG_SET_ALIASES.get(set_key, set_key)
+    if set_key == "cel25cc":
+        mapped = _CEL25CC_TO_POKEMONTCG_NUM.get(local.upper())
+        if not mapped:
+            return None
+        return f"https://images.pokemontcg.io/{api_set}/{mapped}_hires.png"
     num = local
     if local.isdigit():
         num = str(int(local))

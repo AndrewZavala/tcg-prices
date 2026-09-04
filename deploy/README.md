@@ -201,6 +201,10 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
 # Mirror missing art (uses pokemontcg.io + official pokemon.com fallbacks for promo gaps like SWSH301)
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
   python pipeline/download_pokemon_images.py --set swshp
+
+# Celebrations Classic Collection (CC### maps to original reprint #s on pokemontcg.io)
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
+  python pipeline/download_pokemon_images.py --set cel25cc --force
 ```
 
 # Full mirror (~19k cards, polite delay — run in screen/tmux)

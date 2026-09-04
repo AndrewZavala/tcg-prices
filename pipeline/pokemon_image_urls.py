@@ -44,6 +44,36 @@ POKEMONTCG_SET_ALIASES: dict[str, str] = {
     "cel25cc": "cel25c",
 }
 
+# Celebrations Classic Collection (cel25cc / CC###) → pokemontcg.io cel25c file stems.
+# Images use the reprinted card's original collector number, not CC001–CC025.
+CEL25CC_TO_POKEMONTCG_NUM: dict[str, str] = {
+    "CC001": "2_A",  # Blastoise
+    "CC002": "4_A",  # Charizard
+    "CC003": "15_A",  # Venusaur
+    "CC004": "73_A",  # Imposter Professor Oak
+    "CC005": "8_A",  # Dark Gyarados
+    "CC006": "15_B",  # Here Comes Team Rocket!
+    "CC007": "15_C",  # Rocket's Zapdos
+    "CC008": "24_A",  # _____'s Pikachu
+    "CC009": "20_A",  # Cleffa
+    "CC010": "66_A",  # Shining Magikarp
+    "CC011": "9_A",  # Team Magma's Groudon
+    "CC012": "86_A",  # Rocket's Admin.
+    "CC013": "88_A",  # Mew ex
+    "CC014": "93_A",  # Gardevoir ex δ
+    "CC015": "17_A",  # Umbreon ★
+    "CC016": "15_D",  # Claydol
+    "CC017": "109_A",  # Luxray GL LV.X
+    "CC018": "145_A",  # Garchomp C LV.X
+    "CC019": "107_A",  # Donphan
+    "CC020": "113_A",  # Reshiram
+    "CC021": "114_A",  # Zekrom
+    "CC022": "54_A",  # Mewtwo-EX
+    "CC023": "97_A",  # Xerneas-EX
+    "CC024": "76_A",  # M Rayquaza-EX
+    "CC025": "60_A",  # Tapu Lele-GX
+}
+
 # Official pokemon.com CMS paths for promo sets (TCGdex/pokemontcg often lag).
 # https://assets.pokemon.com/assets/cms2/img/cards/web/{CODE}/{CODE}_EN_{num}.png
 POKEMON_COM_PROMO_CODES: dict[str, str] = {
@@ -66,14 +96,21 @@ def pokemontcg_image_urls(card_id: str | None, local_id: str | None = None) -> l
     set_part, local = card_id.split("-", 1)
     if local_id:
         local = str(local_id)
-    api_set = POKEMONTCG_SET_ALIASES.get(set_part.lower(), set_part.lower())
+    set_key = set_part.lower()
+    api_set = POKEMONTCG_SET_ALIASES.get(set_key, set_key)
     nums: list[str] = []
     raw = local
-    nums.append(raw)
-    if raw.isdigit():
-        nums.append(str(int(raw)))
-    elif raw.upper().startswith("CC") and raw[2:].isdigit():
-        nums.append(f"{int(raw[2:])}_A")
+    # Classic Collection must use original reprint numbers (not CC001 → 1_A).
+    if set_key == "cel25cc":
+        mapped = CEL25CC_TO_POKEMONTCG_NUM.get(raw.upper())
+        if mapped:
+            nums.append(mapped)
+    else:
+        nums.append(raw)
+        if raw.isdigit():
+            nums.append(str(int(raw)))
+        elif raw.upper().startswith("CC") and raw[2:].isdigit():
+            nums.append(f"{int(raw[2:])}_A")
     seen: set[str] = set()
     out: list[str] = []
     for num in nums:
