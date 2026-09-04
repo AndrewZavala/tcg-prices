@@ -628,7 +628,10 @@ def persist_card_corrections(engine) -> int:
 
 
 def persist_category_corrections(engine) -> int:
-    """Reclassify Pokémon mislabeled Trainer/Energy (hp + stage/types/dex)."""
+    """Reclassify Pokémon mislabeled Trainer/Energy (hp + stage/types/dex).
+
+    Keep in sync with migrations/043_fix_mislabeled_pokemon_category.sql.
+    """
     with engine.begin() as conn:
         result = conn.execute(
             text(

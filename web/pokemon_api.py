@@ -669,6 +669,93 @@ def _oracle_searchable_text_sql() -> str:
     )"""
 
 
+# Colored energies for is:multicolor (Colorless handled specially — see helper).
+_MULTICOLOR_ENERGY_TYPES: tuple[tuple[str, str], ...] = (
+    ("Grass", "G"),
+    ("Fire", "R"),
+    ("Water", "W"),
+    ("Lightning", "L"),
+    ("Psychic", "P"),
+    ("Fighting", "F"),
+    ("Darkness", "D"),
+    ("Metal", "M"),
+    ("Fairy", "Y"),
+    ("Dragon", "N"),
+)
+
+
+def _sql_multicolor_energy_names_from_text() -> str:
+    """SQL VALUES list: detect Type Energy / {L} mentions in rules text → type name."""
+    rows: list[str] = []
+    for name, letter in _MULTICOLOR_ENERGY_TYPES:
+        # "Fire Energy" / "{R}" / "{Fire}" — not bare "Fire" (avoids "Darkness Pokémon").
+        pat = (
+            rf"\\y{re.escape(name)}\\s+Energy\\y|"
+            rf"\\{{(?:{re.escape(letter)}|{re.escape(name)})\\}}"
+        )
+        rows.append(f"('{name}', '{pat}')")
+    return ", ".join(rows)
+
+
+def _sql_is_multicolor() -> str:
+    """Pokémon with 2+ distinct energies across types, attack costs, and energy-in-text.
+
+    Colorless is ignored everywhere unless the card's printed type includes Colorless
+    (e.g. Secret Wonders Lugia: Colorless type + Psychic attack cost).
+    """
+    text_sql = _oracle_searchable_text_sql()
+    text_values = _sql_multicolor_energy_names_from_text()
+    return f"""(
+      c.category = 'Pokemon'
+      AND (
+        SELECT COUNT(DISTINCT color) FROM (
+          -- Printed types (always keep Colorless when it is a printed type)
+          SELECT t.color
+          FROM unnest(COALESCE(c.types, ARRAY[]::text[])) AS t(color)
+          WHERE t.color IS NOT NULL AND t.color <> ''
+
+          UNION
+
+          -- Attack costs: drop Colorless unless this is a Colorless-type Pokémon
+          SELECT cost_el AS color
+          FROM jsonb_array_elements(
+            CASE WHEN jsonb_typeof(c.attacks) = 'array' THEN c.attacks ELSE '[]'::jsonb END
+          ) AS atk,
+          LATERAL jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(atk->'cost') = 'array' THEN atk->'cost' ELSE '[]'::jsonb END
+          ) AS cost_el
+          WHERE cost_el IS NOT NULL AND cost_el <> ''
+            AND (
+              cost_el <> 'Colorless'
+              OR 'Colorless' = ANY(COALESCE(c.types, ARRAY[]::text[]))
+            )
+
+          UNION
+
+          -- Rules text: "Fire Energy" / {{R}} style (never Colorless from text)
+          SELECT v.color
+          FROM (VALUES {text_values}) AS v(color, pat)
+          WHERE {text_sql} ~* v.pat
+        ) AS colors
+        WHERE color IS NOT NULL AND color <> ''
+      ) >= 2
+    )"""
+
+
+def _apply_multicolor_filter(
+    filters: list[str],
+    *,
+    multicolor: bool | None,
+) -> None:
+    if multicolor is None:
+        return
+    clause = _sql_is_multicolor()
+    if multicolor:
+        filters.append(clause)
+    else:
+        filters.append(f"NOT {clause}")
+
+
 def _parse_search_query(
     q: str | None,
 ) -> dict[str, Any]:
@@ -716,6 +803,7 @@ def _parse_search_query(
         "exclude_resistances": [],
         "retreats": [],
         "exclude_retreats": [],
+        "multicolor": None,
     }
     if not q or not q.strip():
         return result
@@ -785,7 +873,10 @@ def _parse_search_query(
                 else:
                     result["tags"].append(tag)
         elif prefix == "is":
-            if val_lower == "legendary":
+            if val_lower in ("multicolor", "multi-color", "multicolour", "multi-colour"):
+                # True = require multicolor; False = exclude (-is:multicolor)
+                result["multicolor"] = not negated
+            elif val_lower == "legendary":
                 if negated:
                     result["exclude_pokemon_special"] = "legendary"
                 else:
@@ -1724,6 +1815,10 @@ def search_pokemon_cards(
         params,
         retreats=list(parsed.get("retreats") or []),
         exclude_retreats=list(parsed.get("exclude_retreats") or []),
+    )
+    _apply_multicolor_filter(
+        filters,
+        multicolor=parsed.get("multicolor"),
     )
 
     where_sql = " AND ".join(filters)
