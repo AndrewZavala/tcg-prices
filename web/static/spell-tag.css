@@ -1623,6 +1623,45 @@
   gap: 0.75rem;
 }
 
+.st-body .sp-field-sort-dir {
+  flex: 0 1 220px;
+  max-width: 240px;
+}
+
+.st-body .sp-sort-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.st-body .sp-sort-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.st-body .sp-sort-dir {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--sp-radius-sm);
+  border: 1px solid rgba(196, 168, 232, 0.35);
+  background: rgba(7, 11, 31, 0.65);
+  color: var(--sp-pink-soft);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.st-body .sp-sort-dir:hover:not(:disabled) {
+  border-color: rgba(196, 168, 232, 0.7);
+  color: #fff;
+}
+
+.st-body .sp-sort-dir:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .st-body .sp-sets-panel {
   max-width: 900px;
   margin-left: auto;

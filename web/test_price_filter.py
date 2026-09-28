@@ -9,11 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pipeline"))
 
 from pokemon_api import (  # noqa: E402
-    SORT_SQL,
     _apply_competitive_filter,
     _apply_format_filters,
     _apply_price_filters,
     _parse_search_query,
+    resolve_sort,
+    sort_order_sql,
 )
 
 
@@ -52,8 +53,28 @@ def test_apply_price_filters() -> None:
 
 
 def test_price_sorts_put_unpriced_last() -> None:
-    assert "price_usd DESC NULLS LAST" in SORT_SQL["price_desc"]
-    assert "price_usd ASC NULLS LAST" in SORT_SQL["price_asc"]
+    assert "price_usd DESC NULLS LAST" in sort_order_sql("price", "desc")
+    assert "price_usd ASC NULLS LAST" in sort_order_sql("price", "asc")
+
+
+def test_resolve_sort_defaults_and_legacy_keys() -> None:
+    assert resolve_sort(None, None) == ("name", "asc")
+    assert resolve_sort("price", None) == ("price", "desc")
+    assert resolve_sort("hp", "asc") == ("hp", "asc")
+    assert resolve_sort("set", "desc") == ("set", "desc")
+    assert resolve_sort("price_asc", None) == ("price", "asc")
+    assert resolve_sort("price_desc", None) == ("price", "desc")
+    assert resolve_sort("hp_desc", None) == ("hp", "desc")
+    assert resolve_sort("price_desc", "asc") == ("price", "asc")
+    assert resolve_sort("random", None)[0] == "shuffle"
+    assert resolve_sort("bogus", "sideways") == ("name", "asc")
+
+
+def test_sort_direction_flips_primary_columns() -> None:
+    assert sort_order_sql("set", "desc").startswith("s.release_date DESC NULLS LAST, c.set_id DESC")
+    assert sort_order_sql("name", "desc").startswith("c.name DESC")
+    assert "DESC" not in sort_order_sql("type", "asc").split(",")[0]
+    assert sort_order_sql("type", "desc").split(",")[0].endswith("END DESC")
 
 
 def test_competitive_filter() -> None:

@@ -342,23 +342,68 @@ def _apply_has_ability_filters(
         filters.append(f"NOT ({_sql_has_ability_kind(key)})")
 
 
-SORT_SQL = {
-    "name": "c.name ASC, s.release_date ASC NULLS LAST, c.local_id",
-    # local_id is often "SM142" / "TG01" / "RC1" — never cast the whole string to int
-    "set": (
-        "s.release_date ASC NULLS LAST, c.set_id, "
-        "NULLIF(regexp_replace(c.local_id, '[^0-9]', '', 'g'), '')::int NULLS LAST, "
-        "c.local_id ASC NULLS LAST"
-    ),
-    "dex": "c.dex_ids[1] ASC NULLS LAST, c.name ASC",
-    "hp_desc": "c.hp DESC NULLS LAST, c.name ASC",
-    "price_desc": "c.price_usd DESC NULLS LAST, c.name ASC, c.id",
-    "price_asc": "c.price_usd ASC NULLS LAST, c.name ASC, c.id",
-    # Seeded via :shuffle_seed so pagination stays stable within a shuffle session.
-    "shuffle": "md5(c.id || CAST(:shuffle_seed AS text)) ASC, c.id ASC",
+SortDir = Literal["asc", "desc"]
+
+SORT_DEFAULT_DIR: dict[str, SortDir] = {
+    "name": "asc",
+    "set": "asc",
+    "dex": "asc",
+    "type": "asc",
+    "hp": "desc",
+    "price": "desc",
 }
 
-SORT_SQL["type"] = build_card_type_sort_sql("c", include_category_bucket=True)
+# Pre-direction sort keys still accepted from old links.
+LEGACY_SORTS: dict[str, tuple[str, SortDir]] = {
+    "hp_desc": ("hp", "desc"),
+    "price_desc": ("price", "desc"),
+    "price_asc": ("price", "asc"),
+}
+
+_TYPE_SORT_SQL = {
+    "ASC": build_card_type_sort_sql("c", include_category_bucket=True),
+    "DESC": build_card_type_sort_sql("c", include_category_bucket=True, descending=True),
+}
+
+# Seeded via :shuffle_seed so pagination stays stable within a shuffle session.
+SHUFFLE_SORT_SQL = "md5(c.id || CAST(:shuffle_seed AS text)) ASC, c.id ASC"
+
+
+def resolve_sort(sort: str | None, direction: str | None) -> tuple[str, SortDir]:
+    key = (sort or "name").strip().lower()
+    if key == "random":
+        key = "shuffle"
+    legacy_dir: SortDir | None = None
+    if key in LEGACY_SORTS:
+        key, legacy_dir = LEGACY_SORTS[key]
+    if key != "shuffle" and key not in SORT_DEFAULT_DIR:
+        key = "name"
+    d = (direction or "").strip().lower()
+    if d not in ("asc", "desc"):
+        d = legacy_dir or SORT_DEFAULT_DIR.get(key, "asc")
+    return key, d  # type: ignore[return-value]
+
+
+def sort_order_sql(key: str, direction: SortDir) -> str:
+    d = "DESC" if direction == "desc" else "ASC"
+    if key == "shuffle":
+        return SHUFFLE_SORT_SQL
+    if key == "type":
+        return _TYPE_SORT_SQL[d]
+    if key == "set":
+        # local_id is often "SM142" / "TG01" / "RC1" — never cast the whole string to int
+        return (
+            f"s.release_date {d} NULLS LAST, c.set_id {d}, "
+            f"NULLIF(regexp_replace(c.local_id, '[^0-9]', '', 'g'), '')::int {d} NULLS LAST, "
+            f"c.local_id {d} NULLS LAST"
+        )
+    if key == "dex":
+        return f"c.dex_ids[1] {d} NULLS LAST, c.name ASC"
+    if key == "hp":
+        return f"c.hp {d} NULLS LAST, c.name ASC"
+    if key == "price":
+        return f"c.price_usd {d} NULLS LAST, c.name ASC, c.id"
+    return f"c.name {d}, s.release_date ASC NULLS LAST, c.local_id"
 
 SPECIES_SORT_JOINS = SEARCH_SPECIES_JOINS
 
@@ -1594,7 +1639,12 @@ def search_pokemon_cards(
     unique: UniqueMode = Query("cards", description="pokemon | cards | prints | art"),
     sort: str = Query(
         "name",
-        description="name | set | dex | hp_desc | type | price_desc | price_asc | shuffle",
+        description="name | set | dex | type | hp | price | shuffle",
+    ),
+    direction: str | None = Query(
+        None,
+        alias="dir",
+        description="asc | desc (defaults: hp and price high first, others ascending)",
     ),
     seed: str | None = Query(
         None,
@@ -1605,9 +1655,7 @@ def search_pokemon_cards(
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
     assert _engine is not None
-    sort_key = (sort or "name").strip().lower()
-    if sort_key == "random":
-        sort_key = "shuffle"
+    sort_key, sort_dir = resolve_sort(sort, direction)
 
     filters = ["1=1"]
     params: dict[str, Any] = {"limit": limit, "offset": offset}
@@ -1615,9 +1663,7 @@ def search_pokemon_cards(
     if sort_key == "shuffle":
         shuffle_seed = (seed or "").strip() or secrets.token_hex(8)
         params["shuffle_seed"] = shuffle_seed
-        order = SORT_SQL["shuffle"]
-    else:
-        order = SORT_SQL.get(sort_key, SORT_SQL["name"])
+    order = sort_order_sql(sort_key, sort_dir)
     parsed = _parse_search_query(q)
     if parsed["name_q"]:
         # Accent-insensitive: "pokemon" matches "Pokémon", etc.
@@ -1899,7 +1945,7 @@ def search_pokemon_cards(
 
     where_sql = " AND ".join(filters)
     price_view = bool(
-        sort_key in ("price_desc", "price_asc")
+        sort_key == "price"
         or parsed.get("prices")
         or parsed.get("exclude_prices")
     )
@@ -1929,7 +1975,7 @@ def search_pokemon_cards(
         # Price and set views show the printing that matched, not the oldest representative.
         pick_order = ""
         if price_view:
-            price_pick = "ASC" if sort_key == "price_asc" else "DESC"
+            price_pick = "ASC" if sort_key == "price" and sort_dir == "asc" else "DESC"
             pick_order = f"c.price_usd {price_pick} NULLS LAST,"
         core_from = f"""
             FROM (
@@ -2012,7 +2058,8 @@ def search_pokemon_cards(
         "total": total,
         "limit": limit,
         "offset": offset,
-        "sort": sort_key if sort_key in SORT_SQL else "name",
+        "sort": sort_key,
+        "dir": sort_dir,
         "seed": shuffle_seed,
         "cards": cards,
     }

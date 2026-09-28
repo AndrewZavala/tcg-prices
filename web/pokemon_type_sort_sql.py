@@ -50,8 +50,12 @@ LEFT JOIN pokemon_species ps ON ps.dex_id = {card_alias}.dex_ids[1]
 LEFT JOIN pokemon_species ps_root ON ps_root.dex_id = ({root})"""
 
 
-def build_card_type_sort_sql(alias: str = "c", *, include_category_bucket: bool = True) -> str:
+def build_card_type_sort_sql(
+    alias: str = "c", *, include_category_bucket: bool = True, descending: bool = False
+) -> str:
+    """Descending flips category and type order; evolution lines still read Basic → Stage 2."""
     a = alias
+    flip = " DESC" if descending else ""
     line_type = pokemon_line_type_expr(a)
     type_rank = f"""CASE {line_type}
   WHEN 'Grass' THEN 1 WHEN 'Fire' THEN 2 WHEN 'Water' THEN 3 WHEN 'Lightning' THEN 4
@@ -98,12 +102,14 @@ def build_card_type_sort_sql(alias: str = "c", *, include_category_bucket: bool 
 
     lines: list[str] = []
     if include_category_bucket:
-        lines.append(f"CASE {a}.category WHEN 'Pokemon' THEN 0 WHEN 'Trainer' THEN 1 ELSE 2 END")
-    lines.append(primary_rank)
+        lines.append(
+            f"CASE {a}.category WHEN 'Pokemon' THEN 0 WHEN 'Trainer' THEN 1 ELSE 2 END{flip}"
+        )
+    lines.append(f"{primary_rank}{flip}")
     lines.append(
         f"CASE WHEN {a}.category = 'Energy' "
         f"AND NOT ('special' = ANY(COALESCE({a}.tags, ARRAY[]::text[]))) "
-        f"THEN ({tcg_type_rank}) ELSE 0 END"
+        f"THEN ({tcg_type_rank}) ELSE 0 END{flip}"
     )
     lines.append(line_group)
     lines.append(line_stage)

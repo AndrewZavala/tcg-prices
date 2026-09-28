@@ -18,8 +18,39 @@
   const speciesGroupEl = document.getElementById("speciesGroup");
   const hasFilterEl = document.getElementById("hasFilter");
   const sortEl = document.getElementById("sort");
+  const sortDirBtn = document.getElementById("sortDir");
   const pageSizeEl = document.getElementById("pageSize");
   let shuffleSeed = "";
+  const SORT_DEFAULT_DIR = { hp: "desc", price: "desc" };
+  const LEGACY_SORTS = {
+    hp_desc: ["hp", "desc"],
+    price_desc: ["price", "desc"],
+    price_asc: ["price", "asc"],
+  };
+  let sortDir = "asc";
+
+  function defaultSortDir(sort) {
+    return SORT_DEFAULT_DIR[sort] || "asc";
+  }
+
+  function syncSortDirButton() {
+    if (!sortDirBtn) return;
+    const shuffle = sortEl.value === "shuffle";
+    const desc = sortDir === "desc";
+    sortDirBtn.disabled = shuffle;
+    sortDirBtn.textContent = desc ? "↓ Desc" : "↑ Asc";
+    sortDirBtn.setAttribute("aria-label", `Sort order: ${desc ? "descending" : "ascending"}`);
+    sortDirBtn.title = shuffle ? "Shuffle has no order" : "Flip sort order";
+  }
+
+  function resetSortDir() {
+    sortDir = defaultSortDir(sortEl.value);
+    syncSortDirButton();
+  }
+
+  function isPriceSort() {
+    return sortEl.value === "price" || sortEl.value === "price_desc" || sortEl.value === "price_asc";
+  }
 
   function newShuffleSeed() {
     return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
@@ -159,7 +190,7 @@
         ? "Already in collection"
         : "Add to collection"
       : label;
-    const showPrice = sortEl.value === "price_desc" || sortEl.value === "price_asc";
+    const showPrice = isPriceSort();
     const priceHtml = showPrice
       ? `<div class="sp-card-price">${esc(formatUsd(card.price_usd) || "No price")}</div>`
       : "";
@@ -1702,6 +1733,7 @@
     const params = new URLSearchParams();
     params.set("unique", unique);
     params.set("sort", sortEl.value);
+    if (sortDirBtn && sortEl.value !== "shuffle") params.set("dir", sortDir);
     params.set("limit", String(pageSize));
     params.set("offset", String(offset));
     if (sortEl.value === "shuffle") {
@@ -1729,6 +1761,9 @@
     if (qEl.value.trim()) params.set("q", qEl.value.trim());
     if (unique && unique !== "cards") params.set("unique", unique);
     if (sortEl.value && sortEl.value !== "name") params.set("sort", sortEl.value);
+    if (sortDirBtn && sortEl.value !== "shuffle" && sortDir !== defaultSortDir(sortEl.value)) {
+      params.set("dir", sortDir);
+    }
     if (sortEl.value === "shuffle" && shuffleSeed) params.set("seed", shuffleSeed);
     if (setEl.value) params.set("set", setEl.value);
     else if (seriesEl.value) params.set("series", seriesEl.value);
@@ -1768,10 +1803,19 @@
         });
       }
     }
+    const hasSortOption = (v) => [...sortEl.options].some((o) => o.value === v);
+    let urlDir = params.get("dir");
     if (params.has("sort")) {
-      const sortVal = params.get("sort") || "";
-      if ([...sortEl.options].some((o) => o.value === sortVal)) sortEl.value = sortVal;
+      let sortVal = params.get("sort") || "";
+      if (!hasSortOption(sortVal) && LEGACY_SORTS[sortVal]) {
+        const [key, legacyDir] = LEGACY_SORTS[sortVal];
+        sortVal = key;
+        if (urlDir !== "asc" && urlDir !== "desc") urlDir = legacyDir;
+      }
+      if (hasSortOption(sortVal)) sortEl.value = sortVal;
     }
+    sortDir = urlDir === "asc" || urlDir === "desc" ? urlDir : defaultSortDir(sortEl.value);
+    syncSortDirButton();
     if (sortEl.value === "shuffle") {
       shuffleSeed = (params.get("seed") || "").trim() || newShuffleSeed();
     } else {
@@ -1959,7 +2003,13 @@
 
   qEl.addEventListener("input", scheduleSearch);
   sortEl.addEventListener("change", () => {
+    resetSortDir();
     ensureShuffleSeed({ reshuffle: sortEl.value === "shuffle" });
+    resetOffsetAndSearch();
+  });
+  sortDirBtn?.addEventListener("click", () => {
+    sortDir = sortDir === "desc" ? "asc" : "desc";
+    syncSortDirButton();
     resetOffsetAndSearch();
   });
   pageSizeEl?.addEventListener("change", () => {

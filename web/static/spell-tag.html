@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/star-piece.css?v=detail-nav1" />
-  <link rel="stylesheet" href="/static/spell-tag.css?v=34" />
+  <link rel="stylesheet" href="/static/spell-tag.css?v=35" />
   <link rel="icon" href="/static/spell-tag-logo.png?v=10" type="image/png" />
   <link rel="apple-touch-icon" href="/static/spell-tag-logo.png?v=10" />
 </head>
@@ -58,19 +58,21 @@
 
       <div class="sp-adv-panel" id="advPanel" hidden>
         <div class="sp-adv-display">
-          <label class="sp-field sp-field-sort">
-            <span class="sp-label">Sort</span>
-            <select id="sort">
-              <option value="name">Name</option>
-              <option value="set">Set</option>
-              <option value="dex">Dex #</option>
-              <option value="type">Type</option>
-              <option value="hp_desc">HP ↓</option>
-              <option value="price_desc">Price ↓</option>
-              <option value="price_asc">Price ↑</option>
-              <option value="shuffle">Shuffle</option>
-            </select>
-          </label>
+          <div class="sp-field sp-field-sort sp-field-sort-dir">
+            <label class="sp-label" for="sort">Sort</label>
+            <div class="sp-sort-row">
+              <select id="sort">
+                <option value="name">Name</option>
+                <option value="set">Set</option>
+                <option value="dex">Dex #</option>
+                <option value="type">Type</option>
+                <option value="hp">HP</option>
+                <option value="price">Price</option>
+                <option value="shuffle">Shuffle</option>
+              </select>
+              <button type="button" class="sp-sort-dir" id="sortDir" aria-label="Sort order: ascending">↑ Asc</button>
+            </div>
+          </div>
           <label class="sp-field sp-field-sort">
             <span class="sp-label">Per page</span>
             <select id="pageSize">
@@ -292,7 +294,7 @@
     </div>
   </dialog>
 
-  <script src="/static/pokemon.js?v=sets1"></script>
+  <script src="/static/pokemon.js?v=sortdir1"></script>
   <script src="/static/spelltag-auth.js?v=5"></script>
 </body>
 </html>
