@@ -1179,6 +1179,16 @@
     });
   }
 
+  function detailNavHtml(ids, currentId) {
+    const idx = ids.indexOf(currentId);
+    if (idx < 0 || ids.length < 2) return "";
+    return `
+      <button type="button" class="sp-detail-nav sp-detail-nav-prev" data-modal-nav="-1"
+              aria-label="Previous card" ${idx === 0 ? "disabled" : ""}>&#8249;</button>
+      <button type="button" class="sp-detail-nav sp-detail-nav-next" data-modal-nav="1"
+              aria-label="Next card" ${idx === ids.length - 1 ? "disabled" : ""}>&#8250;</button>`;
+  }
+
   async function openCard(id) {
     if (window.__spelltagAuthReady) {
       try {
@@ -1223,7 +1233,10 @@
     modalBody.innerHTML = `
       <div class="sp-detail">
         <div class="sp-detail-art">
-          ${cardImg(card.image_url_high || card.image_url, card.name, "sp-detail-img")}
+          <div class="sp-detail-img-wrap">
+            ${cardImg(card.image_url_high || card.image_url, card.name, "sp-detail-img")}
+            ${detailNavHtml(lastSearchCardIds, modal.dataset.cardId)}
+          </div>
           <div class="sp-detail-art-actions">
             <div class="sp-detail-art-row">
               ${card.tcg_url ? `
@@ -2054,6 +2067,12 @@
     if (isTypingTarget(e.target)) return;
     e.preventDefault();
     navigateModalCard(e.key === "ArrowRight" ? 1 : -1);
+  });
+
+  modalBody?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-modal-nav]");
+    if (!btn) return;
+    navigateModalCard(Number(btn.dataset.modalNav));
   });
 
   // Swipe-down to close (mobile sheet)

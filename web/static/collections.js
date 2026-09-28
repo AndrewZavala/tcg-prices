@@ -321,9 +321,7 @@
 
     async function navigateModalCard(delta) {
       if (!cardModal?.open || modalNavBusy) return;
-      const ids = filteredDetailCards()
-        .map((c) => c.id)
-        .filter(Boolean);
+      const ids = modalNavIds();
       if (!ids.length) return;
       const currentId = cardModal.dataset.cardId || "";
       const idx = ids.indexOf(currentId);
@@ -345,6 +343,12 @@
       if (isTypingTarget(e.target)) return;
       e.preventDefault();
       navigateModalCard(e.key === "ArrowRight" ? 1 : -1);
+    });
+
+    modalBody?.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-modal-nav]");
+      if (!btn) return;
+      navigateModalCard(Number(btn.dataset.modalNav));
     });
   }
 
@@ -387,6 +391,22 @@
     return `<img class="${cls}" src="${esc(url)}" alt="${esc(alt || "")}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${CARD_IMG_FALLBACK}';this.classList.add('is-fallback')" />`;
   }
 
+  function modalNavIds() {
+    return filteredDetailCards()
+      .map((c) => c.id)
+      .filter(Boolean);
+  }
+
+  function detailNavHtml(ids, currentId) {
+    const idx = ids.indexOf(currentId);
+    if (idx < 0 || ids.length < 2) return "";
+    return `
+      <button type="button" class="sp-detail-nav sp-detail-nav-prev" data-modal-nav="-1"
+              aria-label="Previous card" ${idx === 0 ? "disabled" : ""}>&#8249;</button>
+      <button type="button" class="sp-detail-nav sp-detail-nav-next" data-modal-nav="1"
+              aria-label="Next card" ${idx === ids.length - 1 ? "disabled" : ""}>&#8250;</button>`;
+  }
+
   async function openCardDetail(cardId, collectionId) {
     if (!cardModal || !modalBody) return;
     modalBody.innerHTML = `<p class="sp-empty">Loading…</p>`;
@@ -402,7 +422,10 @@
       modalBody.innerHTML = `
         <div class="sp-detail">
           <div class="sp-detail-art">
-            ${cardImg(card.image_url_high || card.image_url, label, "sp-detail-img")}
+            <div class="sp-detail-img-wrap">
+              ${cardImg(card.image_url_high || card.image_url, label, "sp-detail-img")}
+              ${detailNavHtml(modalNavIds(), cardId)}
+            </div>
           </div>
           <div class="sp-detail-body">
             <h2>${esc(card.name)}</h2>
