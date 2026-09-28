@@ -307,6 +307,7 @@
 
   function bindModalUi() {
     modalClose?.addEventListener("click", () => cardModal?.close());
+    cardModal?.addEventListener("close", () => prefetchedCards.clear());
     cardModal?.addEventListener("click", (e) => {
       if (e.target === cardModal) cardModal.close();
     });
@@ -407,6 +408,44 @@
               aria-label="Next card" ${idx === ids.length - 1 ? "disabled" : ""}>&#8250;</button>`;
   }
 
+  // Neighbor details fetched ahead for arrow navigation; each entry is used once so
+  // tags edited in the modal are never served stale.
+  const prefetchedCards = new Map();
+
+  function loadCardDetail(cardId) {
+    return api(`/api/pokemon/cards/${encodeURIComponent(cardId)}`);
+  }
+
+  function takeCardDetail(cardId) {
+    const hit = prefetchedCards.get(cardId);
+    prefetchedCards.delete(cardId);
+    return hit || loadCardDetail(cardId);
+  }
+
+  function prefetchNeighborCards(cardId) {
+    const ids = modalNavIds();
+    const idx = ids.indexOf(cardId);
+    if (idx < 0) return;
+    for (const nid of [ids[idx + 1], ids[idx - 1]]) {
+      if (!nid || prefetchedCards.has(nid)) continue;
+      const pending = loadCardDetail(nid);
+      prefetchedCards.set(nid, pending);
+      pending
+        .then((c) => { if (c.image_url_high) new Image().src = c.image_url_high; })
+        .catch(() => prefetchedCards.delete(nid));
+    }
+  }
+
+  // Show the grid-size art (already cached from the grid) and swap in full art once loaded.
+  function upgradeDetailImage(card) {
+    const img = modalBody.querySelector(".sp-detail-img");
+    const high = card.image_url_high;
+    if (!img || !high || high === card.image_url || img.classList.contains("is-fallback")) return;
+    const full = new Image();
+    full.onload = () => { if (img.isConnected) img.src = high; };
+    full.src = high;
+  }
+
   async function openCardDetail(cardId, collectionId) {
     if (!cardModal || !modalBody) return;
     modalBody.innerHTML = `<p class="sp-empty">Loading…</p>`;
@@ -417,13 +456,13 @@
     const bucket = cardBucket(savedRow);
     const showConsidering = supportsConsidering() && collectionId && detailIsOwner;
     try {
-      const card = await api(`/api/pokemon/cards/${encodeURIComponent(cardId)}`);
+      const card = await takeCardDetail(cardId);
       const label = `${card.name} — ${card.set_name} #${card.local_id}`;
       modalBody.innerHTML = `
         <div class="sp-detail">
           <div class="sp-detail-art">
             <div class="sp-detail-img-wrap">
-              ${cardImg(card.image_url_high || card.image_url, label, "sp-detail-img")}
+              ${cardImg(card.image_url || card.image_url_high, label, "sp-detail-img")}
               ${detailNavHtml(modalNavIds(), cardId)}
             </div>
           </div>
@@ -474,6 +513,8 @@
             ${renderAttacks(card)}
           </div>
         </div>`;
+      upgradeDetailImage(card);
+      prefetchNeighborCards(cardId);
       if (collectionId && detailIsOwner) bindCardTagEditor(collectionId, cardId, initialTags);
       modalBody.querySelector(".sp-collection-bucket-modal")?.addEventListener("click", async (e) => {
         if (!detailIsOwner || !collectionId) return;

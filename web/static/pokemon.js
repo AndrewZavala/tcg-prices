@@ -1189,18 +1189,58 @@
               aria-label="Next card" ${idx === ids.length - 1 ? "disabled" : ""}>&#8250;</button>`;
   }
 
+  // Neighbor details fetched ahead for arrow navigation; each entry is used once so
+  // tags edited in the modal are never served stale.
+  const prefetchedCards = new Map();
+
+  async function loadCardDetail(id) {
+    const resp = await fetch(`/api/pokemon/cards/${encodeURIComponent(id)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+  }
+
+  function takeCardDetail(id) {
+    const hit = prefetchedCards.get(id);
+    prefetchedCards.delete(id);
+    return hit || loadCardDetail(id);
+  }
+
+  function prefetchNeighborCards(id) {
+    const idx = lastSearchCardIds.indexOf(id);
+    if (idx < 0) return;
+    for (const nid of [lastSearchCardIds[idx + 1], lastSearchCardIds[idx - 1]]) {
+      if (!nid || prefetchedCards.has(nid)) continue;
+      const pending = loadCardDetail(nid);
+      prefetchedCards.set(nid, pending);
+      pending
+        .then((c) => { if (c.image_url_high) new Image().src = c.image_url_high; })
+        .catch(() => prefetchedCards.delete(nid));
+    }
+  }
+
+  // Show the grid-size art (already cached from the results) and swap in full art once loaded.
+  function upgradeDetailImage(card) {
+    const img = modalBody.querySelector(".sp-detail-img");
+    const high = card.image_url_high;
+    if (!img || !high || high === card.image_url || img.classList.contains("is-fallback")) return;
+    const full = new Image();
+    full.onload = () => { if (img.isConnected) img.src = high; };
+    full.src = high;
+  }
+
   async function openCard(id) {
     if (window.__spelltagAuthReady) {
       try {
         await window.__spelltagAuthReady;
       } catch (_) { /* ignore */ }
     }
-    const resp = await fetch(`/api/pokemon/cards/${encodeURIComponent(id)}`);
-    if (!resp.ok) {
-      console.warn("Could not load card", id, resp.status);
+    let card;
+    try {
+      card = await takeCardDetail(id);
+    } catch (err) {
+      console.warn("Could not load card", id, err);
       return;
     }
-    const card = await resp.json();
     modal.dataset.cardId = card.id || id;
     const showSpeciesPrints = unique === "pokemon" && (card.species_printings || []).length > 1;
     const related = showSpeciesPrints
@@ -1234,7 +1274,7 @@
       <div class="sp-detail">
         <div class="sp-detail-art">
           <div class="sp-detail-img-wrap">
-            ${cardImg(card.image_url_high || card.image_url, card.name, "sp-detail-img")}
+            ${cardImg(card.image_url || card.image_url_high, card.name, "sp-detail-img")}
             ${detailNavHtml(lastSearchCardIds, modal.dataset.cardId)}
           </div>
           <div class="sp-detail-art-actions">
@@ -1327,6 +1367,8 @@
     wireOracleTagControls(card);
     wireArtTagControls(card);
     modal.showModal();
+    upgradeDetailImage(card);
+    prefetchNeighborCards(modal.dataset.cardId);
   }
 
   async function wireCollectionControls(cardId) {
@@ -2031,6 +2073,7 @@
   });
 
   modalClose.addEventListener("click", () => modal.close());
+  modal.addEventListener("close", () => prefetchedCards.clear());
   modal.addEventListener("click", (e) => {
     if (e.target === modal) modal.close();
   });
