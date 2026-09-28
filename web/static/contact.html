@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Contact — Spell Tag</title>
+  <meta name="description" content="Report a bug or request a tagger account on Spell Tag." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/star-piece.css?v=detail-nav1" />
+  <link rel="stylesheet" href="/static/spell-tag.css?v=30" />
+  <link rel="icon" href="/static/spell-tag-logo.png?v=10" type="image/png" />
+  <link rel="apple-touch-icon" href="/static/spell-tag-logo.png?v=10" />
+</head>
+<body class="sp-body st-body">
+  <div class="sp-stars" aria-hidden="true"></div>
+
+  <div class="sp-topbar">
+    <nav class="sp-topbar-nav" aria-label="Primary">
+      <a href="/" class="sp-topbar-link">Search</a>
+      <span class="sp-topbar-link is-placeholder" title="Coming soon">Sets</span>
+      <a href="/contact" class="sp-topbar-link is-active" aria-current="page">Contact</a>
+    </nav>
+    <div class="sp-topbar-account">
+      <a class="sp-topbar-login" href="/auth/google/login">Sign in</a>
+    </div>
+  </div>
+
+  <header class="sp-nav">
+    <a class="sp-brand st-brand" href="/" aria-label="Spell Tag home">
+      <img
+        src="/static/spell-tag-wordmark.png?v=9"
+        alt="Spell Tag"
+        class="st-wordmark"
+        width="280"
+        height="131"
+      />
+    </a>
+    <p class="sp-tagline">Contact</p>
+  </header>
+
+  <main class="sp-main">
+    <section class="sp-panel sp-contact-panel">
+      <h2 class="sp-contact-title">Get in touch</h2>
+      <p class="sp-hint">
+        Found a bug or a card with wrong data? Want a tagger account so you can add oracle and
+        art tags? Send us a message and we'll get back to you.
+      </p>
+
+      <form id="contactForm" class="sp-contact-form" novalidate>
+        <label class="sp-field">
+          <span class="sp-label">Topic</span>
+          <select id="contactTopic" name="topic">
+            <option value="bug">Report a bug</option>
+            <option value="tagger">Request a tagger account</option>
+            <option value="other">Something else</option>
+          </select>
+        </label>
+
+        <label class="sp-field">
+          <span class="sp-label">Your email</span>
+          <input type="email" id="contactEmail" name="email" maxlength="254" autocomplete="email"
+                 placeholder="So we can reply (optional for bug reports)" />
+        </label>
+        <p class="sp-hint" id="contactAccountHint" hidden></p>
+
+        <label class="sp-field">
+          <span class="sp-label">Message</span>
+          <textarea id="contactMessage" name="message" rows="7" maxlength="4000" required
+                    placeholder="What happened? Include the card name or search if it's about a specific card."></textarea>
+        </label>
+
+        <label class="sp-contact-trap" aria-hidden="true">
+          Website <input type="text" name="website" tabindex="-1" autocomplete="off" />
+        </label>
+
+        <p class="sp-contact-status" id="contactStatus" role="status" hidden></p>
+
+        <div class="sp-contact-actions">
+          <button type="submit" class="sp-contact-submit" id="contactSubmit">Send message</button>
+        </div>
+      </form>
+
+      <div class="sp-contact-done" id="contactDone" hidden>
+        <p><strong>Thanks, your message was sent.</strong></p>
+        <p class="sp-hint">If you left an email, we'll reply there.</p>
+        <p><a href="/">Back to search</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="sp-footer">
+    <p><strong>Spell Tag</strong> · Unofficial fan project · Not affiliated with Nintendo, Game Freak, or Creatures</p>
+  </footer>
+
+  <script src="/static/spelltag-auth.js?v=3"></script>
+  <script src="/static/contact.js?v=1"></script>
+</body>
+</html>

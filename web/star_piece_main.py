@@ -25,6 +25,7 @@ from spelltag_auth import init_spelltag_auth, router as auth_router
 from spelltag_collections import init_spelltag_collections, router as collections_router
 from spelltag_oracle_tags import init_spelltag_oracle_tags, router as oracle_tags_router
 from spelltag_art_tags import init_spelltag_art_tags, router as art_tags_router
+from spelltag_contact import init_spelltag_contact, router as contact_router
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -76,10 +77,11 @@ POKEMON_MIGRATIONS = (
     "047_pokemon_prices.sql",
     "048_limitless_decklists.sql",
     "049_pokemon_formats.sql",
+    "050_contact_messages.sql",
 )
 
 
-_HTML_PATHS = frozenset({"/", "/pokemon", "/spell-tag", "/collections"})
+_HTML_PATHS = frozenset({"/", "/pokemon", "/spell-tag", "/collections", "/contact"})
 
 
 class SpellTagCacheMiddleware(BaseHTTPMiddleware):
@@ -131,11 +133,13 @@ init_spelltag_auth(engine)
 init_spelltag_collections(engine)
 init_spelltag_oracle_tags(engine)
 init_spelltag_art_tags(engine)
+init_spelltag_contact(engine)
 app.include_router(pokemon_router)
 app.include_router(auth_router)
 app.include_router(collections_router)
 app.include_router(oracle_tags_router)
 app.include_router(art_tags_router)
+app.include_router(contact_router)
 
 
 def _apply_sql_file(conn, filename: str) -> None:
@@ -186,6 +190,11 @@ def collection_add_page(collection_id: str):
 @app.get("/collections/{collection_id}")
 def collection_detail_page(collection_id: str):
     return _page("collections.html")
+
+
+@app.get("/contact")
+def contact_page():
+    return _page("contact.html")
 
 
 @app.get("/c/{share_slug}")

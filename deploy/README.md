@@ -286,6 +286,26 @@ crontab -e
 0 9 1 * * bash /opt/spelltag/deploy/monthly-prices.sh >> /var/log/spelltag-prices.log 2>&1
 ```
 
+### Contact messages
+
+The `/contact` form (bug reports, tagger account requests) saves to
+`spelltag_contact_messages` — no email is sent. Read unhandled messages:
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml exec star-piece-db \
+  psql -U starpiece -d star_piece -x -c "SELECT id, created_at, topic, email, message FROM spelltag_contact_messages WHERE handled_at IS NULL ORDER BY created_at;"
+```
+
+Mark one handled (replace `42` with its id):
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml exec star-piece-db \
+  psql -U starpiece -d star_piece -c "UPDATE spelltag_contact_messages SET handled_at = NOW() WHERE id = 42;"
+```
+
+Grant a tagger account by adding the requester's Google email to `SPELLTAG_TAGGER_EMAILS` in
+`/opt/spelltag/.env`, then `up -d star-piece`.
+
 ### Google sign-in
 
 1. In [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials**, create an **OAuth 2.0 Client ID** (application type: Web application).

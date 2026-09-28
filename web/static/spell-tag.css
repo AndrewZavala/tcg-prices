@@ -1438,6 +1438,86 @@
   cursor: not-allowed;
 }
 
+.st-body .sp-contact-panel {
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.st-body .sp-contact-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.25rem;
+}
+
+.st-body .sp-contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.st-body .sp-contact-form .sp-field {
+  flex: none;
+}
+
+.st-body .sp-contact-form .sp-hint {
+  margin: -0.45rem 0 0;
+}
+
+.st-body .sp-contact-form textarea {
+  font: inherit;
+  color: var(--sp-text);
+  background: rgba(10, 10, 16, 0.6);
+  border: 1px solid rgba(200, 200, 210, 0.2);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  resize: vertical;
+  min-height: 8rem;
+}
+
+.st-body .sp-contact-form textarea:focus {
+  outline: none;
+  border-color: var(--st-red);
+}
+
+.st-body .sp-contact-trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.st-body .sp-contact-status {
+  margin: 0;
+  color: #ff9db5;
+}
+
+.st-body .sp-contact-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.st-body .sp-contact-submit {
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #2a2a32, var(--st-red));
+  border: 0;
+  border-radius: 8px;
+  padding: 0.55rem 1.1rem;
+  cursor: pointer;
+}
+
+.st-body .sp-contact-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.st-body .sp-contact-done {
+  margin-top: 1rem;
+}
+
 .st-body .sp-collection-share-panel {
   display: flex;
   flex-wrap: wrap;

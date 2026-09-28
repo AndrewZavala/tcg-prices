@@ -6,12 +6,14 @@ WORKDIR /app
 COPY requirements-star-piece.txt .
 RUN pip install --no-cache-dir -r requirements-star-piece.txt
 
-COPY web/star_piece_main.py web/pokemon_api.py web/tcgplayer_links.py web/spelltag_auth.py web/spelltag_collections.py web/spelltag_cube_import.py web/spelltag_oracle_tags.py web/spelltag_art_tags.py web/spelltag_tag_tree.py ./web/
+COPY web/star_piece_main.py web/pokemon_api.py web/tcgplayer_links.py web/spelltag_auth.py web/spelltag_collections.py web/spelltag_cube_import.py web/spelltag_oracle_tags.py web/spelltag_art_tags.py web/spelltag_tag_tree.py web/spelltag_contact.py ./web/
 COPY web/static/spell-tag.html \
      web/static/spell-tag.css \
      web/static/spelltag-auth.js \
      web/static/collections.html \
      web/static/collections.js \
+     web/static/contact.html \
+     web/static/contact.js \
      web/static/spell-tag-wordmark.png \
      web/static/spell-tag-logo.png \
      web/static/star-piece.css \
