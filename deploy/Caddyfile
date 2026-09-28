@@ -21,3 +21,7 @@
 
 	reverse_proxy star-piece:8001
 }
+
+www.{$SPELLTAG_DOMAIN:spelltag.com} {
+	redir https://{$SPELLTAG_DOMAIN:spelltag.com}{uri} permanent
+}
