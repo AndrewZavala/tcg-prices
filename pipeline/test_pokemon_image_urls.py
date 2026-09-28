@@ -51,10 +51,21 @@ def test_limitless_skips_non_numeric_numbers() -> None:
     assert limitless_image_url(None, "001") is None
 
 
+def test_unown_and_hgss_promos_use_pokemontcg_set_ids() -> None:
+    from pokemon_image_urls import pokemontcg_image_urls
+
+    assert "https://images.pokemontcg.io/ex10/E_hires.png" in pokemontcg_image_urls("exu-E", "E")
+    assert "https://images.pokemontcg.io/ex10/question_hires.png" in pokemontcg_image_urls("exu-?", "?")
+    assert "https://images.pokemontcg.io/hsp/HGSS17_hires.png" in pokemontcg_image_urls(
+        "hgssp-HGSS17", "HGSS17"
+    )
+
+
 if __name__ == "__main__":
     test_swshp_pokemon_com_includes_lugia_v()
     test_remote_bases_include_pokemon_com_after_pokemontcg()
     test_cel25cc_blastoise_uses_reprint_number()
     test_mep_alakazam_falls_back_to_tcgdex_and_limitless()
     test_limitless_skips_non_numeric_numbers()
+    test_unown_and_hgss_promos_use_pokemontcg_set_ids()
     print("ok")

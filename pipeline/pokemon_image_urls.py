@@ -42,6 +42,13 @@ POKEMONTCG_SET_ALIASES: dict[str, str] = {
     "swsh12.5tg": "swsh12tg",
     "swsh12.5gg": "swsh12pt5gg",
     "cel25cc": "cel25c",
+    "exu": "ex10",
+    "hgssp": "hsp",
+}
+
+# pokemontcg.io file stems that differ from the collector number.
+POKEMONTCG_NUM_OVERRIDES: dict[tuple[str, str], str] = {
+    ("exu", "?"): "question",
 }
 
 # Celebrations Classic Collection (cel25cc / CC###) → pokemontcg.io cel25c file stems.
@@ -105,6 +112,8 @@ def pokemontcg_image_urls(card_id: str | None, local_id: str | None = None) -> l
         mapped = CEL25CC_TO_POKEMONTCG_NUM.get(raw.upper())
         if mapped:
             nums.append(mapped)
+    elif (set_key, raw) in POKEMONTCG_NUM_OVERRIDES:
+        nums.append(POKEMONTCG_NUM_OVERRIDES[(set_key, raw)])
     else:
         nums.append(raw)
         if raw.isdigit():

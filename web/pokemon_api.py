@@ -414,6 +414,13 @@ _POKEMONTCG_SET_ALIASES: dict[str, str] = {
     "swsh12.5tg": "swsh12tg",
     "swsh12.5gg": "swsh12pt5gg",
     "cel25cc": "cel25c",
+    "exu": "ex10",
+    "hgssp": "hsp",
+}
+
+# Keep in sync with pipeline/pokemon_image_urls.POKEMONTCG_NUM_OVERRIDES
+_POKEMONTCG_NUM_OVERRIDES: dict[tuple[str, str], str] = {
+    ("exu", "?"): "question",
 }
 
 # Keep in sync with pipeline/pokemon_image_urls.CEL25CC_TO_POKEMONTCG_NUM
@@ -460,7 +467,7 @@ def _pokemontcg_image_fallback(card_id: str | None, local_id: str | None = None)
         if not mapped:
             return None
         return f"https://images.pokemontcg.io/{api_set}/{mapped}_hires.png"
-    num = local
+    num = _POKEMONTCG_NUM_OVERRIDES.get((set_key, local), local)
     if local.isdigit():
         num = str(int(local))
     elif local.upper().startswith("CC") and local[2:].isdigit():

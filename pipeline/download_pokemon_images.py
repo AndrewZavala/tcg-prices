@@ -299,8 +299,10 @@ def main() -> int:
 
     session = _session()
     ok = fail = skip = 0
-    with engine.begin() as conn:
+    # Commit per card: a long open transaction deadlocks with web startup migrations.
+    with engine.connect() as conn:
         rows = conn.execute(text(sql), params).mappings().all()
+        conn.commit()
         print(f"Processing {len(rows)} card(s); root={CARD_IMAGE_ROOT}")
         for row in rows:
             card_id = str(row["id"])
@@ -316,6 +318,7 @@ def main() -> int:
                         ),
                         {"id": card_id},
                     )
+                    conn.commit()
                     ok += 1
                 else:
                     skip += 1
@@ -333,6 +336,7 @@ def main() -> int:
                     ),
                     {"id": card_id},
                 )
+                conn.commit()
                 skip += 1
                 continue
 
@@ -368,6 +372,7 @@ def main() -> int:
                     ),
                     {"id": card_id},
                 )
+                conn.commit()
             ok += 1
             if ok % 50 == 0:
                 print(f"  … {ok} saved / {fail} miss / {skip} skip")
