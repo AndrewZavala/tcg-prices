@@ -118,8 +118,6 @@ def pokemontcg_image_urls(card_id: str | None, local_id: str | None = None) -> l
         nums.append(raw)
         if raw.isdigit():
             nums.append(str(int(raw)))
-        elif raw.upper().startswith("CC") and raw[2:].isdigit():
-            nums.append(f"{int(raw[2:])}_A")
     seen: set[str] = set()
     out: list[str] = []
     for num in nums:

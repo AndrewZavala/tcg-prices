@@ -515,8 +515,6 @@ def _pokemontcg_image_fallback(card_id: str | None, local_id: str | None = None)
     num = _POKEMONTCG_NUM_OVERRIDES.get((set_key, local), local)
     if local.isdigit():
         num = str(int(local))
-    elif local.upper().startswith("CC") and local[2:].isdigit():
-        num = f"{int(local[2:])}_A"
     return f"https://images.pokemontcg.io/{api_set}/{num}_hires.png"
 
 

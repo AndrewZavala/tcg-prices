@@ -78,6 +78,7 @@ POKEMON_MIGRATIONS = (
     "048_limitless_decklists.sql",
     "049_pokemon_formats.sql",
     "050_contact_messages.sql",
+    "051_fix_cel25cc_images.sql",
 )
 
 

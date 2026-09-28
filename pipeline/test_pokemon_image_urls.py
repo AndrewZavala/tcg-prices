@@ -32,6 +32,14 @@ def test_cel25cc_blastoise_uses_reprint_number() -> None:
     assert "https://images.pokemontcg.io/cel25c/1_A_hires.png" not in urls
 
 
+def test_backfill_cel25cc_charizard_uses_reprint_number() -> None:
+    from backfill_pokemon_images import _cdn_candidates
+
+    urls = _cdn_candidates("cel25cc", "CC002")
+    assert urls[0] == "https://images.pokemontcg.io/cel25c/4_A_hires.png"
+    assert not any("/2_A" in u for u in urls)
+
+
 def test_mep_alakazam_falls_back_to_tcgdex_and_limitless() -> None:
     bases = remote_image_bases(
         None, card_id="mep-003", local_id="003",
@@ -65,6 +73,7 @@ if __name__ == "__main__":
     test_swshp_pokemon_com_includes_lugia_v()
     test_remote_bases_include_pokemon_com_after_pokemontcg()
     test_cel25cc_blastoise_uses_reprint_number()
+    test_backfill_cel25cc_charizard_uses_reprint_number()
     test_mep_alakazam_falls_back_to_tcgdex_and_limitless()
     test_limitless_skips_non_numeric_numbers()
     test_unown_and_hgss_promos_use_pokemontcg_set_ids()

@@ -28,22 +28,24 @@ from enrich_pokemon_subtypes import (
     pokemontcg_set_id,
     _session,
 )
+from pokemon_image_urls import CEL25CC_TO_POKEMONTCG_NUM
 
 USER_AGENT = "TCGPokemonCatalog/1.0"
 
 
-def _number_candidates(local_id: str) -> list[str]:
+def _number_candidates(set_id: str, local_id: str) -> list[str]:
     raw = (local_id or "").strip()
     if not raw:
         return []
+    # Classic Collection art is filed under the reprinted card's original number, not CC###.
+    if set_id == "cel25cc":
+        mapped = CEL25CC_TO_POKEMONTCG_NUM.get(raw.upper())
+        return [mapped] if mapped else []
     out: list[str] = [raw]
     if raw.isdigit():
         out.append(str(int(raw)))
     elif raw.lstrip("0").isdigit() and raw.lstrip("0"):
         out.append(str(int(raw)))
-    # Celebrations Classic: CC002 → 2_A (pokemontcg.io cel25c)
-    if raw.upper().startswith("CC") and raw[2:].isdigit():
-        out.append(f"{int(raw[2:])}_A")
     # Prefer unique order
     seen: set[str] = set()
     ordered: list[str] = []
@@ -57,7 +59,7 @@ def _number_candidates(local_id: str) -> list[str]:
 def _cdn_candidates(tcgdex_set_id: str, local_id: str) -> list[str]:
     api_set = pokemontcg_set_id(tcgdex_set_id)
     urls: list[str] = []
-    for num in _number_candidates(local_id):
+    for num in _number_candidates(tcgdex_set_id, local_id):
         urls.append(f"https://images.pokemontcg.io/{api_set}/{num}_hires.png")
         urls.append(f"https://images.pokemontcg.io/{api_set}/{num}.png")
     return urls
