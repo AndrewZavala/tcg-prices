@@ -19,6 +19,7 @@
 
   function renderSignedOut() {
     accountEl.innerHTML =
+      '<span class="sp-signin-tag">Sign in for more features!</span>' +
       '<a class="sp-topbar-login" href="/auth/google/login">Sign in</a>';
     window.__spelltagUser = null;
   }
