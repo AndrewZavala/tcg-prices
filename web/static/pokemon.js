@@ -1798,24 +1798,20 @@
     if (params.has("group")) speciesGroupEl.value = params.get("group") || "";
     if (params.has("has")) hasFilterEl.value = params.get("has") || "";
 
-    const hasAdvanced =
-      unique !== "cards" ||
-      pageSize !== PAGE_SIZE_DEFAULT ||
-      !!(sortEl.value && sortEl.value !== "name") ||
-      !!(
-        seriesEl.value ||
-        setEl.value ||
-        dexEl.value ||
-        rarityEl.value ||
-        categoryEl.value ||
-        typeEl.value ||
-        stageEl.value ||
-        subtypeEl.value ||
-        generationEl.value ||
-        pokemonSpecialEl.value ||
-        speciesGroupEl.value ||
-        hasFilterEl.value
-      );
+    const hasAdvanced = !!(
+      seriesEl.value ||
+      setEl.value ||
+      dexEl.value ||
+      rarityEl.value ||
+      categoryEl.value ||
+      typeEl.value ||
+      stageEl.value ||
+      subtypeEl.value ||
+      generationEl.value ||
+      pokemonSpecialEl.value ||
+      speciesGroupEl.value ||
+      hasFilterEl.value
+    );
     if (hasAdvanced) openAdvanced();
 
     syncPageSizeFromControl();
