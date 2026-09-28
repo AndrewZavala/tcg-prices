@@ -82,7 +82,7 @@ POKEMON_MIGRATIONS = (
 
 
 _HTML_PATHS = frozenset(
-    {"/", "/pokemon", "/spell-tag", "/collections", "/contact", "/admin/messages"}
+    {"/", "/pokemon", "/spell-tag", "/collections", "/sets", "/contact", "/admin/messages"}
 )
 
 
@@ -192,6 +192,11 @@ def collection_add_page(collection_id: str):
 @app.get("/collections/{collection_id}")
 def collection_detail_page(collection_id: str):
     return _page("collections.html")
+
+
+@app.get("/sets")
+def sets_page():
+    return _page("sets.html")
 
 
 @app.get("/contact")

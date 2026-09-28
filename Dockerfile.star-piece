@@ -12,6 +12,8 @@ COPY web/static/spell-tag.html \
      web/static/spelltag-auth.js \
      web/static/collections.html \
      web/static/collections.js \
+     web/static/sets.html \
+     web/static/sets.js \
      web/static/contact.html \
      web/static/contact.js \
      web/static/admin-messages.html \

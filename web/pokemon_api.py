@@ -1407,10 +1407,12 @@ def pokemon_meta(response: Response) -> PokemonMetaResponse:
                     s.series_name,
                     s.release_date::text AS release_date,
                     s.card_count_total,
+                    s.tcg_online_code,
                     COUNT(c.id)::int AS loaded_cards
                 FROM pokemon_sets s
                 LEFT JOIN pokemon_cards c ON c.set_id = s.id
-                GROUP BY s.id, s.name, s.series_id, s.series_name, s.release_date, s.card_count_total
+                GROUP BY s.id, s.name, s.series_id, s.series_name, s.release_date, s.card_count_total,
+                         s.tcg_online_code
                 ORDER BY s.release_date ASC NULLS LAST, s.name
                 """
             )
@@ -1896,6 +1898,11 @@ def search_pokemon_cards(
     )
 
     where_sql = " AND ".join(filters)
+    price_view = bool(
+        sort_key in ("price_desc", "price_asc")
+        or parsed.get("prices")
+        or parsed.get("exclude_prices")
+    )
 
     if unique == "pokemon":
         core_from = f"""
@@ -1918,13 +1925,12 @@ def search_pokemon_cards(
             {SPECIES_SORT_JOINS}
             WHERE 1=1
         """
-    elif unique == "cards" and (
-        sort_key in ("price_desc", "price_asc")
-        or parsed.get("prices")
-        or parsed.get("exclude_prices")
-    ):
-        # Price views show the priced printing that matched, not the oldest representative.
-        price_pick = "ASC" if sort_key == "price_asc" else "DESC"
+    elif unique == "cards" and (price_view or eff_set):
+        # Price and set views show the printing that matched, not the oldest representative.
+        pick_order = ""
+        if price_view:
+            price_pick = "ASC" if sort_key == "price_asc" else "DESC"
+            pick_order = f"c.price_usd {price_pick} NULLS LAST,"
         core_from = f"""
             FROM (
                 SELECT DISTINCT ON (COALESCE(c.oracle_id, c.id))
@@ -1936,7 +1942,7 @@ def search_pokemon_cards(
                 LEFT JOIN pokemon_oracles o ON o.id = c.oracle_id
                 WHERE {where_sql}
                 ORDER BY COALESCE(c.oracle_id, c.id),
-                         c.price_usd {price_pick} NULLS LAST,
+                         {pick_order}
                          c.is_oracle_representative DESC,
                          s.release_date ASC NULLS LAST, c.id
             ) c

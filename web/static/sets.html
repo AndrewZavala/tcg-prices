@@ -3,14 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Messages — Spell Tag</title>
-  <meta name="robots" content="noindex" />
+  <title>Sets — Spell Tag</title>
+  <meta name="description" content="Every Pokémon TCG set on Spell Tag, grouped by series." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/star-piece.css?v=detail-nav1" />
   <link rel="stylesheet" href="/static/spell-tag.css?v=34" />
   <link rel="icon" href="/static/spell-tag-logo.png?v=10" type="image/png" />
+  <link rel="apple-touch-icon" href="/static/spell-tag-logo.png?v=10" />
 </head>
 <body class="sp-body st-body">
   <div class="sp-stars" aria-hidden="true"></div>
@@ -18,7 +19,7 @@
   <div class="sp-topbar">
     <nav class="sp-topbar-nav" aria-label="Primary">
       <a href="/" class="sp-topbar-link">Search</a>
-      <a href="/sets" class="sp-topbar-link">Sets</a>
+      <a href="/sets" class="sp-topbar-link is-active" aria-current="page">Sets</a>
       <a href="/contact" class="sp-topbar-link">Contact</a>
     </nav>
     <div class="sp-topbar-account">
@@ -36,21 +37,20 @@
         height="131"
       />
     </a>
-    <p class="sp-tagline">Messages</p>
+    <p class="sp-tagline">All sets</p>
   </header>
 
   <main class="sp-main">
-    <section class="sp-panel sp-messages-panel">
-      <div class="sp-messages-head">
-        <h2 class="sp-contact-title" id="messagesTitle">Contact messages</h2>
-        <div class="sp-messages-filter" role="group" aria-label="Show">
-          <button type="button" class="sp-messages-filter-btn is-active" data-status="open">Open</button>
-          <button type="button" class="sp-messages-filter-btn" data-status="all">All</button>
-        </div>
+    <section class="sp-panel sp-sets-panel">
+      <div class="sp-sets-head">
+        <h2 class="sp-sets-title" id="setsTitle">Sets</h2>
+        <label class="sp-field sp-sets-filter">
+          <input type="search" id="setsFilter" aria-label="Filter sets"
+                 placeholder="Filter by name or code…" autocomplete="off" />
+        </label>
       </div>
-      <div id="messagesRoot">
-        <p class="sp-empty">Loading…</p>
-      </div>
+      <p class="sp-hint" id="setsStatus" role="status">Loading sets…</p>
+      <div id="setsList"></div>
     </section>
   </main>
 
@@ -59,6 +59,6 @@
   </footer>
 
   <script src="/static/spelltag-auth.js?v=5"></script>
-  <script src="/static/admin-messages.js?v=1"></script>
+  <script src="/static/sets.js?v=1"></script>
 </body>
 </html>
