@@ -55,10 +55,13 @@ def _session() -> requests.Session:
 
 
 def _remote_candidates(
-    image_url: str | None, card_id: str, local_id: str | None
+    image_url: str | None,
+    card_id: str,
+    local_id: str | None,
+    **set_info: str | None,
 ) -> dict[str, list[str]]:
     """Return candidate remote URLs for low/high sizes."""
-    bases = remote_image_bases(image_url, card_id=card_id, local_id=local_id)
+    bases = remote_image_bases(image_url, card_id=card_id, local_id=local_id, **set_info)
     low: list[str] = []
     high: list[str] = []
     for base in bases:
@@ -167,8 +170,9 @@ def download_one(
     local_id: str | None,
     image_url: str | None,
     dry_run: bool,
+    **set_info: str | None,
 ) -> bool:
-    targets = _remote_candidates(image_url, card_id, local_id)
+    targets = _remote_candidates(image_url, card_id, local_id, **set_info)
     if dry_run:
         print(f"  would fetch {card_id} high={targets['high'][:2]} → grid {GRID_MAX_WIDTH}px")
         return True
@@ -276,16 +280,18 @@ def main() -> int:
     where = ["TRUE"]
     params: dict[str, Any] = {}
     if not args.force and not args.mark_existing:
-        where.append("(COALESCE(image_local, FALSE) = FALSE)")
+        where.append("(COALESCE(c.image_local, FALSE) = FALSE)")
     if args.set_id:
-        where.append("set_id = :set_id")
+        where.append("c.set_id = :set_id")
         params["set_id"] = args.set_id
 
     sql = f"""
-        SELECT id, local_id, image_url, COALESCE(image_local, FALSE) AS image_local
-        FROM pokemon_cards
+        SELECT c.id, c.local_id, c.image_url, COALESCE(c.image_local, FALSE) AS image_local,
+               c.set_id, s.series_id, s.tcg_online_code
+        FROM pokemon_cards c
+        LEFT JOIN pokemon_sets s ON s.id = c.set_id
         WHERE {" AND ".join(where)}
-        ORDER BY set_id, id
+        ORDER BY c.set_id, c.id
     """
     if args.limit and args.limit > 0:
         sql += " LIMIT :limit"
@@ -337,6 +343,9 @@ def main() -> int:
                     local_id=row.get("local_id"),
                     image_url=row.get("image_url"),
                     dry_run=args.dry_run,
+                    set_id=row.get("set_id"),
+                    series_id=row.get("series_id"),
+                    tcg_online_code=row.get("tcg_online_code"),
                 )
             except Exception as exc:  # noqa: BLE001
                 print(f"  FAIL {card_id}: {exc}")

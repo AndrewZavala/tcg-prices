@@ -164,11 +164,34 @@ def pokemon_com_image_urls(card_id: str | None, local_id: str | None = None) -> 
     return out
 
 
+def tcgdex_image_base(
+    set_id: str | None, series_id: str | None, local_id: str | None
+) -> str | None:
+    """TCGdex asset base — some cards have art there but no ``image`` in the API."""
+    if not (set_id and series_id and local_id):
+        return None
+    return f"https://assets.tcgdex.net/en/{series_id}/{set_id}/{local_id}"
+
+
+def limitless_image_url(tcg_online_code: str | None, local_id: str | None) -> str | None:
+    """Limitless CDN full-size scan (numeric collector numbers only)."""
+    if not (tcg_online_code and local_id and str(local_id).isdigit()):
+        return None
+    code = tcg_online_code.upper()
+    return (
+        "https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpci/"
+        f"{code}/{code}_{int(local_id):03d}_R_EN_LG.png"
+    )
+
+
 def remote_image_bases(
     image_url: str | None,
     *,
     card_id: str | None = None,
     local_id: str | None = None,
+    set_id: str | None = None,
+    series_id: str | None = None,
+    tcg_online_code: str | None = None,
 ) -> list[str]:
     """Ordered remote bases or absolute file URLs to try when mirroring."""
     bases: list[str] = []
@@ -178,6 +201,12 @@ def remote_image_bases(
     # Always allow pokemontcg + official pokemon.com fallbacks for gaps / bad TCGdex URLs
     bases.extend(pokemontcg_image_urls(card_id, local_id))
     bases.extend(pokemon_com_image_urls(card_id, local_id))
+    for extra in (
+        tcgdex_image_base(set_id, series_id, local_id),
+        limitless_image_url(tcg_online_code, local_id),
+    ):
+        if extra:
+            bases.append(extra)
     seen: set[str] = set()
     out: list[str] = []
     for b in bases:
