@@ -14,6 +14,8 @@ COPY web/static/spell-tag.html \
      web/static/collections.js \
      web/static/contact.html \
      web/static/contact.js \
+     web/static/admin-messages.html \
+     web/static/admin-messages.js \
      web/static/spell-tag-wordmark.png \
      web/static/spell-tag-logo.png \
      web/static/star-piece.css \

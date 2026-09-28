@@ -53,6 +53,7 @@
       menu.innerHTML = `
         <a class="sp-account-menu-item" role="menuitem" href="/collections">My Collections</a>
         <button type="button" class="sp-account-menu-item is-placeholder" role="menuitem" disabled title="Coming soon">Decks</button>
+        ${user.is_admin ? '<a class="sp-account-menu-item" role="menuitem" href="/admin/messages">Messages</a>' : ""}
         <button type="button" class="sp-account-menu-item" role="menuitem" id="spelltagLogout">Sign out</button>
       `;
       btn.parentElement.appendChild(menu);

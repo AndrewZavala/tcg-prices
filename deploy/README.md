@@ -289,7 +289,9 @@ crontab -e
 ### Contact messages
 
 The `/contact` form (bug reports, tagger account requests) saves to
-`spelltag_contact_messages` — no email is sent. Read unhandled messages:
+`spelltag_contact_messages` — no email is sent. Read and mark them handled at
+`https://spelltag.com/admin/messages` (also **Messages** in the account menu), signed in with an
+account listed in `SPELLTAG_ADMIN_EMAILS`. Or from the shell:
 
 ```bash
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml exec star-piece-db \

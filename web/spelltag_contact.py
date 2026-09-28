@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from spelltag_auth import current_user
+from spelltag_auth import current_user, require_admin
 
 router = APIRouter(tags=["contact"])
 
@@ -95,3 +95,63 @@ def submit_contact(body: ContactBody, request: Request) -> dict[str, bool]:
             },
         )
     return {"ok": True}
+
+
+class HandledBody(BaseModel):
+    handled: bool
+
+
+@router.get("/api/admin/contact-messages")
+def list_contact_messages(request: Request, status: Literal["open", "all"] = "open") -> dict:
+    require_admin(request)
+    where = "WHERE m.handled_at IS NULL" if status == "open" else ""
+    assert _engine is not None
+    with _engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT m.id, m.topic, m.email, m.message, m.created_at, m.handled_at,
+                       u.name AS user_name, u.email AS user_email
+                FROM spelltag_contact_messages m
+                LEFT JOIN users u ON u.id = m.user_id
+                {where}
+                ORDER BY m.created_at DESC
+                LIMIT 500
+                """
+            )
+        ).mappings().all()
+        open_count = conn.execute(
+            text("SELECT COUNT(*) FROM spelltag_contact_messages WHERE handled_at IS NULL")
+        ).scalar_one()
+    return {
+        "open_count": open_count,
+        "messages": [
+            {
+                **dict(r),
+                "created_at": r["created_at"].isoformat(),
+                "handled_at": r["handled_at"].isoformat() if r["handled_at"] else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.post("/api/admin/contact-messages/{message_id}/handled")
+def set_contact_message_handled(message_id: int, body: HandledBody, request: Request) -> dict:
+    require_admin(request)
+    assert _engine is not None
+    with _engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                UPDATE spelltag_contact_messages
+                SET handled_at = CASE WHEN :handled THEN NOW() ELSE NULL END
+                WHERE id = :id
+                RETURNING handled_at
+                """
+            ),
+            {"id": message_id, "handled": body.handled},
+        ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return {"ok": True, "handled_at": row[0].isoformat() if row[0] else None}

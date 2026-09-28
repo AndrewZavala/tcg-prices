@@ -81,7 +81,9 @@ POKEMON_MIGRATIONS = (
 )
 
 
-_HTML_PATHS = frozenset({"/", "/pokemon", "/spell-tag", "/collections", "/contact"})
+_HTML_PATHS = frozenset(
+    {"/", "/pokemon", "/spell-tag", "/collections", "/contact", "/admin/messages"}
+)
 
 
 class SpellTagCacheMiddleware(BaseHTTPMiddleware):
@@ -195,6 +197,11 @@ def collection_detail_page(collection_id: str):
 @app.get("/contact")
 def contact_page():
     return _page("contact.html")
+
+
+@app.get("/admin/messages")
+def admin_messages_page():
+    return _page("admin-messages.html")
 
 
 @app.get("/c/{share_slug}")
