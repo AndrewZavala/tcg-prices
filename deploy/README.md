@@ -193,6 +193,9 @@ cd /opt/spelltag
 git pull --ff-only origin spell-tag
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build star-piece caddy
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual build star-piece-pipeline
+# Migrations run on web startup. If a pull only adds migrations/*.sql, the container is not
+# recreated or reloaded, so restart it:
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml restart star-piece
 
 # Re-ingest SWSH Black Star Promos (picks up cards TCGdex added without art, e.g. SWSH303–305)
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \

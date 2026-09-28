@@ -151,7 +151,7 @@ def startup_migrations() -> None:
             for name in POKEMON_MIGRATIONS:
                 _apply_sql_file(conn, name)
     except Exception as exc:
-        print(f"Spell Tag migration warning: {exc}")
+        print(f"Spell Tag migration warning: {exc}", flush=True)
 
 
 def _page(name: str) -> FileResponse:
