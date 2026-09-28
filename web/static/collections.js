@@ -386,10 +386,10 @@
       .join("")}</div>`;
   }
 
-  function cardImg(src, alt, extraClass) {
+  function cardImg(src, alt, extraClass, { eager = false } = {}) {
     const url = src || CARD_IMG_FALLBACK;
     const cls = ["sp-card-img", extraClass].filter(Boolean).join(" ");
-    return `<img class="${cls}" src="${esc(url)}" alt="${esc(alt || "")}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${CARD_IMG_FALLBACK}';this.classList.add('is-fallback')" />`;
+    return `<img class="${cls}" src="${esc(url)}" alt="${esc(alt || "")}" loading="${eager ? "eager" : "lazy"}" decoding="async" onerror="this.onerror=null;this.src='${CARD_IMG_FALLBACK}';this.classList.add('is-fallback')" />`;
   }
 
   function modalNavIds() {
@@ -462,7 +462,7 @@
         <div class="sp-detail">
           <div class="sp-detail-art">
             <div class="sp-detail-img-wrap">
-              ${cardImg(card.image_url || card.image_url_high, label, "sp-detail-img")}
+              ${cardImg(card.image_url || card.image_url_high, label, "sp-detail-img", { eager: true })}
               ${detailNavHtml(modalNavIds(), cardId)}
             </div>
           </div>

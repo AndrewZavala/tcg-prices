@@ -801,6 +801,9 @@ body {
   margin-left: auto;
   margin-right: auto;
   display: block;
+  /* Holds the card's space while the image loads so the buttons below don't jump. */
+  aspect-ratio: auto 600 / 825;
+  object-fit: contain;
 }
 
 .sp-detail-img-wrap {
@@ -976,6 +979,10 @@ body {
     margin: 0 auto;
     display: block;
     object-fit: contain;
+  }
+
+  .sp-detail img.sp-detail-img {
+    height: min(43.2vh, 43.2dvh);
   }
 
   .sp-search-row {

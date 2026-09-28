@@ -173,12 +173,13 @@
 
   const CARD_IMG_FALLBACK = "/static/empty-pokeball.png?v=rembg";
 
-  function cardImg(src, alt, extraClass) {
+  function cardImg(src, alt, extraClass, { eager = false } = {}) {
     const cls = ["sp-card-img", extraClass].filter(Boolean).join(" ");
+    const loading = eager ? "eager" : "lazy";
     if (!src) {
-      return `<img class="${cls} is-fallback" src="${CARD_IMG_FALLBACK}" alt="${esc(alt || "Image unavailable")}" loading="lazy" />`;
+      return `<img class="${cls} is-fallback" src="${CARD_IMG_FALLBACK}" alt="${esc(alt || "Image unavailable")}" loading="${loading}" />`;
     }
-    return `<img class="${cls}" src="${esc(src)}" alt="${esc(alt || "")}" loading="lazy" onerror="this.onerror=null;this.src='${CARD_IMG_FALLBACK}';this.classList.add('is-fallback')" />`;
+    return `<img class="${cls}" src="${esc(src)}" alt="${esc(alt || "")}" loading="${loading}" onerror="this.onerror=null;this.src='${CARD_IMG_FALLBACK}';this.classList.add('is-fallback')" />`;
   }
 
   function renderCard(card) {
@@ -1305,7 +1306,7 @@
       <div class="sp-detail">
         <div class="sp-detail-art">
           <div class="sp-detail-img-wrap">
-            ${cardImg(card.image_url || card.image_url_high, card.name, "sp-detail-img")}
+            ${cardImg(card.image_url || card.image_url_high, card.name, "sp-detail-img", { eager: true })}
             ${detailNavHtml(lastSearchCardIds, modal.dataset.cardId)}
           </div>
           <div class="sp-detail-art-actions">
