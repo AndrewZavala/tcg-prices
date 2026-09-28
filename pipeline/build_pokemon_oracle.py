@@ -59,6 +59,11 @@ _TEXT_REPLACEMENTS = (
 # (e.g. Energy Retrieval: "Put 2" vs "Put up to 2").
 _UP_TO_RE = re.compile(r"\bup to\s+(\d+)\b", re.IGNORECASE)
 
+# Keep in sync with pokemon_printing_is_standard (migrations/049_pokemon_formats.sql).
+_BASIC_ENERGY_NAME_RE = re.compile(
+    r"^(Basic )?(Grass|Fire|Water|Lightning|Psychic|Fighting|Darkness|Metal|Fairy) Energy$"
+)
+
 
 def _norm_name(value: str | None) -> str:
     """Exact card name for oracle identity — never soft-matched across names."""
@@ -211,10 +216,21 @@ def _effect_text_for_similarity(card: dict[str, Any]) -> str:
 
 
 def _non_pokemon_merge_bucket_key(card: dict[str, Any]) -> tuple[str, ...]:
-    """Same-name gate (plus category so Trainer ≠ Energy if names collide)."""
+    """Same-name gate (plus category so Trainer ≠ Energy if names collide).
+
+    Pre-BW Special "Darkness Energy" / "Metal Energy" share their name with the
+    basic cards, so they get their own bucket. Only basic names are split —
+    reprints of real Special Energy (Prism, Reversal) are mislabeled Normal.
+    """
+    name = _norm_name(card.get("name"))
+    special_basic_name = (
+        _BASIC_ENERGY_NAME_RE.match(name) is not None
+        and _card_data(card).get("energyType") == "Special"
+    )
     return (
-        _norm_name(card.get("name")),
+        name,
         str(card.get("category") or ""),
+        "special" if special_basic_name else "",
     )
 
 
