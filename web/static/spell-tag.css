@@ -180,26 +180,10 @@
 }
 
 .st-body .sp-signin-tag {
-  position: relative;
-  padding: 0.3rem 0.7rem;
-  border-radius: 999px;
-  background: rgba(196, 168, 232, 0.14);
-  border: 1px solid rgba(196, 168, 232, 0.3);
   color: var(--sp-pink-soft);
   font-size: 0.8rem;
   font-weight: 600;
   white-space: nowrap;
-}
-
-.st-body .sp-signin-tag::after {
-  content: "";
-  position: absolute;
-  right: -0.4rem;
-  top: 50%;
-  transform: translateY(-50%);
-  border: 0.3rem solid transparent;
-  border-left-color: rgba(196, 168, 232, 0.45);
-  border-right-width: 0;
 }
 
 @media (max-width: 640px) {
