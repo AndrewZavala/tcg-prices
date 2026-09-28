@@ -730,6 +730,60 @@ def _apply_price_filters(
         params[key] = value
 
 
+FORMAT_ALIASES = {
+    "standard": "standard",
+    "std": "standard",
+    "expanded": "expanded",
+    "exp": "expanded",
+}
+
+
+def _sql_printing_standard(alias: str) -> str:
+    """Rule lives in SQL (migration 049) so the Limitless crawl shares it."""
+    return (
+        f"pokemon_printing_is_standard({alias}.regulation_mark, {alias}.category, "
+        f"{alias}.name, {alias}.card_data->>'energyType', (SELECT spelltag_standard_min_mark()))"
+    )
+
+
+def _sql_format_legal(fmt: str) -> str:
+    """Legal if this printing, or any printing with identical gameplay text (reprint rule), is.
+
+    Uncorrelated IN so Postgres builds the legal-oracle set once per query.
+    """
+    if fmt == "standard":
+        own, other = _sql_printing_standard("c"), _sql_printing_standard("fo")
+    else:
+        own, other = "c.legal_expanded", "fo.legal_expanded"
+    return (
+        f"(COALESCE({own}, FALSE) OR COALESCE(c.oracle_id IN ("
+        f"SELECT fo.oracle_id FROM pokemon_cards fo "
+        f"WHERE fo.oracle_id IS NOT NULL AND {other}), FALSE))"
+    )
+
+
+def _apply_format_filters(
+    filters: list[str],
+    *,
+    formats: list[str],
+    exclude_formats: list[str],
+) -> None:
+    for fmt in formats:
+        filters.append(_sql_format_legal(fmt))
+    for fmt in exclude_formats:
+        filters.append(f"NOT {_sql_format_legal(fmt)}")
+
+
+def _apply_competitive_filter(filters: list[str], *, competitive: bool | None) -> None:
+    """is:competitive = appears in Limitless decklists; unchecked cards count as not."""
+    if competitive is None:
+        return
+    if competitive:
+        filters.append("c.limitless_decklists = TRUE")
+    else:
+        filters.append("c.limitless_decklists IS NOT TRUE")
+
+
 def _parse_search_query(
     q: str | None,
 ) -> dict[str, Any]:
@@ -778,6 +832,9 @@ def _parse_search_query(
         "retreats": [],
         "exclude_retreats": [],
         "multicolor": None,
+        "competitive": None,
+        "formats": [],
+        "exclude_formats": [],
         "prices": [],
         "exclude_prices": [],
     }
@@ -858,6 +915,8 @@ def _parse_search_query(
             if val_lower in ("multicolor", "multi-color", "multicolour", "multi-colour"):
                 # True = require multicolor; False = exclude (-is:multicolor)
                 result["multicolor"] = not negated
+            elif val_lower == "competitive":
+                result["competitive"] = not negated
             elif val_lower == "legendary":
                 if negated:
                     result["exclude_pokemon_special"] = "legendary"
@@ -979,6 +1038,12 @@ def _parse_search_query(
                     result["exclude_retreats"].append(n)
                 else:
                     result["retreats"].append(n)
+        elif prefix in ("f", "format", "legal"):
+            fmt = FORMAT_ALIASES.get(val_lower)
+            if fmt:
+                bucket = "exclude_formats" if negated else "formats"
+                if fmt not in result[bucket]:
+                    result[bucket].append(fmt)
         elif prefix == "o":
             spec = _parse_oracle_text_value(val)
             if spec:
@@ -1815,6 +1880,12 @@ def search_pokemon_cards(
         params,
         prices=list(parsed.get("prices") or []),
         exclude_prices=list(parsed.get("exclude_prices") or []),
+    )
+    _apply_competitive_filter(filters, competitive=parsed.get("competitive"))
+    _apply_format_filters(
+        filters,
+        formats=list(parsed.get("formats") or []),
+        exclude_formats=list(parsed.get("exclude_formats") or []),
     )
 
     where_sql = " AND ".join(filters)

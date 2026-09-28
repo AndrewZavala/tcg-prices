@@ -74,6 +74,8 @@ POKEMON_MIGRATIONS = (
     "045_fix_dark_magneton_sonicboom.sql",
     "046_card_data_fixes_plan.sql",
     "047_pokemon_prices.sql",
+    "048_limitless_decklists.sql",
+    "049_pokemon_formats.sql",
 )
 
 

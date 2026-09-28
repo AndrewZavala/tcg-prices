@@ -242,8 +242,40 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
   python pipeline/refresh_pokemon_prices.py
 ```
 
-Schedule it on the host (1st of each month, 09:00 server time). `deploy/monthly-prices.sh`
-skips dates listed in `SPELLTAG_PRICE_SKIP_DATES` (default `2026-10-01`):
+### Limitless decklist flags (`is:competitive`)
+
+`pipeline/refresh_limitless_decklists.py` checks Standard-legal cards only (same rule as
+`f:standard`). It loads one Limitless card page per oracle (Limitless shares decklists across
+reprints), looks for "does not appear in any decklist", and copies the result to every printing
+(`pokemon_cards.limitless_decklists`). One request per second. Progress is saved per card, so it
+can be stopped and re-run.
+
+First run (~2k pages, ~45 minutes — run in `tmux`):
+
+```bash
+cd /opt/spelltag
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
+  python pipeline/refresh_limitless_decklists.py
+```
+
+Later runs recheck Standard cards not yet known to have decklists (`--all` also rechecks the ones
+that do).
+
+### Standard rotation
+
+Standard legality comes from `pokemon_standard_rotations` (migration 049). When the next rotation
+is announced, add a row ahead of time — it takes effect on its start date:
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml exec star-piece-db \
+  psql -U starpiece -d star_piece -c "INSERT INTO pokemon_standard_rotations VALUES ('2027-04-09', 'I');"
+```
+
+### Monthly schedule
+
+Schedule both on the host (1st of each month, 09:00 server time). `deploy/monthly-prices.sh`
+runs prices, then decklist flags, and skips dates listed in `SPELLTAG_PRICE_SKIP_DATES`
+(default `2026-10-01`):
 
 ```bash
 crontab -e
