@@ -1,4 +1,4 @@
-"""Spell Tag Google OAuth + signed session cookie."""
+"""Spell Tag Google / Discord OAuth + signed session cookie."""
 
 from __future__ import annotations
 
@@ -19,6 +19,9 @@ COOKIE_MAX_AGE_SEC = 60 * 60 * 24 * 30  # 30 days
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "").strip()
+DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "").strip()
+DISCORD_API = "https://discord.com/api"
 SESSION_SECRET = os.environ.get("SPELLTAG_SESSION_SECRET", "").strip()
 PUBLIC_URL = os.environ.get("SPELLTAG_PUBLIC_URL", "http://localhost:8001").rstrip("/")
 
@@ -61,14 +64,28 @@ def init_spelltag_auth(engine: Engine) -> None:
             server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
             client_kwargs={"scope": "openid email profile"},
         )
+    if DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET:
+        _oauth.register(
+            name="discord",
+            client_id=DISCORD_CLIENT_ID,
+            client_secret=DISCORD_CLIENT_SECRET,
+            authorize_url="https://discord.com/oauth2/authorize",
+            access_token_url=f"{DISCORD_API}/oauth2/token",
+            api_base_url=f"{DISCORD_API}/",
+            client_kwargs={"scope": "identify email"},
+        )
 
 
 def _auth_configured() -> bool:
     return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and _oauth is not None)
 
 
-def _redirect_uri() -> str:
-    return f"{PUBLIC_URL}/auth/google/callback"
+def _discord_configured() -> bool:
+    return bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET and _oauth is not None)
+
+
+def _redirect_uri(provider: str = "google") -> str:
+    return f"{PUBLIC_URL}/auth/{provider}/callback"
 
 
 def _sign_user_id(user_id: str) -> str:
@@ -123,34 +140,68 @@ def _fetch_user(user_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def _upsert_google_user(
+_PROVIDER_COLUMNS = {"google": "google_sub", "discord": "discord_id"}
+
+
+def _upsert_oauth_user(
     *,
-    google_sub: str,
+    provider: str,
+    provider_id: str,
     email: str | None,
+    email_verified: bool,
     name: str | None,
     picture: str | None,
 ) -> str:
+    """Find or create the user for a provider login.
+
+    A first login from a new provider joins an existing account only when the provider
+    vouches for the email, since admin/tagger access is granted by email.
+    """
     assert _engine is not None
+    col = _PROVIDER_COLUMNS[provider]
+    params = {"pid": provider_id, "email": email, "name": name, "picture_url": picture}
     with _engine.begin() as conn:
         row = conn.execute(
+            text(f"SELECT id::text AS id FROM users WHERE {col} = :pid"), params
+        ).mappings().first()
+        if row is None and email and email_verified:
+            row = conn.execute(
+                text(
+                    f"""
+                    SELECT id::text AS id FROM users
+                    WHERE lower(email) = lower(:email) AND {col} IS NULL
+                    ORDER BY created_at
+                    LIMIT 1
+                    FOR UPDATE
+                    """
+                ),
+                params,
+            ).mappings().first()
+        if row is not None:
+            conn.execute(
+                text(
+                    f"""
+                    UPDATE users SET
+                        {col} = :pid,
+                        email = COALESCE(:email, email),
+                        name = COALESCE(:name, name),
+                        picture_url = COALESCE(:picture_url, picture_url),
+                        updated_at = NOW()
+                    WHERE id = CAST(:id AS uuid)
+                    """
+                ),
+                {**params, "id": row["id"]},
+            )
+            return str(row["id"])
+        row = conn.execute(
             text(
-                """
-                INSERT INTO users (google_sub, email, name, picture_url)
-                VALUES (:google_sub, :email, :name, :picture_url)
-                ON CONFLICT (google_sub) DO UPDATE SET
-                    email = EXCLUDED.email,
-                    name = EXCLUDED.name,
-                    picture_url = EXCLUDED.picture_url,
-                    updated_at = NOW()
+                f"""
+                INSERT INTO users ({col}, email, name, picture_url)
+                VALUES (:pid, :email, :name, :picture_url)
                 RETURNING id::text AS id
                 """
             ),
-            {
-                "google_sub": google_sub,
-                "email": email,
-                "name": name,
-                "picture_url": picture,
-            },
+            params,
         ).mappings().one()
     return str(row["id"])
 
@@ -240,11 +291,62 @@ async def google_callback(request: Request):
     if not google_sub:
         raise HTTPException(status_code=400, detail="Google account missing subject")
 
-    user_id = _upsert_google_user(
-        google_sub=google_sub,
+    user_id = _upsert_oauth_user(
+        provider="google",
+        provider_id=google_sub,
         email=(info.get("email") or None),
+        email_verified=info.get("email_verified") is True,
         name=(info.get("name") or info.get("given_name") or None),
         picture=(info.get("picture") or None),
+    )
+
+    response = RedirectResponse(url="/", status_code=302)
+    _set_session_cookie(response, user_id)
+    return response
+
+
+@router.get("/auth/discord/login")
+async def discord_login(request: Request):
+    if not _discord_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Discord sign-in is not configured (set DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET)",
+        )
+    assert _oauth is not None
+    return await _oauth.discord.authorize_redirect(request, _redirect_uri("discord"))
+
+
+@router.get("/auth/discord/callback")
+async def discord_callback(request: Request):
+    if not _discord_configured():
+        raise HTTPException(status_code=503, detail="Discord sign-in is not configured")
+    assert _oauth is not None
+    try:
+        token = await _oauth.discord.authorize_access_token(request)
+        resp = await _oauth.discord.get("users/@me", token=token)
+        resp.raise_for_status()
+        info = resp.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"OAuth failed: {exc}") from exc
+
+    discord_id = str(info.get("id") or "").strip()
+    if not discord_id:
+        raise HTTPException(status_code=400, detail="Discord account missing id")
+
+    verified = info.get("verified") is True
+    avatar = info.get("avatar")
+    user_id = _upsert_oauth_user(
+        provider="discord",
+        provider_id=discord_id,
+        # Unverified Discord emails are never stored: admin/tagger roles key off email.
+        email=(info.get("email") or None) if verified else None,
+        email_verified=verified,
+        name=(info.get("global_name") or info.get("username") or None),
+        picture=(
+            f"https://cdn.discordapp.com/avatars/{discord_id}/{avatar}.png?size=64"
+            if avatar
+            else None
+        ),
     )
 
     response = RedirectResponse(url="/", status_code=302)
@@ -279,6 +381,8 @@ def auth_logout():
 def auth_status():
     return {
         "google_configured": _auth_configured(),
+        "discord_configured": _discord_configured(),
         "public_url": PUBLIC_URL,
         "redirect_uri": _redirect_uri(),
+        "discord_redirect_uri": _redirect_uri("discord"),
     }

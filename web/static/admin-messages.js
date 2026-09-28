@@ -54,7 +54,7 @@
       return;
     }
     if (resp.status === 401) {
-      root.innerHTML = `<p class="sp-empty"><a href="/auth/google/login">Sign in</a> with the admin account to read messages.</p>`;
+      root.innerHTML = `<p class="sp-empty"><a href="/login">Sign in</a> with the admin account to read messages.</p>`;
       return;
     }
     if (resp.status === 403) {

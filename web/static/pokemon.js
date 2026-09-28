@@ -1107,7 +1107,7 @@
     if (resp.status === 401) {
       banner.innerHTML = `
         <p class="sp-add-banner-title">Sign in to add cards</p>
-        <p class="sp-hint"><a class="sp-topbar-login" href="/auth/google/login">Sign in with Google</a></p>`;
+        <p class="sp-hint"><a class="sp-topbar-login" href="/login">Sign in</a></p>`;
       return;
     }
     if (!resp.ok) {

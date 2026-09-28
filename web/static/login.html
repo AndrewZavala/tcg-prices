@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Sets — Spell Tag</title>
-  <meta name="description" content="Every Pokémon TCG set on Spell Tag, grouped by series." />
+  <title>Sign in — Spell Tag</title>
+  <meta name="description" content="Sign in to Spell Tag with Google or Discord." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet" />
@@ -19,7 +19,7 @@
   <div class="sp-topbar">
     <nav class="sp-topbar-nav" aria-label="Primary">
       <a href="/" class="sp-topbar-link">Search</a>
-      <a href="/sets" class="sp-topbar-link is-active" aria-current="page">Sets</a>
+      <a href="/sets" class="sp-topbar-link">Sets</a>
       <a href="/contact" class="sp-topbar-link">Contact</a>
     </nav>
     <div class="sp-topbar-account">
@@ -37,20 +37,18 @@
         height="131"
       />
     </a>
-    <p class="sp-tagline">All sets</p>
+    <p class="sp-tagline">Sign in</p>
   </header>
 
   <main class="sp-main">
-    <section class="sp-panel sp-sets-panel">
-      <div class="sp-sets-head">
-        <h2 class="sp-sets-title" id="setsTitle">Sets</h2>
-        <label class="sp-field sp-sets-filter">
-          <input type="search" id="setsFilter" aria-label="Filter sets"
-                 placeholder="Filter by name or code…" autocomplete="off" />
-        </label>
+    <section class="sp-panel sp-login-panel">
+      <h2 class="sp-contact-title">Sign in to Spell Tag</h2>
+      <p class="sp-hint">Save collections and unlock more features.</p>
+      <div class="sp-login-options">
+        <a class="sp-login-btn sp-login-google" id="loginGoogle" href="/auth/google/login">Continue with Google</a>
+        <a class="sp-login-btn sp-login-discord" id="loginDiscord" href="/auth/discord/login">Continue with Discord</a>
       </div>
-      <p class="sp-hint" id="setsStatus" role="status">Loading sets…</p>
-      <div id="setsList"></div>
+      <p class="sp-hint" id="loginStatus" role="status" hidden></p>
     </section>
   </main>
 
@@ -59,6 +57,6 @@
   </footer>
 
   <script src="/static/spelltag-auth.js?v=6"></script>
-  <script src="/static/sets.js?v=1"></script>
+  <script src="/static/login.js?v=1"></script>
 </body>
 </html>

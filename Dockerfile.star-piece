@@ -16,6 +16,8 @@ COPY web/static/spell-tag.html \
      web/static/sets.js \
      web/static/contact.html \
      web/static/contact.js \
+     web/static/login.html \
+     web/static/login.js \
      web/static/admin-messages.html \
      web/static/admin-messages.js \
      web/static/spell-tag-wordmark.png \

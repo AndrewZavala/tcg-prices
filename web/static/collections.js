@@ -562,7 +562,7 @@
       if (opts?.allow401) return null;
       root.innerHTML = `
         <p class="sp-empty">Sign in to view your collections.</p>
-        <p class="sp-empty"><a class="sp-topbar-login" href="/auth/google/login">Sign in with Google</a></p>`;
+        <p class="sp-empty"><a class="sp-topbar-login" href="/login">Sign in</a></p>`;
       return null;
     }
     if (!resp.ok) {

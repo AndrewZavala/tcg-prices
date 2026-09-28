@@ -1531,6 +1531,49 @@
   margin-top: 1rem;
 }
 
+.st-body .sp-login-panel {
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
+.st-body .sp-login-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin: 1.2rem 0 0.4rem;
+}
+
+.st-body a.sp-login-btn {
+  display: block;
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 8px;
+  padding: 0.7rem 1rem;
+  border: 1px solid transparent;
+  transition: filter 0.15s ease;
+}
+
+.st-body a.sp-login-btn[hidden] {
+  display: none;
+}
+
+.st-body a.sp-login-btn:hover {
+  filter: brightness(1.1);
+}
+
+.st-body a.sp-login-google {
+  color: #1f1f1f;
+  background: #fff;
+  border-color: #dadce0;
+}
+
+.st-body a.sp-login-discord {
+  color: #fff;
+  background: #5865f2;
+}
+
 .st-body .sp-messages-panel {
   max-width: 820px;
   margin-left: auto;

@@ -22,7 +22,7 @@
 
   function syncPlaceholder() {
     emailEl.placeholder = topicEl.value === "tagger"
-      ? "The Google account email you sign in with"
+      ? "The email on the account you sign in with"
       : "So we can reply (optional for bug reports)";
   }
   topicEl.addEventListener("change", syncPlaceholder);

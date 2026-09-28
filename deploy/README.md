@@ -305,7 +305,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml exec star
   psql -U starpiece -d star_piece -c "UPDATE spelltag_contact_messages SET handled_at = NOW() WHERE id = 42;"
 ```
 
-Grant a tagger account by adding the requester's Google email to `SPELLTAG_TAGGER_EMAILS` in
+Grant a tagger account by adding the requester's account email to `SPELLTAG_TAGGER_EMAILS` in
 `/opt/spelltag/.env`, then `up -d star-piece`.
 
 ### Google sign-in
@@ -331,3 +331,22 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --b
 ```
 
 6. Confirm: `https://spelltag.com/auth/status` should show `"google_configured": true`. Use **Sign in** in the top bar.
+
+### Discord sign-in
+
+1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an application named **Spell Tag**.
+2. **OAuth2** → **Redirects**, add:
+   - `https://spelltag.com/auth/discord/callback`
+   - `http://localhost:8001/auth/discord/callback` (local dev)
+3. Copy the **Client ID** and **Client Secret** (Reset Secret if needed) into `/opt/spelltag/.env`:
+
+```bash
+DISCORD_CLIENT_ID=....
+DISCORD_CLIENT_SECRET=....
+```
+
+4. `up -d star-piece`, then check `https://spelltag.com/auth/status` shows `"discord_configured": true`.
+
+A Discord login whose verified email matches an existing account signs into that account.
+Discord accounts without a verified email get a separate account with no email, so they
+can't be granted admin or tagger access by email.

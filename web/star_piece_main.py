@@ -79,11 +79,12 @@ POKEMON_MIGRATIONS = (
     "049_pokemon_formats.sql",
     "050_contact_messages.sql",
     "051_fix_cel25cc_images.sql",
+    "052_discord_login.sql",
 )
 
 
 _HTML_PATHS = frozenset(
-    {"/", "/pokemon", "/spell-tag", "/collections", "/sets", "/contact", "/admin/messages"}
+    {"/", "/pokemon", "/spell-tag", "/collections", "/sets", "/contact", "/login", "/admin/messages"}
 )
 
 
@@ -203,6 +204,11 @@ def sets_page():
 @app.get("/contact")
 def contact_page():
     return _page("contact.html")
+
+
+@app.get("/login")
+def login_page():
+    return _page("login.html")
 
 
 @app.get("/admin/messages")
