@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from refresh_pokemon_prices import (  # noqa: E402
     Product,
+    apply_product_id_corrections,
     build_price_rows,
     group_name_keys,
     match_card,
@@ -93,6 +94,17 @@ def test_match_card_skips_ambiguous_and_taken() -> None:
     )
     assert match_card({"name": "Darkness Energy", "local_id": "28"}, {10}, idx, set()) is None
     assert match_card({"name": "Darkness Energy", "local_id": "28"}, {10}, idx, {"2"}) == "1"
+
+
+def test_cel25cc_product_ids_are_corrected() -> None:
+    cards = [
+        {"id": "cel25cc-CC002", "tcgplayer_product_id": None},
+        {"id": "cel25cc-CC020", "tcgplayer_product_id": "250301"},
+        {"id": "cel25-2", "tcgplayer_product_id": "250301"},
+    ]
+    corrected = apply_product_id_corrections(cards)
+    assert corrected == {"cel25cc-CC002": "250320", "cel25cc-CC020": "250337"}
+    assert cards[2]["tcgplayer_product_id"] == "250301"
 
 
 def test_build_price_rows_keeps_variants() -> None:

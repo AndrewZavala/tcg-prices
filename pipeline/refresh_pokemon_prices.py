@@ -8,6 +8,7 @@ Examples:
   python refresh_pokemon_prices.py
   python refresh_pokemon_prices.py --dry-run
   python refresh_pokemon_prices.py --no-match
+  python refresh_pokemon_prices.py --set cel25cc   # only that set's cards and tcgcsv groups
 """
 
 from __future__ import annotations
@@ -19,12 +20,13 @@ import time
 import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import requests
 from sqlalchemy import create_engine, text
 
 from config import DATABASE_URL
+from pokemon_card_corrections import correct_tcgplayer_product_id
 
 POKEMON_CATEGORY_ID = 3
 TCGCSV_BASE = "https://tcgcsv.com/tcgplayer"
@@ -74,6 +76,7 @@ GROUP_ALIASES: dict[str, tuple[int, ...]] = {
     "tk-xy-su": (1796,),
     "tk-sm-l": (2069,),
     "tk-sm-r": (2069,),
+    "cel25cc": (2931,),
 }
 
 _GROUP_PREFIX_RE = re.compile(r"^[A-Za-z0-9]+(?:\s*:\s*TG)?\s*(?::|\s-)\s*")
@@ -174,7 +177,11 @@ def _product_from_json(item: dict[str, Any], group_id: int) -> Product | None:
     )
 
 
-def fetch_tcgcsv(*, with_products: bool) -> tuple[
+def fetch_tcgcsv(
+    *,
+    with_products: bool,
+    select_groups: Callable[[list[dict[str, Any]]], set[int]] | None = None,
+) -> tuple[
     list[dict[str, Any]],
     dict[str, list[dict[str, Any]]],
     dict[str, int],
@@ -185,6 +192,9 @@ def fetch_tcgcsv(*, with_products: bool) -> tuple[
     groups = _fetch_results(session, f"{TCGCSV_BASE}/{POKEMON_CATEGORY_ID}/groups")
     if not groups:
         raise RuntimeError("tcgcsv returned no Pokémon groups")
+    if select_groups is not None:
+        wanted = select_groups(groups)
+        groups = [g for g in groups if int(g["groupId"]) in wanted]
 
     prices: dict[str, list[dict[str, Any]]] = defaultdict(list)
     product_group: dict[str, int] = {}
@@ -323,8 +333,33 @@ def build_price_rows(
     return rows
 
 
-def write_prices(engine, matched: dict[str, str], rows: list[dict[str, Any]]) -> None:
+def apply_product_id_corrections(cards: list[dict[str, Any]]) -> dict[str, str]:
+    """Override known-bad product ids in place; card_id -> corrected id for changed rows."""
+    corrected: dict[str, str] = {}
+    for c in cards:
+        pid = correct_tcgplayer_product_id(c["id"], c.get("tcgplayer_product_id"))
+        if pid and pid != c.get("tcgplayer_product_id"):
+            c["tcgplayer_product_id"] = pid
+            corrected[c["id"]] = pid
+    return corrected
+
+
+def write_prices(
+    engine,
+    matched: dict[str, str],
+    rows: list[dict[str, Any]],
+    corrected: dict[str, str] | None = None,
+    card_ids: list[str] | None = None,
+) -> None:
+    """Replace price rows; with card_ids, only those cards are touched."""
+    scope = "" if card_ids is None else "AND c.id = ANY(:ids)"
+    params = {} if card_ids is None else {"ids": card_ids}
     with engine.begin() as conn:
+        if corrected:
+            conn.execute(
+                text("UPDATE pokemon_cards SET tcgplayer_product_id = :pid WHERE id = :id"),
+                [{"id": cid, "pid": pid} for cid, pid in corrected.items()],
+            )
         if matched:
             conn.execute(
                 text(
@@ -336,7 +371,12 @@ def write_prices(engine, matched: dict[str, str], rows: list[dict[str, Any]]) ->
                 ),
                 [{"id": cid, "pid": pid} for cid, pid in matched.items()],
             )
-        conn.execute(text("DELETE FROM pokemon_card_prices"))
+        if card_ids is None:
+            conn.execute(text("DELETE FROM pokemon_card_prices"))
+        else:
+            conn.execute(
+                text("DELETE FROM pokemon_card_prices WHERE card_id = ANY(:ids)"), params
+            )
         conn.execute(
             text(
                 """
@@ -355,7 +395,7 @@ def write_prices(engine, matched: dict[str, str], rows: list[dict[str, Any]]) ->
         )
         conn.execute(
             text(
-                """
+                f"""
                 UPDATE pokemon_cards c
                 SET price_usd = agg.price_usd, price_updated_at = NOW()
                 FROM (
@@ -364,19 +404,21 @@ def write_prices(engine, matched: dict[str, str], rows: list[dict[str, Any]]) ->
                     FROM pokemon_card_prices
                     GROUP BY card_id
                 ) agg
-                WHERE c.id = agg.card_id
+                WHERE c.id = agg.card_id {scope}
                 """
-            )
+            ),
+            params,
         )
         conn.execute(
             text(
-                """
+                f"""
                 UPDATE pokemon_cards c
                 SET price_usd = NULL, price_updated_at = NOW()
-                WHERE c.price_usd IS NOT NULL
+                WHERE c.price_usd IS NOT NULL {scope}
                   AND NOT EXISTS (SELECT 1 FROM pokemon_card_prices p WHERE p.card_id = c.id)
                 """
-            )
+            ),
+            params,
         )
 
 
@@ -387,6 +429,13 @@ def main() -> int:
         "--no-match",
         action="store_true",
         help="Skip products download / filling missing TCGplayer product ids",
+    )
+    parser.add_argument(
+        "--set",
+        dest="sets",
+        action="append",
+        metavar="SET_ID",
+        help="Only refresh these Spell Tag sets (repeatable); other prices are left alone",
     )
     args = parser.parse_args()
 
@@ -405,10 +454,27 @@ def main() -> int:
                 )
             ).mappings()
         ]
+    select_groups = None
+    if args.sets:
+        cards = [c for c in cards if c["set_id"] in args.sets]
+        set_names = {c["set_id"]: c.get("set_name") or "" for c in cards}
+
+        def select_groups(groups: list[dict[str, Any]]) -> set[int]:
+            keys = {int(g["groupId"]): group_name_keys(str(g.get("name") or "")) for g in groups}
+            out: set[int] = set()
+            for sid, sname in set_names.items():
+                out |= candidate_groups(sid, sname, learned={}, group_keys=keys)
+            return out
+
     print(f"Spell Tag printings: {len(cards):,}")
+    corrected = apply_product_id_corrections(cards)
+    if corrected:
+        print(f"Corrected {len(corrected):,} TCGplayer product ids")
 
     print("Fetching tcgcsv (TCGplayer category 3)…", flush=True)
-    groups, prices, product_group, products = fetch_tcgcsv(with_products=not args.no_match)
+    groups, prices, product_group, products = fetch_tcgcsv(
+        with_products=not args.no_match, select_groups=select_groups
+    )
 
     matched: dict[str, str] = {}
     if not args.no_match:
@@ -424,9 +490,10 @@ def main() -> int:
     priced_cards = len({r["card_id"] for r in rows})
     print(f"Price rows: {len(rows):,} across {priced_cards:,} printings")
 
-    if priced_cards < MIN_PRICED_CARDS:
+    min_priced = 1 if args.sets else MIN_PRICED_CARDS
+    if priced_cards < min_priced:
         print(
-            f"Refusing to write: only {priced_cards:,} priced printings (< {MIN_PRICED_CARDS:,})",
+            f"Refusing to write: only {priced_cards:,} priced printings (< {min_priced:,})",
             file=sys.stderr,
         )
         return 1
@@ -434,7 +501,8 @@ def main() -> int:
         print("Dry run — nothing written.")
         return 0
 
-    write_prices(engine, matched, rows)
+    card_ids = [c["id"] for c in cards] if args.sets else None
+    write_prices(engine, matched, rows, corrected, card_ids)
     print("Prices updated.")
     return 0
 

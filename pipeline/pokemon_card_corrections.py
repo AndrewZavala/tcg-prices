@@ -147,6 +147,41 @@ STAGE_BY_ID: dict[str, str] = {
 # Drop attack rows that have a cost but no name (TCGdex stubs).
 DROP_NAMELESS_ATTACKS: frozenset[str] = frozenset({"sm12-210"})
 
+# card_id → TCGplayer product id. Celebrations: Classic Collection (tcgcsv group 2931)
+# numbers cards by their original printing, so name+number matching can't find them,
+# and TCGdex points CC020/CC021 at main Celebrations Reshiram/Zekrom.
+TCGPLAYER_PRODUCT_ID_BY_ID: dict[str, str] = {
+    "cel25cc-CC001": "250319",
+    "cel25cc-CC002": "250320",
+    "cel25cc-CC003": "250321",
+    "cel25cc-CC004": "250322",
+    "cel25cc-CC005": "250294",
+    "cel25cc-CC006": "250323",
+    "cel25cc-CC007": "250324",
+    "cel25cc-CC008": "250325",
+    "cel25cc-CC009": "250326",
+    "cel25cc-CC010": "250327",
+    "cel25cc-CC011": "250328",
+    "cel25cc-CC012": "250329",
+    "cel25cc-CC013": "250330",
+    "cel25cc-CC014": "250331",
+    "cel25cc-CC015": "250332",
+    "cel25cc-CC016": "250333",
+    "cel25cc-CC017": "250334",
+    "cel25cc-CC018": "250335",
+    "cel25cc-CC019": "250336",
+    "cel25cc-CC020": "250337",
+    "cel25cc-CC021": "250338",
+    "cel25cc-CC022": "250339",
+    "cel25cc-CC023": "250340",
+    "cel25cc-CC024": "250341",
+    "cel25cc-CC025": "250342",
+}
+
+
+def correct_tcgplayer_product_id(card_id: str, product_id: str | None) -> str | None:
+    return TCGPLAYER_PRODUCT_ID_BY_ID.get(card_id, product_id)
+
 
 def _patch_named_rows(
     rows: list[Any] | None,

@@ -26,6 +26,7 @@ from pokemon_card_corrections import (
     correct_attacks,
     apply_card_corrections,
     compute_is_multicolor,
+    correct_tcgplayer_product_id,
 )
 
 TCGDEX_BASE = "https://api.tcgdex.net/v2"
@@ -570,7 +571,9 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
             "weaknesses": json.dumps(card.get("weaknesses") or []),
             "resistances": json.dumps(card.get("resistances") or []),
             "variants": json.dumps(card.get("variants") or {}),
-            "tcgplayer_product_id": _tcgplayer_product_id(card.get("pricing")),
+            "tcgplayer_product_id": correct_tcgplayer_product_id(
+                card["id"], _tcgplayer_product_id(card.get("pricing"))
+            ),
             "card_data": json.dumps(cleaned),
             "is_multicolor": is_multicolor,
             "source_updated_at": _parse_ts(card.get("updated")),
