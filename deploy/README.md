@@ -226,6 +226,31 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
 Confirm in DevTools Network that grid images are same-origin `/media/cards/...` (not `assets.tcgdex.net`).
 Watch disk: `df -h`.
 
+### Monthly TCGplayer prices
+
+`pipeline/refresh_pokemon_prices.py` pulls English Pokémon TCGplayer prices (USD) from
+[tcgcsv.com](https://tcgcsv.com) — ~441 requests, ~2 minutes. It fills missing
+`tcgplayer_product_id`s by set + number + name, replaces `pokemon_card_prices` (latest only),
+and caches the cheapest variant in `pokemon_cards.price_usd`. It refuses to write if fewer than
+5,000 printings come back priced. No site downtime (short row updates, no table locks).
+
+Run once by hand:
+
+```bash
+cd /opt/spelltag
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile manual run --rm star-piece-pipeline \
+  python pipeline/refresh_pokemon_prices.py
+```
+
+Schedule it on the host (1st of each month, 09:00 server time). `deploy/monthly-prices.sh`
+skips dates listed in `SPELLTAG_PRICE_SKIP_DATES` (default `2026-10-01`):
+
+```bash
+crontab -e
+# add:
+0 9 1 * * bash /opt/spelltag/deploy/monthly-prices.sh >> /var/log/spelltag-prices.log 2>&1
+```
+
 ### Google sign-in
 
 1. In [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials**, create an **OAuth 2.0 Client ID** (application type: Web application).

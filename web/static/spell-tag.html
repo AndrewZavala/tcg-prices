@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/star-piece.css?v=detail-layout2" />
-  <link rel="stylesheet" href="/static/spell-tag.css?v=28" />
+  <link rel="stylesheet" href="/static/spell-tag.css?v=29" />
   <link rel="icon" href="/static/spell-tag-logo.png?v=10" type="image/png" />
   <link rel="apple-touch-icon" href="/static/spell-tag-logo.png?v=10" />
 </head>
@@ -65,6 +65,8 @@
               <option value="dex">Dex #</option>
               <option value="type">Type</option>
               <option value="hp_desc">HP ↓</option>
+              <option value="price_desc">Price ↓</option>
+              <option value="price_asc">Price ↑</option>
               <option value="shuffle">Shuffle</option>
             </select>
           </label>
@@ -213,6 +215,7 @@
               <li><code>is:gen5</code> — Pokémon generation</li>
               <li><code>is:legendary</code> · <code>is:mythical</code></li>
               <li><button type="button" class="sp-linkish" data-quick="is:multicolor">is:multicolor</button> — two+ energy colors (type, attack cost, or energy-in-text; Colorless ignored unless Colorless-type)</li>
+              <li><button type="button" class="sp-linkish" data-quick="usd>10">usd&gt;10</button> · <code>usd&lt;1</code> · <code>usd&gt;=5 usd&lt;=20</code> — TCGplayer market price (cheapest variant, updated monthly)</li>
               <li><button type="button" class="sp-linkish" data-quick="is:starter">is:starter</button> · <button type="button" class="sp-linkish" data-quick="is:baby">is:baby</button> · <button type="button" class="sp-linkish" data-quick="is:eeveelution">is:eeveelution</button></li>
               <li><button type="button" class="sp-linkish" data-quick="is:paradox">is:paradox</button> · <button type="button" class="sp-linkish" data-quick="is:ultra-beast">is:ultra-beast</button> · <button type="button" class="sp-linkish" data-quick="is:fossil">is:fossil</button></li>
               <li><button type="button" class="sp-linkish" data-quick="is:pseudo-legendary">is:pseudo-legendary</button> · <button type="button" class="sp-linkish" data-quick="is:regional">is:regional</button></li>
@@ -286,7 +289,7 @@
     </div>
   </dialog>
 
-  <script src="/static/pokemon.js?v=has-ab1"></script>
+  <script src="/static/pokemon.js?v=prices1"></script>
   <script src="/static/spelltag-auth.js?v=3"></script>
 </body>
 </html>

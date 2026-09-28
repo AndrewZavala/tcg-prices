@@ -73,6 +73,7 @@ POKEMON_MIGRATIONS = (
     "044_pokemon_multicolor.sql",
     "045_fix_dark_magneton_sonicboom.sql",
     "046_card_data_fixes_plan.sql",
+    "047_pokemon_prices.sql",
 )
 
 

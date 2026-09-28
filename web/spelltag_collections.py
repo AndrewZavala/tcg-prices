@@ -174,6 +174,8 @@ def _card_sort_clause(sort: str, *, group: str = "none") -> str:
         return "s.name ASC, pc.local_id ASC, pc.id ASC"
     if key == "number":
         return "pc.local_id ASC, pc.name ASC, pc.id ASC"
+    if key == "price":
+        return "pc.price_usd DESC NULLS LAST, pc.name ASC, pc.id ASC"
     if key == "tag":
         return """COALESCE((
             SELECT MIN(cit.tag_slug)
@@ -433,6 +435,7 @@ def _load_collection_cards(
             SELECT
                 pc.id, pc.name, pc.category, pc.set_id, s.name AS set_name, pc.local_id,
                 pc.image_url, pc.image_local, pc.rarity, pc.illustrator,
+                pc.price_usd::float AS price_usd,
                 s.release_date::text AS release_date,
                 i.created_at::text AS saved_at,
                 COALESCE(i.bucket, 'main') AS bucket
@@ -513,9 +516,13 @@ def list_collections(
                     c.share_slug,
                     c.created_at::text AS created_at,
                     c.updated_at::text AS updated_at,
-                    COUNT(i.id)::int AS item_count
+                    COUNT(i.id)::int AS item_count,
+                    (SUM(pc.price_usd) FILTER (
+                        WHERE c.kind = 'favorites' OR COALESCE(i.bucket, 'main') = 'main'
+                    ))::float AS value_usd
                 FROM collections c
                 LEFT JOIN collection_items i ON i.collection_id = c.id
+                LEFT JOIN pokemon_cards pc ON pc.id = i.card_id
                 WHERE c.user_id = CAST(:uid AS uuid)
                 GROUP BY c.id, c.name, c.kind, c.visibility, c.share_slug,
                          c.created_at, c.updated_at
@@ -737,7 +744,9 @@ def update_item_bucket(
 def get_collection(
     request: Request,
     collection_id: str,
-    sort: str = Query("saved", description="saved | name | set | number | tag | type | shuffle"),
+    sort: str = Query(
+        "saved", description="saved | name | set | number | price | tag | type | shuffle"
+    ),
     group: str = Query("none", description="none | category"),
     tag: str | None = Query(None, description="Filter to cards with this tag"),
 ):
@@ -745,10 +754,10 @@ def get_collection(
     sort_key = (sort or "saved").lower()
     if sort_key == "random":
         sort_key = "shuffle"
-    if sort_key not in ("saved", "name", "set", "number", "tag", "type", "shuffle"):
+    if sort_key not in ("saved", "name", "set", "number", "price", "tag", "type", "shuffle"):
         raise HTTPException(
             status_code=400,
-            detail="sort must be saved, name, set, number, tag, type, or shuffle",
+            detail="sort must be saved, name, set, number, price, tag, type, or shuffle",
         )
     group_key = (group or "none").lower()
     if group_key not in ("none", "category"):
@@ -788,7 +797,9 @@ def get_collection(
 def get_shared_collection(
     request: Request,
     id_or_slug: str,
-    sort: str = Query("saved", description="saved | name | set | number | tag | type | shuffle"),
+    sort: str = Query(
+        "saved", description="saved | name | set | number | price | tag | type | shuffle"
+    ),
     group: str = Query("none", description="none | category"),
     tag: str | None = Query(None, description="Filter to cards with this tag (owner only)"),
 ):
@@ -813,9 +824,9 @@ def get_shared_collection(
             raise HTTPException(status_code=404, detail="Collection not found")
 
         allowed_sorts = (
-            ("saved", "name", "set", "number", "tag", "type", "shuffle")
+            ("saved", "name", "set", "number", "price", "tag", "type", "shuffle")
             if is_owner
-            else ("saved", "name", "set", "number", "type", "shuffle")
+            else ("saved", "name", "set", "number", "price", "type", "shuffle")
         )
         if sort_key not in allowed_sorts:
             raise HTTPException(

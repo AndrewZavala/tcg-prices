@@ -537,7 +537,9 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
                 weaknesses = EXCLUDED.weaknesses,
                 resistances = EXCLUDED.resistances,
                 variants = EXCLUDED.variants,
-                tcgplayer_product_id = EXCLUDED.tcgplayer_product_id,
+                tcgplayer_product_id = COALESCE(
+                    EXCLUDED.tcgplayer_product_id, pokemon_cards.tcgplayer_product_id
+                ),
                 card_data = EXCLUDED.card_data,
                 is_multicolor = EXCLUDED.is_multicolor,
                 source_updated_at = EXCLUDED.source_updated_at,

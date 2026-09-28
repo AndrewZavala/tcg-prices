@@ -159,10 +159,49 @@
         ? "Already in collection"
         : "Add to collection"
       : label;
+    const showPrice = sortEl.value === "price_desc" || sortEl.value === "price_asc";
+    const priceHtml = showPrice
+      ? `<div class="sp-card-price">${esc(formatUsd(card.price_usd) || "No price")}</div>`
+      : "";
     return `
       <article class="${cardCls}" data-id="${esc(card.id)}" tabindex="0" aria-label="${esc(label)}" title="${esc(hint)}">
         ${cardImg(card.image_url, label)}
+        ${priceHtml}
       </article>`;
+  }
+
+  const USD_FORMAT = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+
+  function formatUsd(value) {
+    return value == null || Number.isNaN(Number(value)) ? "" : USD_FORMAT.format(Number(value));
+  }
+
+  function priceBlock(card) {
+    const rows = card.prices || [];
+    if (!rows.length) return "";
+    const body = rows
+      .map(
+        (p) => `
+          <tr>
+            <th scope="row">${esc(p.variant)}</th>
+            <td class="sp-price-market">${esc(formatUsd(p.market) || "—")}</td>
+            <td>${esc(formatUsd(p.low) || "—")}</td>
+            <td>${esc(formatUsd(p.mid) || "—")}</td>
+            <td>${esc(formatUsd(p.high) || "—")}</td>
+          </tr>`
+      )
+      .join("");
+    const updated = card.prices_updated_on ? ` · updated ${esc(card.prices_updated_on)}` : "";
+    return `
+      <div class="sp-price-block">
+        <table class="sp-price-table">
+          <thead>
+            <tr><th scope="col">TCGplayer</th><th scope="col">Market</th><th scope="col">Low</th><th scope="col">Mid</th><th scope="col">High</th></tr>
+          </thead>
+          <tbody>${body}</tbody>
+        </table>
+        <p class="sp-hint sp-price-note">USD, refreshed monthly${updated}</p>
+      </div>`;
   }
 
   // Attack cost display (UI only). API still returns full type names.
@@ -1198,6 +1237,7 @@
                 </a>` : ""}
               <button type="button" class="sp-fav-btn" id="favToggleBtn" aria-pressed="false" hidden>♡ Favorite</button>
             </div>
+            ${priceBlock(card)}
             <div class="sp-collect-bar" id="collectBar" hidden>
               <label class="sp-collect-add">
                 <span class="sp-visually-hidden">Add to collection</span>

@@ -653,6 +653,71 @@
   margin-top: 0.65rem;
 }
 
+.st-body .sp-price-block {
+  width: 100%;
+  margin-top: 0.55rem;
+}
+
+.st-body .sp-price-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.st-body .sp-price-table th,
+.st-body .sp-price-table td {
+  padding: 0.28rem 0.35rem;
+  text-align: right;
+  border-bottom: 1px solid rgba(200, 200, 210, 0.12);
+  white-space: nowrap;
+  color: var(--sp-text);
+}
+
+.st-body .sp-price-table th[scope="row"],
+.st-body .sp-price-table thead th:first-child {
+  text-align: left;
+  font-weight: 600;
+  color: var(--sp-muted);
+}
+
+.st-body .sp-price-table thead th {
+  font-weight: 600;
+  color: var(--sp-muted);
+}
+
+.st-body .sp-price-table .sp-price-market {
+  color: var(--sp-pink-soft);
+  font-weight: 700;
+}
+
+.st-body .sp-price-note {
+  margin: 0.3rem 0 0;
+  font-size: 0.72rem;
+}
+
+.st-body .sp-card:has(.sp-card-price, .sp-collection-card-price) {
+  position: relative;
+}
+
+.st-body .sp-card-price,
+.st-body .sp-collection-card-price {
+  position: absolute;
+  left: 50%;
+  bottom: 0.55rem;
+  transform: translateX(-50%);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(12, 12, 14, 0.82);
+  border: 1px solid var(--sp-glass-border);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--sp-pink-soft);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .st-body .sp-fav-btn {
   font: inherit;
   font-size: 0.88rem;

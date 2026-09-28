@@ -352,6 +352,8 @@ SORT_SQL = {
     ),
     "dex": "c.dex_ids[1] ASC NULLS LAST, c.name ASC",
     "hp_desc": "c.hp DESC NULLS LAST, c.name ASC",
+    "price_desc": "c.price_usd DESC NULLS LAST, c.name ASC, c.id",
+    "price_asc": "c.price_usd ASC NULLS LAST, c.name ASC, c.id",
     # Seeded via :shuffle_seed so pagination stays stable within a shuffle session.
     "shuffle": "md5(c.id || CAST(:shuffle_seed AS text)) ASC, c.id ASC",
 }
@@ -703,6 +705,31 @@ def _apply_multicolor_filter(
         filters.append(f"NOT {clause}")
 
 
+_PRICE_TOKEN_RE = re.compile(
+    r"^(-?)(?:usd|price)(>=|<=|>|<|=|:)\$?(\d+(?:\.\d{1,2})?)$",
+    re.IGNORECASE,
+)
+_PRICE_SQL_OPS = {">": ">", "<": "<", ">=": ">=", "<=": "<=", "=": "=", ":": "="}
+
+
+def _apply_price_filters(
+    filters: list[str],
+    params: dict[str, Any],
+    *,
+    prices: list[tuple[str, float]],
+    exclude_prices: list[tuple[str, float]],
+) -> None:
+    """usd>10 etc. on cached pokemon_cards.price_usd; unpriced cards never match."""
+    for idx, (op, value) in enumerate(prices):
+        key = f"usd_{idx}"
+        filters.append(f"c.price_usd {_PRICE_SQL_OPS[op]} :{key}")
+        params[key] = value
+    for idx, (op, value) in enumerate(exclude_prices):
+        key = f"xusd_{idx}"
+        filters.append(f"(c.price_usd IS NOT NULL AND NOT (c.price_usd {_PRICE_SQL_OPS[op]} :{key}))")
+        params[key] = value
+
+
 def _parse_search_query(
     q: str | None,
 ) -> dict[str, Any]:
@@ -751,6 +778,8 @@ def _parse_search_query(
         "retreats": [],
         "exclude_retreats": [],
         "multicolor": None,
+        "prices": [],
+        "exclude_prices": [],
     }
     if not q or not q.strip():
         return result
@@ -786,6 +815,12 @@ def _parse_search_query(
 
     name_parts: list[str] = []
     for token in _tokenize_search_query(q.strip()):
+        price_match = _PRICE_TOKEN_RE.match(token)
+        if price_match:
+            neg, op, amount = price_match.groups()
+            bucket = "exclude_prices" if neg else "prices"
+            result[bucket].append((op, float(amount)))
+            continue
         if ":" not in token:
             if token.startswith('"') and token.endswith('"') and len(token) >= 2:
                 name_parts.append(token[1:-1].replace('\\"', '"'))
@@ -1239,7 +1274,12 @@ def _grid_card_row(raw: dict[str, Any]) -> dict[str, Any]:
             image_local=bool(raw.get("image_local")),
             size="low",
         ),
+        "price_usd": _price_float(raw.get("price_usd")),
     }
+
+
+def _price_float(value: Any) -> float | None:
+    return None if value is None else float(value)
 
 
 def _card_row(raw: dict[str, Any]) -> dict[str, Any]:
@@ -1478,7 +1518,10 @@ def search_pokemon_cards(
         description="ability | ability-any | poke-power | poke-body | pokemon-power | omega-trait",
     ),
     unique: UniqueMode = Query("cards", description="pokemon | cards | prints | art"),
-    sort: str = Query("name", description="name | set | dex | hp_desc | type | shuffle"),
+    sort: str = Query(
+        "name",
+        description="name | set | dex | hp_desc | type | price_desc | price_asc | shuffle",
+    ),
     seed: str | None = Query(
         None,
         description="Shuffle seed (stable pagination when sort=shuffle)",
@@ -1767,6 +1810,12 @@ def search_pokemon_cards(
         filters,
         multicolor=parsed.get("multicolor"),
     )
+    _apply_price_filters(
+        filters,
+        params,
+        prices=list(parsed.get("prices") or []),
+        exclude_prices=list(parsed.get("exclude_prices") or []),
+    )
 
     where_sql = " AND ".join(filters)
 
@@ -1785,6 +1834,33 @@ def search_pokemon_cards(
                          c.is_oracle_representative DESC,
                          s.release_date ASC NULLS LAST,
                          c.id
+            ) c
+            INNER JOIN pokemon_sets s ON s.id = c.set_id
+            LEFT JOIN pokemon_oracles o ON o.id = c.oracle_id
+            {SPECIES_SORT_JOINS}
+            WHERE 1=1
+        """
+    elif unique == "cards" and (
+        sort_key in ("price_desc", "price_asc")
+        or parsed.get("prices")
+        or parsed.get("exclude_prices")
+    ):
+        # Price views show the priced printing that matched, not the oldest representative.
+        price_pick = "ASC" if sort_key == "price_asc" else "DESC"
+        core_from = f"""
+            FROM (
+                SELECT DISTINCT ON (COALESCE(c.oracle_id, c.id))
+                    c.*,
+                    o.printing_count,
+                    o.art_variant_count
+                FROM pokemon_cards c
+                INNER JOIN pokemon_sets s ON s.id = c.set_id
+                LEFT JOIN pokemon_oracles o ON o.id = c.oracle_id
+                WHERE {where_sql}
+                ORDER BY COALESCE(c.oracle_id, c.id),
+                         c.price_usd {price_pick} NULLS LAST,
+                         c.is_oracle_representative DESC,
+                         s.release_date ASC NULLS LAST, c.id
             ) c
             INNER JOIN pokemon_sets s ON s.id = c.set_id
             LEFT JOIN pokemon_oracles o ON o.id = c.oracle_id
@@ -1830,7 +1906,8 @@ def search_pokemon_cards(
         """
 
     select_cols = """
-        c.id, c.name, s.name AS set_name, c.local_id, c.image_url, c.image_local
+        c.id, c.name, s.name AS set_name, c.local_id, c.image_url, c.image_local,
+        c.price_usd
     """
 
     count_sql = f"SELECT COUNT(*) {core_from}"
@@ -1963,7 +2040,32 @@ def get_pokemon_card(card_id: str) -> dict[str, Any]:
         except Exception:
             art_tags = []
 
+        price_rows = conn.execute(
+            text(
+                """
+                SELECT variant, market_price, low_price, mid_price, high_price,
+                       updated_at::date::text AS updated_on
+                FROM pokemon_card_prices
+                WHERE card_id = :id
+                ORDER BY COALESCE(market_price, mid_price, low_price) ASC NULLS LAST, variant
+                """
+            ),
+            {"id": row["id"]},
+        ).mappings().all()
+
     card = _card_row(dict(row))
+    card["price_usd"] = _price_float(row.get("price_usd"))
+    card["prices"] = [
+        {
+            "variant": p["variant"],
+            "market": _price_float(p["market_price"]),
+            "low": _price_float(p["low_price"]),
+            "mid": _price_float(p["mid_price"]),
+            "high": _price_float(p["high_price"]),
+        }
+        for p in price_rows
+    ]
+    card["prices_updated_on"] = price_rows[0]["updated_on"] if price_rows else None
     card["oracle_tags"] = oracle_tags
     card["art_tags"] = art_tags
     card["release_date"] = row.get("release_date")

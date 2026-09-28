@@ -193,6 +193,16 @@
     return detailCards.find((c) => c.id === cardId);
   }
 
+  const USD_FORMAT = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+
+  function formatUsd(value) {
+    return value == null || Number.isNaN(Number(value)) ? "" : USD_FORMAT.format(Number(value));
+  }
+
+  function cardsValue(cards) {
+    return cards.reduce((sum, c) => sum + (c.price_usd == null ? 0 : Number(c.price_usd)), 0);
+  }
+
   function updatePreviewPanel(card) {
     const empty = document.getElementById("collectionPreviewEmpty");
     const body = document.getElementById("collectionPreviewBody");
@@ -211,9 +221,10 @@
     img.alt = card.name || "";
     if (nameEl) nameEl.textContent = card.name || "";
     if (metaEl) {
+      const price = formatUsd(card.price_usd);
       metaEl.textContent = `${card.set_name || "—"} · #${card.local_id || "—"}${
         card.rarity ? ` · ${card.rarity}` : ""
-      }`;
+      }${price ? ` · ${price}` : ""}`;
     }
   }
 
@@ -809,7 +820,9 @@
               <span class="sp-collection-name">${esc(c.name)}${
                 c.kind === "favorites" ? ' <span class="sp-collection-badge">♥</span>' : ""
               } ${visibilityBadge(c.visibility)}</span>
-              <span class="sp-collection-count">${c.item_count} card${c.item_count === 1 ? "" : "s"}</span>
+              <span class="sp-collection-count">${c.item_count} card${c.item_count === 1 ? "" : "s"}${
+                c.value_usd ? ` · ${esc(formatUsd(c.value_usd))}` : ""
+              }</span>
             </a>
           </li>`
           )
@@ -844,6 +857,11 @@
     return `
       <article class="sp-card sp-collection-card" data-id="${esc(c.id)}" tabindex="0" aria-label="${esc(label)}">
         ${cardImg(c.image_url, label)}
+        ${
+          detailSort === "price"
+            ? `<div class="sp-collection-card-price">${esc(formatUsd(c.price_usd) || "No price")}</div>`
+            : ""
+        }
       </article>`;
   }
 
@@ -863,7 +881,9 @@
         <div class="sp-stack-bar">
           <span class="sp-stack-art" style="background-image:url('${art}')" aria-hidden="true"></span>
           <span class="sp-stack-name">${esc(c.name)}</span>
-          <span class="sp-stack-meta">#${esc(c.local_id || "—")}</span>
+          <span class="sp-stack-meta">#${esc(c.local_id || "—")}${
+            detailSort === "price" && c.price_usd != null ? ` · ${esc(formatUsd(c.price_usd))}` : ""
+          }</span>
         </div>
         <div class="sp-stack-body">
           ${cardImg(c.image_url, label, "sp-stack-img")}
@@ -973,18 +993,25 @@
     const total = detailCards.length;
 
     if (countEl) {
-      if (detailQuery && visibleTotal !== total) {
-        countEl.textContent = `${visibleTotal} of ${total}`;
+      const searching = detailQuery && visibleTotal !== total;
+      const valueCards = searching
+        ? mainCards
+        : detailCards.filter((c) => !supportsConsidering() || cardBucket(c) === "main");
+      const value = cardsValue(valueCards);
+      const valueText = value > 0 ? ` · ${formatUsd(value)}` : "";
+      if (searching) {
+        countEl.textContent = `${visibleTotal} of ${total}${valueText}`;
       } else if (supportsConsidering()) {
         const mainCount = detailCards.filter((c) => cardBucket(c) === "main").length;
         const consideringCount = detailCards.filter((c) => cardBucket(c) === "considering").length;
         countEl.textContent =
           consideringCount > 0
-            ? `${mainCount} main · ${consideringCount} considering`
-            : `${total} card${total === 1 ? "" : "s"}`;
+            ? `${mainCount} main · ${consideringCount} considering${valueText}`
+            : `${total} card${total === 1 ? "" : "s"}${valueText}`;
       } else {
-        countEl.textContent = `${total} card${total === 1 ? "" : "s"}`;
+        countEl.textContent = `${total} card${total === 1 ? "" : "s"}${valueText}`;
       }
+      countEl.title = value > 0 ? "TCGplayer market value (cheapest variant), refreshed monthly" : "";
     }
 
     if (visibleTotal) {
@@ -1193,6 +1220,7 @@
               <option value="name"${detailSort === "name" ? " selected" : ""}>Name</option>
               <option value="set"${detailSort === "set" ? " selected" : ""}>Set</option>
               <option value="number"${detailSort === "number" ? " selected" : ""}>Number</option>
+              <option value="price"${detailSort === "price" ? " selected" : ""}>Price</option>
               <option value="type"${detailSort === "type" ? " selected" : ""}>Type</option>
               <option value="shuffle"${detailSort === "shuffle" ? " selected" : ""}>Shuffle</option>
               ${
