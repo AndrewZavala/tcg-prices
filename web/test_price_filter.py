@@ -77,6 +77,16 @@ def test_sort_direction_flips_primary_columns() -> None:
     assert sort_order_sql("type", "desc").split(",")[0].endswith("END DESC")
 
 
+def test_supertype_sort() -> None:
+    assert resolve_sort("supertype", None) == ("supertype", "asc")
+    asc = sort_order_sql("supertype", "asc")
+    desc = sort_order_sql("supertype", "desc")
+    assert "END ASC, c.name ASC" in asc
+    assert "END DESC, c.name ASC" in desc
+    tool = asc.index("'pokemon-tool'")
+    assert tool < asc.index("'supporter'") < asc.index("'item' =")
+
+
 def test_competitive_filter() -> None:
     assert _parse_search_query("is:competitive")["competitive"] is True
     assert _parse_search_query("-is:competitive")["competitive"] is False

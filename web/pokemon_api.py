@@ -349,6 +349,7 @@ SORT_DEFAULT_DIR: dict[str, SortDir] = {
     "set": "asc",
     "dex": "asc",
     "type": "asc",
+    "supertype": "asc",
     "hp": "desc",
     "price": "desc",
 }
@@ -364,6 +365,19 @@ _TYPE_SORT_SQL = {
     "ASC": build_card_type_sort_sql("c", include_category_bucket=True),
     "DESC": build_card_type_sort_sql("c", include_category_bucket=True, descending=True),
 }
+
+# Pokémon > Supporter > Item > Tool > Stadium > Energy > other.
+# Tools can also carry "item", so they're matched first; Technical Machines are Tools.
+_SUPERTYPE_RANK_SQL = """CASE c.category
+  WHEN 'Pokemon' THEN 1
+  WHEN 'Trainer' THEN CASE
+    WHEN COALESCE(c.tags, ARRAY[]::text[]) && ARRAY['pokemon-tool', 'technical-machine'] THEN 4
+    WHEN 'supporter' = ANY(COALESCE(c.tags, ARRAY[]::text[])) THEN 2
+    WHEN 'item' = ANY(COALESCE(c.tags, ARRAY[]::text[])) THEN 3
+    WHEN 'stadium' = ANY(COALESCE(c.tags, ARRAY[]::text[])) THEN 5
+    ELSE 7 END
+  WHEN 'Energy' THEN 6
+  ELSE 7 END"""
 
 # Seeded via :shuffle_seed so pagination stays stable within a shuffle session.
 SHUFFLE_SORT_SQL = "md5(c.id || CAST(:shuffle_seed AS text)) ASC, c.id ASC"
@@ -390,6 +404,8 @@ def sort_order_sql(key: str, direction: SortDir) -> str:
         return SHUFFLE_SORT_SQL
     if key == "type":
         return _TYPE_SORT_SQL[d]
+    if key == "supertype":
+        return f"{_SUPERTYPE_RANK_SQL} {d}, c.name ASC, s.release_date ASC NULLS LAST, c.local_id"
     if key == "set":
         # local_id is often "SM142" / "TG01" / "RC1" — never cast the whole string to int
         return (
