@@ -82,7 +82,8 @@ GROUP_ALIASES: dict[str, tuple[int, ...]] = {
 
 # Classic Collections: TCGplayer numbers each reprint by its original printing (Charizard 4/102),
 # so match on the card name alone. Names are unique within these sets.
-NAME_ONLY_SETS = frozenset({"30th-c"})
+# My First Battle products carry no number at all.
+NAME_ONLY_SETS = frozenset({"30th-c", "mfb"})
 
 # Promo sets whose missing art falls back to official pokemon.com scans instead.
 POKEMON_COM_ART_SETS = frozenset({"swshp", "smp", "svp", "xyp", "bwp", "mep", "hgssp", "dpp", "np"})
@@ -93,6 +94,13 @@ def tcgplayer_image_url(product_id: str) -> str:
 
 _GROUP_PREFIX_RE = re.compile(r"^[A-Za-z0-9]+(?:\s*:\s*TG)?\s*(?::|\s-)\s*")
 _NUMBER_RE = re.compile(r"^([a-z]*)0*(\d+)([a-z]*)$")
+# "Delphox - 074": the number suffix TCGplayer appends to promo names isn't a variant label.
+_NUMBER_SUFFIX_RE = re.compile(r"\s+-\s+[A-Za-z]*\d+[A-Za-z]*(?=\s|$)")
+_ENERGY_LETTER_RE = re.compile(r"grass|fire|water|lightning|psychic|fighting|darkness|metal|fairy")
+_ENERGY_LETTERS = {
+    "grass": "g", "fire": "r", "water": "w", "lightning": "l", "psychic": "p",
+    "fighting": "f", "darkness": "d", "metal": "m", "fairy": "y",
+}
 
 
 @dataclass
@@ -102,7 +110,7 @@ class Product:
     name: str
     norm_name: str
     norm_number: str
-    has_qualifier: bool
+    qualifiers: int
 
 
 def _fold(value: str) -> str:
@@ -127,9 +135,24 @@ def group_name_keys(name: str) -> set[str]:
 
 def norm_card_name(value: str) -> str:
     s = _fold(value or "").replace("★", " star ").replace("δ", " ")
-    s = re.sub(r"\(.*?\)", " ", s)
+    s = re.sub(r"\(.*?\)|\[.*?\]", " ", s)
     s = re.sub(r"\s+-\s+.*$", "", s)
-    return re.sub(r"[^a-z0-9]", "", s.lower())
+    s = s.lower().strip()
+    s = re.sub(r"^basic\s+(?=\w+\s+energy\b)", "", s)  # "Basic Fire Energy"
+    s = re.sub(r"\be4\b", "4", s)  # Rising Rivals "Drapion E4"
+    s = re.sub(r"['’]s\b", "", s)  # "Team Aqua's" vs "Team Aqua"
+    m = re.match(r"^(unit|blend) energy\s+(.+)$", s)  # "Unit Energy GrassFireWater" = "GRW"
+    if m:
+        s = f"{m.group(1)} energy " + _ENERGY_LETTER_RE.sub(
+            lambda t: _ENERGY_LETTERS[t.group(0)], m.group(2)
+        )
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def qualifier_count(name: str) -> int:
+    """Variant labels on a product name: (Prerelease), [Staff], " - Worlds" …"""
+    s = _NUMBER_SUFFIX_RE.sub("", name or "", count=1)
+    return len(re.findall(r"[(\[]", s)) + (1 if " - " in s else 0)
 
 
 def norm_number(value: str) -> str:
@@ -176,8 +199,6 @@ def _product_from_json(item: dict[str, Any], group_id: int) -> Product | None:
         if isinstance(ext, dict) and ext.get("name") == "Number":
             number = str(ext.get("value") or "")
             break
-    if not number:
-        return None
     name = str(item.get("name") or "")
     return Product(
         product_id=str(pid),
@@ -185,7 +206,7 @@ def _product_from_json(item: dict[str, Any], group_id: int) -> Product | None:
         name=name,
         norm_name=norm_card_name(name),
         norm_number=norm_number(number),
-        has_qualifier="(" in name or " - " in name,
+        qualifiers=qualifier_count(name),
     )
 
 
@@ -275,15 +296,15 @@ def match_card(
             for p in by_group_number.get((gid, num), [])
             if p.product_id not in taken
         ]
+    pool = [p for p in pool if p.norm_name]
     exact = [p for p in pool if p.norm_name == name]
     if not exact and by_group is None:
         exact = [
             p for p in pool if p.norm_name.startswith(name) or name.startswith(p.norm_name)
         ]
     if len(exact) > 1:
-        plain = [p for p in exact if not p.has_qualifier]
-        if plain:
-            exact = plain
+        fewest = min(p.qualifiers for p in exact)
+        exact = [p for p in exact if p.qualifiers == fewest]
     ids = {p.product_id for p in exact}
     return next(iter(ids)) if len(ids) == 1 else None
 

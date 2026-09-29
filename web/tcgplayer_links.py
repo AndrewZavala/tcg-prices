@@ -47,7 +47,8 @@ def tcgplayer_product_url(product_id: str | None, *, foil: bool = False) -> str:
 
 
 def tcgplayer_pokemon_search_url(name: str, set_name: str, local_id: str) -> str:
-    q = " ".join(part for part in (name, set_name, f"#{local_id}") if part)
+    # TCGplayer's set names rarely match TCGdex's, and extra words zero out the search.
+    q = name or " ".join(part for part in (set_name, local_id) if part)
     return (
         "https://www.tcgplayer.com/search/pokemon/product?"
         + urlencode({"q": q, "productLineName": "pokemon"})

@@ -151,7 +151,13 @@ DROP_NAMELESS_ATTACKS: frozenset[str] = frozenset({"sm12-210"})
 # Celebrations: Classic Collection (tcgcsv group 2931) numbers cards by their original
 # printing, and TCGdex points CC020/CC021 at main Celebrations Reshiram/Zekrom.
 # 30th Classic Collection (group 24837): LEGEND halves share a name; TCGdex drops "LV.X".
+# The rest are TCGplayer names that differ from the card ("Drowsee", "Delta Rainbow Energy",
+# "Fairy Charm O").
 TCGPLAYER_PRODUCT_ID_BY_ID: dict[str, str] = {
+    "ex6-32": "84973",
+    "ex13-98": "84754",
+    "ex15-88": "84755",
+    "sm8-177": "179006",
     "30th-c-019": "716199",
     "30th-c-020": "716200",
     "30th-c-022": "716203",

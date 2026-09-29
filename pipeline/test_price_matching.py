@@ -18,6 +18,7 @@ from refresh_pokemon_prices import (  # noqa: E402
     norm_card_name,
     norm_number,
     norm_set_name,
+    qualifier_count,
 )
 
 
@@ -28,7 +29,7 @@ def _product(pid: str, gid: int, name: str, number: str) -> Product:
         name=name,
         norm_name=norm_card_name(name),
         norm_number=norm_number(number),
-        has_qualifier="(" in name or " - " in name,
+        qualifiers=qualifier_count(name),
     )
 
 
@@ -52,6 +53,25 @@ def test_norm_card_name() -> None:
     assert norm_card_name("Mew Star (Delta Species)") == norm_card_name("Mew ★ δ")
     assert norm_card_name("Volcanion - XY185") == "volcanion"
     assert norm_card_name("Pokemon Catcher") == norm_card_name("Pokémon Catcher")
+    assert norm_card_name("Basic Lightning Energy - 012") == norm_card_name("Lightning Energy")
+    assert norm_card_name("Drapion E4") == norm_card_name("Drapion 4")
+    assert norm_card_name("Team Aqua Technical Machine 01") == norm_card_name(
+        "Team Aqua's Technical Machine 01"
+    )
+    assert norm_card_name("Unit Energy GRW") == norm_card_name("Unit Energy GrassFireWater")
+    assert norm_card_name("Blend Energy WLFM") == norm_card_name(
+        "Blend Energy Water Lightning Fighting Metal"
+    )
+    assert norm_card_name(
+        "Professor's Research [Professor Willow] - SWSH178"
+    ) == norm_card_name("Professor's Research")
+
+
+def test_qualifier_count_ignores_number_suffix() -> None:
+    assert qualifier_count("Delphox - 074") == 0
+    assert qualifier_count("Delphox - 074 [Staff]") == 1
+    assert qualifier_count("Baxcalibur - 019 (Prerelease) [Staff]") == 2
+    assert qualifier_count("Pikachu - Worlds") == 1
 
 
 def test_group_name_keys_strip_prefixes() -> None:
@@ -84,6 +104,23 @@ def test_match_card_prefers_plain_name_when_ambiguous() -> None:
         ]
     )
     assert match_card({"name": "Pikachu", "local_id": "58"}, {10}, idx, set()) == "1"
+
+
+def test_match_card_prefers_fewest_variant_labels() -> None:
+    idx = _index(
+        [
+            _product("1", 24451, "Delphox - 074", "074"),
+            _product("2", 24451, "Delphox - 074 [Staff]", "074"),
+            _product("3", 22872, "Baxcalibur - 019 (Prerelease)", "019"),
+            _product("4", 22872, "Baxcalibur - 019 (Prerelease) [Staff]", "019"),
+            _product("5", 22872, "Scraggy - BW25 (Cosmos Holo)", "BW25"),
+            _product("6", 22872, "Scraggy - BW25 (Cracked Ice Holo)", "BW25"),
+        ]
+    )
+    assert match_card({"name": "Delphox", "local_id": "074"}, {24451}, idx, set()) == "1"
+    assert match_card({"name": "Baxcalibur", "local_id": "019"}, {22872}, idx, set()) == "3"
+    # Equal labels are a real tie — leave unmatched.
+    assert match_card({"name": "Scraggy", "local_id": "BW25"}, {22872}, idx, set()) is None
 
 
 def test_match_card_skips_ambiguous_and_taken() -> None:
