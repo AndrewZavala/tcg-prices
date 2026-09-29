@@ -346,13 +346,14 @@ SortDir = Literal["asc", "desc"]
 
 SORT_DEFAULT_DIR: dict[str, SortDir] = {
     "name": "asc",
-    "set": "asc",
+    "set": "desc",
     "dex": "asc",
     "type": "asc",
     "supertype": "asc",
     "hp": "desc",
     "price": "desc",
 }
+DEFAULT_SORT = "set"
 
 # Pre-direction sort keys still accepted from old links.
 LEGACY_SORTS: dict[str, tuple[str, SortDir]] = {
@@ -384,14 +385,14 @@ SHUFFLE_SORT_SQL = "md5(c.id || CAST(:shuffle_seed AS text)) ASC, c.id ASC"
 
 
 def resolve_sort(sort: str | None, direction: str | None) -> tuple[str, SortDir]:
-    key = (sort or "name").strip().lower()
+    key = (sort or DEFAULT_SORT).strip().lower()
     if key == "random":
         key = "shuffle"
     legacy_dir: SortDir | None = None
     if key in LEGACY_SORTS:
         key, legacy_dir = LEGACY_SORTS[key]
     if key != "shuffle" and key not in SORT_DEFAULT_DIR:
-        key = "name"
+        key = DEFAULT_SORT
     d = (direction or "").strip().lower()
     if d not in ("asc", "desc"):
         d = legacy_dir or SORT_DEFAULT_DIR.get(key, "asc")
@@ -1653,13 +1654,13 @@ def search_pokemon_cards(
     ),
     unique: UniqueMode = Query("cards", description="pokemon | cards | prints | art"),
     sort: str = Query(
-        "name",
-        description="name | set | dex | type | hp | price | shuffle",
+        DEFAULT_SORT,
+        description="name | set | dex | type | supertype | hp | price | shuffle",
     ),
     direction: str | None = Query(
         None,
         alias="dir",
-        description="asc | desc (defaults: hp and price high first, others ascending)",
+        description="asc | desc (defaults: set, hp and price descending, others ascending)",
     ),
     seed: str | None = Query(
         None,

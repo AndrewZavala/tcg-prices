@@ -41,7 +41,7 @@
   }
 
   function setRowHtml(s) {
-    const href = `/?q=${encodeURIComponent(`set:${s.id}`)}&unique=art&sort=set`;
+    const href = `/?q=${encodeURIComponent(`set:${s.id}`)}&unique=art&sort=set&dir=asc`;
     const count = s.loaded_cards === 1 ? "1 card" : `${s.loaded_cards} cards`;
     return `
       <li>

@@ -58,7 +58,9 @@ def test_price_sorts_put_unpriced_last() -> None:
 
 
 def test_resolve_sort_defaults_and_legacy_keys() -> None:
-    assert resolve_sort(None, None) == ("name", "asc")
+    assert resolve_sort(None, None) == ("set", "desc")
+    assert resolve_sort("set", None) == ("set", "desc")
+    assert resolve_sort("name", None) == ("name", "asc")
     assert resolve_sort("price", None) == ("price", "desc")
     assert resolve_sort("hp", "asc") == ("hp", "asc")
     assert resolve_sort("set", "desc") == ("set", "desc")
@@ -67,7 +69,7 @@ def test_resolve_sort_defaults_and_legacy_keys() -> None:
     assert resolve_sort("hp_desc", None) == ("hp", "desc")
     assert resolve_sort("price_desc", "asc") == ("price", "asc")
     assert resolve_sort("random", None)[0] == "shuffle"
-    assert resolve_sort("bogus", "sideways") == ("name", "asc")
+    assert resolve_sort("bogus", "sideways") == ("set", "desc")
 
 
 def test_sort_direction_flips_primary_columns() -> None:

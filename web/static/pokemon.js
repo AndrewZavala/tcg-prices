@@ -21,13 +21,14 @@
   const sortDirBtn = document.getElementById("sortDir");
   const pageSizeEl = document.getElementById("pageSize");
   let shuffleSeed = "";
-  const SORT_DEFAULT_DIR = { hp: "desc", price: "desc" };
+  const SORT_DEFAULT_DIR = { set: "desc", hp: "desc", price: "desc" };
+  const DEFAULT_SORT = "set";
   const LEGACY_SORTS = {
     hp_desc: ["hp", "desc"],
     price_desc: ["price", "desc"],
     price_asc: ["price", "asc"],
   };
-  let sortDir = "asc";
+  let sortDir = SORT_DEFAULT_DIR[DEFAULT_SORT];
 
   function defaultSortDir(sort) {
     return SORT_DEFAULT_DIR[sort] || "asc";
@@ -1761,7 +1762,7 @@
     const params = new URLSearchParams();
     if (qEl.value.trim()) params.set("q", qEl.value.trim());
     if (unique && unique !== "cards") params.set("unique", unique);
-    if (sortEl.value && sortEl.value !== "name") params.set("sort", sortEl.value);
+    if (sortEl.value && sortEl.value !== DEFAULT_SORT) params.set("sort", sortEl.value);
     if (sortDirBtn && sortEl.value !== "shuffle" && sortDir !== defaultSortDir(sortEl.value)) {
       params.set("dir", sortDir);
     }
@@ -1813,7 +1814,9 @@
         sortVal = key;
         if (urlDir !== "asc" && urlDir !== "desc") urlDir = legacyDir;
       }
-      if (hasSortOption(sortVal)) sortEl.value = sortVal;
+      sortEl.value = hasSortOption(sortVal) ? sortVal : DEFAULT_SORT;
+    } else {
+      sortEl.value = DEFAULT_SORT;
     }
     sortDir = urlDir === "asc" || urlDir === "desc" ? urlDir : defaultSortDir(sortEl.value);
     syncSortDirButton();
