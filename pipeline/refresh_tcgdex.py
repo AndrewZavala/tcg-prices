@@ -59,6 +59,8 @@ ME_BLOCK_SET_IDS = (
     "me03",   # Perfect Order
     "me04",   # Chaos Rising
     "me05",   # Pitch Black
+    "30th",   # 30th Celebration
+    "30th-c", # 30th Classic Collection
 )
 
 # Scarlet & Violet era (TCGdex series sv — includes promos, energy, Black Bolt / White Flare)
@@ -531,7 +533,7 @@ def upsert_card(conn, card: dict[str, Any]) -> None:
                 regulation_mark = EXCLUDED.regulation_mark,
                 legal_standard = EXCLUDED.legal_standard,
                 legal_expanded = EXCLUDED.legal_expanded,
-                image_url = EXCLUDED.image_url,
+                image_url = COALESCE(EXCLUDED.image_url, pokemon_cards.image_url),
                 retreat = EXCLUDED.retreat,
                 attacks = EXCLUDED.attacks,
                 abilities = EXCLUDED.abilities,

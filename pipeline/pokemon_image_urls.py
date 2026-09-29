@@ -100,7 +100,8 @@ def pokemontcg_image_urls(card_id: str | None, local_id: str | None = None) -> l
     """Candidate pokemontcg.io URLs (standard then hires)."""
     if not card_id or "-" not in card_id:
         return []
-    set_part, local = card_id.split("-", 1)
+    # Set ids can contain hyphens (tk-ex-latia, 30th-c); collector numbers never do.
+    set_part, local = card_id.rsplit("-", 1)
     if local_id:
         local = str(local_id)
     set_key = set_part.lower()
@@ -133,7 +134,7 @@ def pokemon_com_image_urls(card_id: str | None, local_id: str | None = None) -> 
     """Candidate assets.pokemon.com URLs (best for missing promo art)."""
     if not card_id or "-" not in card_id:
         return []
-    set_part, local = card_id.split("-", 1)
+    set_part, local = card_id.rsplit("-", 1)
     if local_id:
         local = str(local_id)
     code = POKEMON_COM_PROMO_CODES.get(set_part.lower())

@@ -518,7 +518,8 @@ def _pokemontcg_image_fallback(card_id: str | None, local_id: str | None = None)
     """Best-effort CDN URL when TCGdex has no art. May 404 for very new promos."""
     if not card_id or "-" not in card_id:
         return None
-    set_part, local = card_id.split("-", 1)
+    # Set ids can contain hyphens (tk-ex-latia, 30th-c); collector numbers never do.
+    set_part, local = card_id.rsplit("-", 1)
     if local_id:
         local = str(local_id)
     set_key = set_part.lower()
@@ -552,7 +553,7 @@ def _pokemon_com_image_fallback(card_id: str | None, local_id: str | None = None
     """Official pokemon.com art — fills gaps like SWSH301 where TCGdex/pokemontcg lack files."""
     if not card_id or "-" not in card_id:
         return None
-    set_part, local = card_id.split("-", 1)
+    set_part, local = card_id.rsplit("-", 1)
     if local_id:
         local = str(local_id)
     code = _POKEMON_COM_PROMO_CODES.get(set_part.lower())

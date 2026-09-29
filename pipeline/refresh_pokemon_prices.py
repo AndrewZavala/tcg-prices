@@ -77,7 +77,19 @@ GROUP_ALIASES: dict[str, tuple[int, ...]] = {
     "tk-sm-l": (2069,),
     "tk-sm-r": (2069,),
     "cel25cc": (2931,),
+    "30th-c": (24837,),
 }
+
+# Classic Collections: TCGplayer numbers each reprint by its original printing (Charizard 4/102),
+# so match on the card name alone. Names are unique within these sets.
+NAME_ONLY_SETS = frozenset({"30th-c"})
+
+# Promo sets whose missing art falls back to official pokemon.com scans instead.
+POKEMON_COM_ART_SETS = frozenset({"swshp", "smp", "svp", "xyp", "bwp", "mep", "hgssp", "dpp", "np"})
+
+
+def tcgplayer_image_url(product_id: str) -> str:
+    return f"https://tcgplayer-cdn.tcgplayer.com/product/{product_id}_in_1000x1000.jpg"
 
 _GROUP_PREFIX_RE = re.compile(r"^[A-Za-z0-9]+(?:\s*:\s*TG)?\s*(?::|\s-)\s*")
 _NUMBER_RE = re.compile(r"^([a-z]*)0*(\d+)([a-z]*)$")
@@ -243,20 +255,28 @@ def match_card(
     groups: set[int],
     by_group_number: dict[tuple[int, str], list[Product]],
     taken: set[str],
+    *,
+    by_group: dict[int, list[Product]] | None = None,
 ) -> str | None:
-    """Unique product for a card by number + name within its candidate groups."""
+    """Unique product for a card by number + name within its candidate groups.
+
+    With ``by_group``, ignore numbers and require an exact name match.
+    """
     num = norm_number(card.get("local_id") or "")
     name = norm_card_name(card.get("name") or "")
-    if not num or not name:
+    if not name or (not num and by_group is None):
         return None
-    pool = [
-        p
-        for gid in groups
-        for p in by_group_number.get((gid, num), [])
-        if p.product_id not in taken
-    ]
+    if by_group is not None:
+        pool = [p for gid in groups for p in by_group.get(gid, []) if p.product_id not in taken]
+    else:
+        pool = [
+            p
+            for gid in groups
+            for p in by_group_number.get((gid, num), [])
+            if p.product_id not in taken
+        ]
     exact = [p for p in pool if p.norm_name == name]
-    if not exact:
+    if not exact and by_group is None:
         exact = [
             p for p in pool if p.norm_name.startswith(name) or name.startswith(p.norm_name)
         ]
@@ -287,8 +307,10 @@ def fill_missing_product_ids(
 
     group_keys = {int(g["groupId"]): group_name_keys(str(g.get("name") or "")) for g in groups}
     by_group_number: dict[tuple[int, str], list[Product]] = defaultdict(list)
+    by_group: dict[int, list[Product]] = defaultdict(list)
     for p in products:
         by_group_number[(p.group_id, p.norm_number)].append(p)
+        by_group[p.group_id].append(p)
 
     matched: dict[str, str] = {}
     for c in cards:
@@ -299,7 +321,13 @@ def fill_missing_product_ids(
         )
         if not cand:
             continue
-        pid = match_card(c, cand, by_group_number, taken)
+        pid = match_card(
+            c,
+            cand,
+            by_group_number,
+            taken,
+            by_group=by_group if c["set_id"] in NAME_ONLY_SETS else None,
+        )
         if pid:
             matched[c["id"]] = pid
             taken.add(pid)
@@ -342,6 +370,35 @@ def apply_product_id_corrections(cards: list[dict[str, Any]]) -> dict[str, str]:
             c["tcgplayer_product_id"] = pid
             corrected[c["id"]] = pid
     return corrected
+
+
+def missing_image_urls(
+    cards: list[dict[str, Any]], card_products: dict[str, str]
+) -> dict[str, str]:
+    """card_id -> TCGplayer art for printings with no image and no other fallback source."""
+    return {
+        c["id"]: tcgplayer_image_url(card_products[c["id"]])
+        for c in cards
+        if c["id"] in card_products
+        and not c.get("image_url")
+        and not c.get("image_local")
+        and c["set_id"] not in POKEMON_COM_ART_SETS
+    }
+
+
+def write_images(engine, images: dict[str, str]) -> None:
+    if not images:
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE pokemon_cards SET image_url = :url
+                WHERE id = :id AND COALESCE(image_url, '') = ''
+                """
+            ),
+            [{"id": cid, "url": url} for cid, url in images.items()],
+        )
 
 
 def write_prices(
@@ -447,7 +504,9 @@ def main() -> int:
                 text(
                     """
                     SELECT c.id, c.set_id, s.name AS set_name, c.local_id, c.name,
-                           NULLIF(c.tcgplayer_product_id, '') AS tcgplayer_product_id
+                           NULLIF(c.tcgplayer_product_id, '') AS tcgplayer_product_id,
+                           NULLIF(c.image_url, '') AS image_url,
+                           COALESCE(c.image_local, FALSE) AS image_local
                     FROM pokemon_cards c
                     INNER JOIN pokemon_sets s ON s.id = c.set_id
                     """
@@ -486,6 +545,8 @@ def main() -> int:
         c["id"]: c["tcgplayer_product_id"] for c in cards if c.get("tcgplayer_product_id")
     }
     card_products.update(matched)
+    images = missing_image_urls(cards, card_products)
+    print(f"Missing card images to fill from TCGplayer: {len(images):,}")
     rows = build_price_rows(card_products, prices)
     priced_cards = len({r["card_id"] for r in rows})
     print(f"Price rows: {len(rows):,} across {priced_cards:,} printings")
@@ -503,6 +564,7 @@ def main() -> int:
 
     card_ids = [c["id"] for c in cards] if args.sets else None
     write_prices(engine, matched, rows, corrected, card_ids)
+    write_images(engine, images)
     print("Prices updated.")
     return 0
 

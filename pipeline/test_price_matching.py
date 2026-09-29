@@ -12,6 +12,7 @@ from refresh_pokemon_prices import (  # noqa: E402
     Product,
     apply_product_id_corrections,
     build_price_rows,
+    missing_image_urls,
     group_name_keys,
     match_card,
     norm_card_name,
@@ -94,6 +95,34 @@ def test_match_card_skips_ambiguous_and_taken() -> None:
     )
     assert match_card({"name": "Darkness Energy", "local_id": "28"}, {10}, idx, set()) is None
     assert match_card({"name": "Darkness Energy", "local_id": "28"}, {10}, idx, {"2"}) == "1"
+
+
+def test_match_card_name_only_ignores_reprint_numbers() -> None:
+    products = [
+        _product("1", 24837, "Charizard", "4/102"),
+        _product("2", 24837, "Pikachu & Zekrom GX", "33/181"),
+        _product("3", 24837, "Metagross (Delta Species)", "11/113"),
+    ]
+    by_group = {24837: products}
+    idx = _index(products)
+    assert match_card({"name": "Charizard", "local_id": "001"}, {24837}, idx, set(), by_group=by_group) == "1"
+    assert match_card({"name": "Metagross", "local_id": "003"}, {24837}, idx, set(), by_group=by_group) == "3"
+    # Name-only never falls back to prefix matches.
+    assert match_card({"name": "Pikachu", "local_id": "009"}, {24837}, idx, set(), by_group=by_group) is None
+    assert match_card({"name": "Charizard", "local_id": "001"}, {24837}, idx, set()) is None
+
+
+def test_missing_image_urls_skips_cards_with_art_and_promo_sets() -> None:
+    cards = [
+        {"id": "30th-c-001", "set_id": "30th-c", "image_url": None, "image_local": False},
+        {"id": "30th-001", "set_id": "30th", "image_url": "https://assets/x", "image_local": False},
+        {"id": "mep-001", "set_id": "mep", "image_url": None, "image_local": False},
+        {"id": "exu-1", "set_id": "exu", "image_url": None, "image_local": True},
+    ]
+    products = {c["id"]: "714372" for c in cards}
+    assert missing_image_urls(cards, products) == {
+        "30th-c-001": "https://tcgplayer-cdn.tcgplayer.com/product/714372_in_1000x1000.jpg"
+    }
 
 
 def test_cel25cc_product_ids_are_corrected() -> None:

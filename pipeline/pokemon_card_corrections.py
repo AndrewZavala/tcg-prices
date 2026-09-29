@@ -147,10 +147,14 @@ STAGE_BY_ID: dict[str, str] = {
 # Drop attack rows that have a cost but no name (TCGdex stubs).
 DROP_NAMELESS_ATTACKS: frozenset[str] = frozenset({"sm12-210"})
 
-# card_id → TCGplayer product id. Celebrations: Classic Collection (tcgcsv group 2931)
-# numbers cards by their original printing, so name+number matching can't find them,
-# and TCGdex points CC020/CC021 at main Celebrations Reshiram/Zekrom.
+# card_id → TCGplayer product id where automatic matching can't work.
+# Celebrations: Classic Collection (tcgcsv group 2931) numbers cards by their original
+# printing, and TCGdex points CC020/CC021 at main Celebrations Reshiram/Zekrom.
+# 30th Classic Collection (group 24837): LEGEND halves share a name; TCGdex drops "LV.X".
 TCGPLAYER_PRODUCT_ID_BY_ID: dict[str, str] = {
+    "30th-c-019": "716199",
+    "30th-c-020": "716200",
+    "30th-c-022": "716203",
     "cel25cc-CC001": "250319",
     "cel25cc-CC002": "250320",
     "cel25cc-CC003": "250321",
