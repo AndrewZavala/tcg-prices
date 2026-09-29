@@ -7,6 +7,7 @@ import re
 from urllib.parse import quote, urlencode
 
 TCGPLAYER_PROGRAM_ID = "21018"
+DEFAULT_PARTNER_LINK = "https://partner.tcgplayer.com/c/7646857/1780961/21018"
 _PARTNER_LINK_RE = re.compile(
     r"^https://partner\.tcgplayer\.com/c/(\d+)/(\d+)/(\d+)",
     re.I,
@@ -20,8 +21,8 @@ def _env(name: str) -> str:
 def partner_link_base() -> str | None:
     """Impact tracking-link base (no ``?u=`` yet).
 
-    Set ``TCGPLAYER_PARTNER_LINK`` to the full API link from Impact, or
-    ``TCGPLAYER_PARTNER_ID`` + ``TCGPLAYER_AD_ID`` (program id defaults to 21018).
+    ``TCGPLAYER_PARTNER_LINK`` or ``TCGPLAYER_PARTNER_ID`` + ``TCGPLAYER_AD_ID``
+    override the built-in Spell Tag link (program id defaults to 21018).
     """
     link = _env("TCGPLAYER_PARTNER_LINK")
     if link:
@@ -32,7 +33,7 @@ def partner_link_base() -> str | None:
     ad = _env("TCGPLAYER_AD_ID")
     if partner and ad:
         return f"https://partner.tcgplayer.com/c/{partner}/{ad}/{TCGPLAYER_PROGRAM_ID}"
-    return None
+    return DEFAULT_PARTNER_LINK
 
 
 def tcgplayer_product_url(product_id: str | None, *, foil: bool = False) -> str:
