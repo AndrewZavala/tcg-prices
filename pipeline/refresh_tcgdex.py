@@ -59,9 +59,13 @@ ME_BLOCK_SET_IDS = (
     "me03",   # Perfect Order
     "me04",   # Chaos Rising
     "me05",   # Pitch Black
-    "30th",   # 30th Celebration
-    "30th-c", # 30th Classic Collection
 )
+
+# TCGdex files these under Mega Evolution; Spell Tag lists them as their own series.
+SERIES_OVERRIDES: dict[str, tuple[str, str]] = {
+    "30th": ("30th", "30th Anniversary"),    # 30th Celebration
+    "30th-c": ("30th", "30th Anniversary"),  # 30th Classic Collection
+}
 
 # Scarlet & Violet era (TCGdex series sv — includes promos, energy, Black Bolt / White Flare)
 SV_BLOCK_SET_IDS = (
@@ -403,6 +407,9 @@ def fetch_card(session: requests.Session, lang: str, card_id: str) -> dict[str, 
 
 def upsert_set(conn, set_obj: dict[str, Any]) -> None:
     serie = set_obj.get("serie") or {}
+    override = SERIES_OVERRIDES.get(str(set_obj.get("id") or "").lower())
+    if override:
+        serie = {"id": override[0], "name": override[1]}
     legal = set_obj.get("legal") or {}
     counts = set_obj.get("cardCount") or {}
     tcg_online = set_obj.get("tcgOnline")

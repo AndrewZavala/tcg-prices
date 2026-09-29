@@ -1171,7 +1171,7 @@ def _sql_prize_three() -> str:
             'mega' = ANY(COALESCE(c.tags, ARRAY[]::text[]))
             OR c.name ILIKE 'Mega %'
           )
-          AND (s.series_id LIKE 'me%' OR c.set_id LIKE 'me%')
+          AND (s.series_id LIKE 'me%' OR s.series_id = '30th' OR c.set_id LIKE 'me%')
         )
       )
     )"""

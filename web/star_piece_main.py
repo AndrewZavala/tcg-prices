@@ -81,6 +81,7 @@ POKEMON_MIGRATIONS = (
     "051_fix_cel25cc_images.sql",
     "052_discord_login.sql",
     "053_fill_trainer_subtype_tags.sql",
+    "054_30th_anniversary_series.sql",
 )
 
 
