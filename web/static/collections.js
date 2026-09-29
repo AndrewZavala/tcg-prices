@@ -1075,7 +1075,7 @@
       } else {
         countEl.textContent = `${total} card${total === 1 ? "" : "s"}${valueText}`;
       }
-      countEl.title = value > 0 ? "TCGplayer market value (cheapest variant), refreshed monthly" : "";
+      countEl.title = value > 0 ? "TCGplayer market value (cheapest variant), refreshed weekly" : "";
     }
 
     if (visibleTotal) {

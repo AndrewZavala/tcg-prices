@@ -233,7 +233,7 @@
           </thead>
           <tbody>${body}</tbody>
         </table>
-        <p class="sp-hint sp-price-note">USD, refreshed monthly${updated}</p>
+        <p class="sp-hint sp-price-note">USD, refreshed weekly${updated}</p>
       </div>`;
   }
 

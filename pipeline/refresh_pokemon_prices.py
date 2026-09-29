@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refresh latest TCGplayer USD prices for Spell Tag from tcgcsv.com (English Pokémon, category 3).
 
-Runs monthly. ~1 groups request + 220 prices requests + 220 products requests.
+Runs weekly. ~1 groups request + 220 prices requests + 220 products requests.
 Products are used to fill in missing pokemon_cards.tcgplayer_product_id by set + number + name.
 
 Examples:

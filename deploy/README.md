@@ -229,7 +229,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
 Confirm in DevTools Network that grid images are same-origin `/media/cards/...` (not `assets.tcgdex.net`).
 Watch disk: `df -h`.
 
-### Monthly TCGplayer prices
+### Weekly TCGplayer prices
 
 `pipeline/refresh_pokemon_prices.py` pulls English Pokémon TCGplayer prices (USD) from
 [tcgcsv.com](https://tcgcsv.com) — ~441 requests, ~2 minutes. It fills missing
@@ -274,16 +274,17 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml exec star
   psql -U starpiece -d star_piece -c "INSERT INTO pokemon_standard_rotations VALUES ('2027-04-09', 'I');"
 ```
 
-### Monthly schedule
+### Schedule
 
-Schedule both on the host (1st of each month, 09:00 server time). `deploy/monthly-prices.sh`
-runs prices, then decklist flags, and skips dates listed in `SPELLTAG_PRICE_SKIP_DATES`
-(default `2026-10-01`):
+`deploy/scheduled-refresh.sh prices` refreshes prices (every Monday, 09:00 server time);
+`deploy/scheduled-refresh.sh decklists` rechecks decklist flags (1st of each month, 09:30).
+Both skip dates listed in `SPELLTAG_PRICE_SKIP_DATES` (default `2026-10-01`):
 
 ```bash
 crontab -e
 # add:
-0 9 1 * * bash /opt/spelltag/deploy/monthly-prices.sh >> /var/log/spelltag-prices.log 2>&1
+0 9 * * 1  bash /opt/spelltag/deploy/scheduled-refresh.sh prices    >> /var/log/spelltag-prices.log 2>&1
+30 9 1 * * bash /opt/spelltag/deploy/scheduled-refresh.sh decklists >> /var/log/spelltag-prices.log 2>&1
 ```
 
 ### Contact messages
