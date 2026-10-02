@@ -287,6 +287,33 @@ crontab -e
 30 9 1 * * bash /opt/spelltag/deploy/scheduled-refresh.sh decklists >> /var/log/spelltag-prices.log 2>&1
 ```
 
+### Spell Tag backups
+
+User accounts, collections, oracle/art tags, and contact messages exist only in the Spell Tag
+database — nothing else can rebuild them. `deploy/backup-spelltag.sh` dumps `star-piece-db` to
+`deploy/backups/spelltag_YYYYMMDD_HHMMSS.dump` and keeps the last 14 (not committed to git):
+
+```bash
+crontab -e
+# add (nightly, 10:00 server time — after the 09:00 price refresh):
+0 10 * * * bash /opt/spelltag/deploy/backup-spelltag.sh >> /var/log/spelltag-backup.log 2>&1
+```
+
+Copy the newest dump to your PC now and then, so losing the VPS doesn't lose the backups too:
+
+```powershell
+powershell -File deploy/pull-spelltag-backup.ps1
+```
+
+Restore (replaces current data — the site keeps running, but stop editing first):
+
+```bash
+cd /opt/spelltag
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml exec -T star-piece-db \
+  sh -c 'pg_restore --clean --if-exists --no-owner -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < deploy/backups/spelltag_YYYYMMDD_HHMMSS.dump
+```
+
 ### Contact messages
 
 The `/contact` form (bug reports, tagger account requests) saves to
