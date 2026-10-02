@@ -6,7 +6,10 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-$remote = (ssh $VpsHost "ls -t /opt/spelltag/deploy/backups/spelltag_*.dump 2>/dev/null | head -n 1").Trim()
+$remote = "$(ssh $VpsHost "ls -t /opt/spelltag/deploy/backups/spelltag_*.dump 2>/dev/null | head -n 1")".Trim()
+if ($LASTEXITCODE -ne 0) {
+    throw "Couldn't connect to $VpsHost - check that 'ssh $VpsHost' works on its own first."
+}
 if (-not $remote) {
     throw "No spelltag_*.dump found on $VpsHost - has deploy/backup-spelltag.sh run yet?"
 }
