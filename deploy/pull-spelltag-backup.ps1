@@ -16,8 +16,8 @@ if (-not $remote) {
 
 $dest = Join-Path $PSScriptRoot "backups"
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
-scp "${VpsHost}:$remote" "$dest\"
+$local = Join-Path $dest (Split-Path $remote -Leaf)
+scp "${VpsHost}:$remote" $local
 if ($LASTEXITCODE -ne 0) { throw "scp failed" }
 
-$local = Join-Path $dest (Split-Path $remote -Leaf)
 Write-Host ("Saved {0} ({1:N1} MB)" -f $local, ((Get-Item $local).Length / 1MB))
