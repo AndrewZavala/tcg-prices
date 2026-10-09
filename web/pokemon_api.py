@@ -869,6 +869,8 @@ def _parse_search_query(
         "exclude_oracle_tags": [],
         "art_tags": [],
         "exclude_art_tags": [],
+        "artists": [],
+        "exclude_artists": [],
         "generation": None,
         "exclude_generation": None,
         "pokemon_special": None,
@@ -1078,6 +1080,11 @@ def _parse_search_query(
                     result["exclude_art_tags"].append(slug)
                 else:
                     result["art_tags"].append(slug)
+        elif prefix in ("a", "artist", "illustrator"):
+            artist = val[1:-1].replace('\\"', '"') if len(val) >= 2 and val[0] == val[-1] == '"' else val
+            artist = artist.strip()
+            if artist:
+                result["exclude_artists" if negated else "artists"].append(artist)
         elif prefix == "prize":
             if val_lower in ("1", "2", "3"):
                 n = int(val_lower)
@@ -1685,6 +1692,14 @@ def search_pokemon_cards(
         # Accent-insensitive: "pokemon" matches "Pokémon", etc.
         filters.append(f"{_sql_accent_fold('c.name')} LIKE :q")
         params["q"] = f"%{fold_accents(parsed['name_q']).lower()}%"
+    for idx, artist in enumerate(parsed["artists"]):
+        key = f"artist_{idx}"
+        filters.append(f"{_sql_accent_fold('c.illustrator')} LIKE :{key}")
+        params[key] = f"%{fold_accents(artist).lower()}%"
+    for idx, artist in enumerate(parsed["exclude_artists"]):
+        key = f"xartist_{idx}"
+        filters.append(f"COALESCE({_sql_accent_fold('c.illustrator')}, '') NOT LIKE :{key}")
+        params[key] = f"%{fold_accents(artist).lower()}%"
     explicit_tags = [t.strip().lower() for t in (tag or "").split(",") if t.strip()]
     all_tags = list(dict.fromkeys(parsed["tags"] + explicit_tags))
     for idx, t in enumerate(all_tags):

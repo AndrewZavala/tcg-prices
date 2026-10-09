@@ -18,6 +18,13 @@ from pokemon_api import (  # noqa: E402
 )
 
 
+def test_parse_artist_tokens() -> None:
+    parsed = _parse_search_query('pikachu a:"Mitsuhiro Arita" artist:sugimori -illustrator:5ban')
+    assert parsed["artists"] == ["Mitsuhiro Arita", "sugimori"]
+    assert parsed["exclude_artists"] == ["5ban"]
+    assert parsed["name_q"] == "pikachu"
+
+
 def test_parse_price_tokens() -> None:
     parsed = _parse_search_query("charizard usd>10 usd<=250.50")
     assert parsed["prices"] == [(">", 10.0), ("<=", 250.5)]

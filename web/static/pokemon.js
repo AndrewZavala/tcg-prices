@@ -1342,7 +1342,11 @@
           </h2>
           <p class="sp-detail-meta">
             ${esc(card.series_name || "—")} · ${esc(card.set_name)} · #${esc(card.local_id)} · ${esc(card.rarity || "—")}
-            · ${esc(card.illustrator || "Unknown artist")}
+            · ${
+              card.illustrator
+                ? `<button type="button" class="sp-linkish sp-artist-link" data-artist="${esc(card.illustrator)}" title="More cards by ${esc(card.illustrator)}">${esc(card.illustrator)}</button>`
+                : "Unknown artist"
+            }
           </p>
           ${card.evolve_from ? `<p class="sp-hint">Evolves from ${esc(card.evolve_from)}</p>` : ""}
           ${(card.abilities || []).length ? `<div class="sp-block sp-oracle-text-block"><h3>Abilities</h3>${card.abilities.map(abilityBlock).join("")}</div>` : ""}
@@ -1370,6 +1374,9 @@
     });
     modalBody.querySelectorAll(".sp-name-link").forEach((el) => {
       el.addEventListener("click", () => searchByName(el.dataset.name));
+    });
+    modalBody.querySelectorAll(".sp-artist-link").forEach((el) => {
+      el.addEventListener("click", () => searchByName(`a:"${el.dataset.artist.replace(/"/g, '\\"')}"`));
     });
     modalBody.querySelectorAll(".sp-subtype[data-tag]").forEach((el) => {
       el.addEventListener("click", () => searchByTag(el.dataset.tag));
