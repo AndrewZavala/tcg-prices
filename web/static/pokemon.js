@@ -117,7 +117,7 @@
   let addModeActive = false;
   let addCollectionMeta = null;
   let collectionItemIds = new Set();
-  let addSessionAdded = 0;
+  const addSessionIds = new Set();
   let addModeAuthed = false;
 
   function defaultCardZoom() {
@@ -189,7 +189,7 @@
     const cardCls = collected ? "sp-card is-collected" : "sp-card";
     const hint = addModeActive
       ? collected
-        ? "Already in collection"
+        ? "In collection — tap to remove"
         : "Add to collection"
       : label;
     const showPrice = isPriceSort();
@@ -1068,7 +1068,7 @@
     const countEl = banner.querySelector(".sp-add-banner-count");
     if (!countEl) return;
     const total = collectionItemIds.size;
-    const session = addSessionAdded;
+    const session = addSessionIds.size;
     countEl.textContent =
       session > 0
         ? `${total} in collection · +${session} added now`
@@ -1132,7 +1132,7 @@
         <span class="sp-add-banner-mode">Tap cards to add</span>
         <span class="sp-add-banner-count"></span>
       </div>
-      <p class="sp-hint sp-add-banner-hint">Same search as home — each tap saves that printing. Cards already saved show a checkmark.</p>`;
+      <p class="sp-hint sp-add-banner-hint">Same search as home — each tap saves that printing. Cards already saved show a checkmark; tap again to remove.</p>`;
 
     document.title = `Add to ${addCollectionMeta.name || "collection"} — Spell Tag`;
     const tagline = document.querySelector(".sp-tagline");
@@ -1140,15 +1140,52 @@
     updateAddBanner();
   }
 
-  async function addCardToCollection(cardId, el) {
+  async function toggleCardInCollection(cardId, el) {
     if (!addModeActive || !addModeAuthed || !addCollectionId || !cardId) return;
     if (el.classList.contains("is-adding")) return;
-
     if (collectionItemIds.has(cardId)) {
-      showAddToast("Already in collection");
+      await removeCardFromCollection(cardId, el);
+    } else {
+      await addCardToCollection(cardId, el);
+    }
+  }
+
+  async function removeCardFromCollection(cardId, el) {
+    // Cards saved before this visit may carry tags / a section that removal deletes.
+    if (
+      !addSessionIds.has(cardId) &&
+      !window.confirm("Remove this card from the collection? Its tags here will be removed too.")
+    ) {
       return;
     }
+    el.classList.add("is-adding");
+    try {
+      const resp = await fetch(
+        `/api/me/collections/${encodeURIComponent(addCollectionId)}/items/${encodeURIComponent(cardId)}`,
+        { method: "DELETE", credentials: "same-origin" }
+      );
+      if (resp.status === 401) {
+        showAddToast("Sign in to edit");
+        return;
+      }
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(typeof err.detail === "string" ? err.detail : "Could not remove");
+      }
+      collectionItemIds.delete(cardId);
+      addSessionIds.delete(cardId);
+      el.classList.remove("is-collected");
+      el.title = "Add to collection";
+      showAddToast("Removed");
+      updateAddBanner();
+    } catch (err) {
+      showAddToast(err.message || "Could not remove");
+    } finally {
+      el.classList.remove("is-adding");
+    }
+  }
 
+  async function addCardToCollection(cardId, el) {
     el.classList.add("is-adding");
     try {
       const resp = await fetch(
@@ -1169,15 +1206,13 @@
         throw new Error(typeof err.detail === "string" ? err.detail : "Could not add");
       }
       const data = await resp.json();
+      collectionItemIds.add(cardId);
+      el.classList.add("is-collected");
+      el.title = "In collection — tap to remove";
       if (data.added) {
-        collectionItemIds.add(cardId);
-        el.classList.add("is-collected");
-        el.title = "Already in collection";
-        addSessionAdded += 1;
+        addSessionIds.add(cardId);
         showAddToast("Added");
       } else {
-        collectionItemIds.add(cardId);
-        el.classList.add("is-collected");
         showAddToast("Already in collection");
       }
       updateAddBanner();
@@ -1191,7 +1226,7 @@
   function bindCardClicks() {
     gridEl.querySelectorAll(".sp-card").forEach((el) => {
       if (addModeActive) {
-        const add = () => addCardToCollection(el.dataset.id, el);
+        const add = () => toggleCardInCollection(el.dataset.id, el);
         el.addEventListener("click", add);
         el.addEventListener("keydown", (e) => {
           if (e.key === "Enter" || e.key === " ") {
