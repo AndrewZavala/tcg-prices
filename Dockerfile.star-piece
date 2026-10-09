@@ -12,6 +12,7 @@ COPY web/static/spell-tag.html \
      web/static/spelltag-auth.js \
      web/static/collections.html \
      web/static/collections.js \
+     web/static/binder.js \
      web/static/sets.html \
      web/static/sets.js \
      web/static/contact.html \
@@ -38,6 +39,7 @@ COPY migrations/025_pokemon_catalog.sql \
      migrations/034_card_local_images.sql \
      migrations/035_art_tags.sql \
      migrations/036_tag_hierarchy.sql \
+     migrations/055_collection_binder.sql \
      ./migrations/
 
 ENV PYTHONPATH=/app/web

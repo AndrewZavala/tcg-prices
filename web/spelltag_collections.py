@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -10,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 
 from spelltag_auth import PUBLIC_URL, current_user, require_user
 from pokemon_api import _image_url
@@ -59,6 +62,35 @@ class UpdateCollectionItemBucketBody(BaseModel):
 class UpdateCollectionBody(BaseModel):
     visibility: str | None = None
     share_slug: str | None = None
+
+
+BINDER_MAX_SLOT = 9999
+BINDER_AUTO_SNAPSHOT_KEEP = 15
+BINDER_NAMED_SNAPSHOT_LIMIT = 20
+_BINDER_SNAPSHOT_LABELS = {
+    "auto-daily": None,
+    "before-arrange": "Before arranging",
+    "before-restore": "Before restoring",
+}
+
+
+class BinderMove(BaseModel):
+    card_id: str = Field(min_length=1, max_length=64)
+    slot: int | None = Field(default=None, ge=0, le=BINDER_MAX_SLOT)
+    x: float | None = Field(default=None, ge=0, le=1)
+    y: float | None = Field(default=None, ge=0, le=1)
+    z: int | None = Field(default=None, ge=0, le=1_000_000_000)
+
+
+class BinderMovesBody(BaseModel):
+    moves: list[BinderMove] = Field(default_factory=list, max_length=10000)
+    snapshot: str | None = None
+    snapshot_label: str | None = Field(default=None, max_length=80)
+    tz_offset_minutes: int = Field(default=0, ge=-840, le=840)
+
+
+class BinderSnapshotBody(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
 
 
 _TAG_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -438,7 +470,8 @@ def _load_collection_cards(
                 pc.price_usd::float AS price_usd,
                 s.release_date::text AS release_date,
                 i.created_at::text AS saved_at,
-                COALESCE(i.bucket, 'main') AS bucket
+                COALESCE(i.bucket, 'main') AS bucket,
+                i.binder_slot, i.table_x, i.table_y, i.table_z
             FROM collection_items i
             INNER JOIN pokemon_cards pc ON pc.id = i.card_id
             INNER JOIN pokemon_sets s ON s.id = pc.set_id
@@ -720,7 +753,11 @@ def update_item_bucket(
             text(
                 """
                 UPDATE collection_items
-                SET bucket = :bucket
+                SET bucket = :bucket,
+                    binder_slot = CASE WHEN :bucket = 'main' THEN binder_slot END,
+                    table_x = CASE WHEN :bucket = 'main' THEN table_x END,
+                    table_y = CASE WHEN :bucket = 'main' THEN table_y END,
+                    table_z = CASE WHEN :bucket = 'main' THEN table_z END
                 WHERE collection_id = CAST(:cid AS uuid) AND card_id = :card_id
                 """
             ),
@@ -919,6 +956,381 @@ def remove_item(request: Request, collection_id: str, card_id: str):
             ),
             {"cid": collection_id, "card_id": card_id},
         )
+    return {"ok": True}
+
+
+def _validate_binder_moves(moves: list[BinderMove]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for move in moves:
+        card_id = move.card_id.strip()
+        if not card_id:
+            raise HTTPException(status_code=400, detail="card_id required")
+        if card_id in seen:
+            raise HTTPException(status_code=400, detail=f"Card {card_id} appears twice in one save")
+        seen.add(card_id)
+        on_table = move.x is not None or move.y is not None
+        if on_table and (move.x is None or move.y is None):
+            raise HTTPException(status_code=400, detail="Table positions need both x and y")
+        if on_table and move.slot is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="A card can't be in a pocket and on the table at once",
+            )
+        out.append(
+            {
+                "card_id": card_id,
+                "slot": move.slot,
+                "x": move.x if on_table else None,
+                "y": move.y if on_table else None,
+                "z": (move.z or 0) if on_table else None,
+            }
+        )
+    return out
+
+
+def _binder_card_ids(conn, collection_id: str) -> list[str]:
+    """Main-bucket cards in date-saved order (the order unplaced cards are filled in)."""
+    return list(
+        conn.execute(
+            text(
+                """
+                SELECT card_id FROM collection_items
+                WHERE collection_id = CAST(:cid AS uuid)
+                  AND COALESCE(bucket, 'main') = 'main'
+                ORDER BY created_at ASC, card_id ASC
+                """
+            ),
+            {"cid": collection_id},
+        ).scalars().all()
+    )
+
+
+def _binder_layout(conn, collection_id: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT card_id, binder_slot AS slot, table_x AS x, table_y AS y, table_z AS z
+            FROM collection_items
+            WHERE collection_id = CAST(:cid AS uuid)
+              AND COALESCE(bucket, 'main') = 'main'
+              AND (binder_slot IS NOT NULL OR table_x IS NOT NULL)
+            ORDER BY binder_slot ASC NULLS LAST, table_z ASC NULLS LAST, card_id ASC
+            """
+        ),
+        {"cid": collection_id},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def _write_binder_moves(conn, collection_id: str, moves: list[dict[str, Any]]) -> None:
+    if not moves:
+        return
+    ids = [m["card_id"] for m in moves]
+    present = set(
+        conn.execute(
+            text(
+                """
+                SELECT card_id FROM collection_items
+                WHERE collection_id = CAST(:cid AS uuid)
+                  AND card_id = ANY(:ids)
+                  AND COALESCE(bucket, 'main') = 'main'
+                """
+            ),
+            {"cid": collection_id, "ids": ids},
+        ).scalars().all()
+    )
+    missing = [cid for cid in ids if cid not in present]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not in this collection's binder: {', '.join(missing[:5])}",
+        )
+    try:
+        conn.execute(text("SET CONSTRAINTS collection_items_binder_slot_uq DEFERRED"))
+        conn.execute(
+            text(
+                """
+                UPDATE collection_items
+                SET binder_slot = :slot, table_x = :x, table_y = :y, table_z = :z
+                WHERE collection_id = CAST(:cid AS uuid) AND card_id = :card_id
+                """
+            ),
+            [{**m, "cid": collection_id} for m in moves],
+        )
+        conn.execute(text("SET CONSTRAINTS collection_items_binder_slot_uq IMMEDIATE"))
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Two cards ended up in the same pocket; reload the binder",
+        ) from exc
+
+
+def _store_binder_snapshot(
+    conn,
+    collection_id: str,
+    label: str,
+    *,
+    is_auto: bool,
+) -> str | None:
+    layout = _binder_layout(conn, collection_id)
+    if is_auto and not layout:
+        return None
+    snapshot_id = conn.execute(
+        text(
+            """
+            INSERT INTO collection_binder_snapshots (collection_id, label, is_auto, layout)
+            VALUES (CAST(:cid AS uuid), :label, :is_auto, CAST(:layout AS jsonb))
+            RETURNING id::text
+            """
+        ),
+        {
+            "cid": collection_id,
+            "label": label[:80],
+            "is_auto": is_auto,
+            "layout": json.dumps(layout),
+        },
+    ).scalar_one()
+    if is_auto:
+        conn.execute(
+            text(
+                """
+                DELETE FROM collection_binder_snapshots
+                WHERE collection_id = CAST(:cid AS uuid)
+                  AND is_auto
+                  AND id NOT IN (
+                      SELECT id FROM collection_binder_snapshots
+                      WHERE collection_id = CAST(:cid AS uuid) AND is_auto
+                      ORDER BY created_at DESC, id DESC
+                      LIMIT :keep
+                  )
+                """
+            ),
+            {"cid": collection_id, "keep": BINDER_AUTO_SNAPSHOT_KEEP},
+        )
+    return str(snapshot_id)
+
+
+def _daily_snapshot_label(tz_offset_minutes: int, *, now: datetime | None = None) -> str:
+    local = (now or datetime.now(timezone.utc)) - timedelta(minutes=tz_offset_minutes)
+    return f"Before editing on {local:%b} {local.day}"
+
+
+def _take_requested_snapshot(
+    conn,
+    collection_id: str,
+    kind: str,
+    *,
+    label: str | None,
+    tz_offset_minutes: int,
+) -> str | None:
+    if kind not in _BINDER_SNAPSHOT_LABELS:
+        raise HTTPException(status_code=400, detail="Unknown snapshot kind")
+    if kind == "auto-daily":
+        daily_label = _daily_snapshot_label(tz_offset_minutes)
+        already = conn.execute(
+            text(
+                """
+                SELECT 1 FROM collection_binder_snapshots
+                WHERE collection_id = CAST(:cid AS uuid)
+                  AND is_auto AND label = :label
+                  AND created_at > NOW() - INTERVAL '2 days'
+                LIMIT 1
+                """
+            ),
+            {"cid": collection_id, "label": daily_label},
+        ).first()
+        if already:
+            return None
+        return _store_binder_snapshot(conn, collection_id, daily_label, is_auto=True)
+    final_label = (label or "").strip() or str(_BINDER_SNAPSHOT_LABELS[kind])
+    return _store_binder_snapshot(conn, collection_id, final_label, is_auto=True)
+
+
+def _restore_binder_snapshot(conn, collection_id: str, snapshot_id: str) -> dict[str, Any]:
+    try:
+        UUID(snapshot_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Snapshot not found") from None
+    snap = conn.execute(
+        text(
+            """
+            SELECT label, layout FROM collection_binder_snapshots
+            WHERE id = CAST(:sid AS uuid) AND collection_id = CAST(:cid AS uuid)
+            """
+        ),
+        {"sid": snapshot_id, "cid": collection_id},
+    ).mappings().first()
+    if not snap:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    backup_id = _store_binder_snapshot(
+        conn, collection_id, f"Before restoring \u201c{snap['label']}\u201d", is_auto=True
+    )
+
+    card_ids = _binder_card_ids(conn, collection_id)
+    present = set(card_ids)
+    used_slots: set[int] = set()
+    placed: set[str] = set()
+    moves: list[dict[str, Any]] = []
+    layout = snap["layout"] if isinstance(snap["layout"], list) else json.loads(snap["layout"] or "[]")
+    for entry in layout:
+        card_id = str(entry.get("card_id") or "")
+        if card_id not in present or card_id in placed:
+            continue
+        slot = entry.get("slot")
+        x, y = entry.get("x"), entry.get("y")
+        if slot is not None:
+            slot = int(slot)
+            if slot in used_slots or not 0 <= slot <= BINDER_MAX_SLOT:
+                continue
+            used_slots.add(slot)
+            moves.append({"card_id": card_id, "slot": slot, "x": None, "y": None, "z": None})
+        elif x is not None and y is not None:
+            moves.append(
+                {
+                    "card_id": card_id,
+                    "slot": None,
+                    "x": min(1.0, max(0.0, float(x))),
+                    "y": min(1.0, max(0.0, float(y))),
+                    "z": int(entry.get("z") or 0),
+                }
+            )
+        else:
+            continue
+        placed.add(card_id)
+
+    # Cards saved since the snapshot go after the last used pocket so deliberate gaps stay open.
+    next_slot = max(used_slots, default=-1) + 1
+    for card_id in card_ids:
+        if card_id in placed:
+            continue
+        if next_slot > BINDER_MAX_SLOT:
+            break
+        moves.append({"card_id": card_id, "slot": next_slot, "x": None, "y": None, "z": None})
+        next_slot += 1
+
+    conn.execute(
+        text(
+            """
+            UPDATE collection_items
+            SET binder_slot = NULL, table_x = NULL, table_y = NULL, table_z = NULL
+            WHERE collection_id = CAST(:cid AS uuid)
+            """
+        ),
+        {"cid": collection_id},
+    )
+    _write_binder_moves(conn, collection_id, moves)
+    return {"backup_snapshot_id": backup_id, "layout": _binder_layout(conn, collection_id)}
+
+
+def _owned_collection_or_404(conn, user_id: str, collection_id: str) -> dict[str, Any]:
+    coll = _owned_collection(conn, user_id, collection_id)
+    if not coll:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    return coll
+
+
+@router.put("/api/me/collections/{collection_id}/binder")
+def save_binder_moves(request: Request, collection_id: str, body: BinderMovesBody):
+    user = require_user(request)
+    moves = _validate_binder_moves(body.moves)
+    assert _engine is not None
+    with _engine.begin() as conn:
+        _owned_collection_or_404(conn, user["id"], collection_id)
+        snapshot_id = None
+        if body.snapshot:
+            snapshot_id = _take_requested_snapshot(
+                conn,
+                collection_id,
+                body.snapshot,
+                label=body.snapshot_label,
+                tz_offset_minutes=body.tz_offset_minutes,
+            )
+        _write_binder_moves(conn, collection_id, moves)
+    return {"ok": True, "saved": len(moves), "snapshot_id": snapshot_id}
+
+
+@router.get("/api/me/collections/{collection_id}/binder/snapshots")
+def list_binder_snapshots(request: Request, collection_id: str):
+    user = require_user(request)
+    assert _engine is not None
+    with _engine.connect() as conn:
+        _owned_collection_or_404(conn, user["id"], collection_id)
+        rows = conn.execute(
+            text(
+                """
+                SELECT id::text AS id, label, is_auto,
+                       jsonb_array_length(layout)::int AS card_count,
+                       created_at::text AS created_at
+                FROM collection_binder_snapshots
+                WHERE collection_id = CAST(:cid AS uuid)
+                ORDER BY created_at DESC, id DESC
+                """
+            ),
+            {"cid": collection_id},
+        ).mappings().all()
+    return {"snapshots": [dict(r) for r in rows]}
+
+
+@router.post("/api/me/collections/{collection_id}/binder/snapshots")
+def save_binder_snapshot(request: Request, collection_id: str, body: BinderSnapshotBody):
+    user = require_user(request)
+    label = body.label.strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="Name required")
+    assert _engine is not None
+    with _engine.begin() as conn:
+        _owned_collection_or_404(conn, user["id"], collection_id)
+        named = conn.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM collection_binder_snapshots
+                WHERE collection_id = CAST(:cid AS uuid) AND NOT is_auto
+                """
+            ),
+            {"cid": collection_id},
+        ).scalar_one()
+        if named >= BINDER_NAMED_SNAPSHOT_LIMIT:
+            raise HTTPException(
+                status_code=409,
+                detail=f"You can keep up to {BINDER_NAMED_SNAPSHOT_LIMIT} saved layouts; delete one first",
+            )
+        snapshot_id = _store_binder_snapshot(conn, collection_id, label, is_auto=False)
+    return {"ok": True, "snapshot_id": snapshot_id}
+
+
+@router.post("/api/me/collections/{collection_id}/binder/snapshots/{snapshot_id}/restore")
+def restore_binder_snapshot(request: Request, collection_id: str, snapshot_id: str):
+    user = require_user(request)
+    assert _engine is not None
+    with _engine.begin() as conn:
+        _owned_collection_or_404(conn, user["id"], collection_id)
+        result = _restore_binder_snapshot(conn, collection_id, snapshot_id)
+    return {"ok": True, **result}
+
+
+@router.delete("/api/me/collections/{collection_id}/binder/snapshots/{snapshot_id}")
+def delete_binder_snapshot(request: Request, collection_id: str, snapshot_id: str):
+    user = require_user(request)
+    try:
+        UUID(snapshot_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Snapshot not found") from None
+    assert _engine is not None
+    with _engine.begin() as conn:
+        _owned_collection_or_404(conn, user["id"], collection_id)
+        deleted = conn.execute(
+            text(
+                """
+                DELETE FROM collection_binder_snapshots
+                WHERE id = CAST(:sid AS uuid) AND collection_id = CAST(:cid AS uuid)
+                """
+            ),
+            {"sid": snapshot_id, "cid": collection_id},
+        ).rowcount
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
     return {"ok": True}
 
 

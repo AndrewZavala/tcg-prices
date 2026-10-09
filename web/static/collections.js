@@ -32,6 +32,9 @@
   let detailIsOwner = true;
   let listSort = "name";
   let modalNavBusy = false;
+  let detailRef = null;
+  let binderCtl = null;
+  const DETAIL_VIEWS = ["spoiler", "stacks", "binder"];
 
   function esc(s) {
     return String(s ?? "")
@@ -301,7 +304,12 @@
       }
     );
     const row = detailCards.find((c) => c.id === cardId);
-    if (row) row.bucket = data.bucket || bucket;
+    if (row) {
+      row.bucket = data.bucket || bucket;
+      if (row.bucket !== "main") {
+        row.binder_slot = row.table_x = row.table_y = row.table_z = null;
+      }
+    }
     return data;
   }
 
@@ -393,6 +401,9 @@
   }
 
   function modalNavIds() {
+    if (detailView === "binder" && binderCtl) {
+      return [...binderCtl.orderedIds(), ...filteredConsideringCards().map((c) => c.id)];
+    }
     return filteredDetailCards()
       .map((c) => c.id)
       .filter(Boolean);
@@ -1042,6 +1053,62 @@
     bindCollectionGrid(collectionId, mount);
   }
 
+  function destroyBinder() {
+    if (!binderCtl) return;
+    binderCtl.destroy();
+    binderCtl.el.classList.remove("sb-root", "is-editable", "is-previewing", "is-nudge", "is-dragging");
+    binderCtl = null;
+  }
+
+  function binderApiPath(collectionId, suffix) {
+    return `/api/me/collections/${encodeURIComponent(collectionId)}/binder${suffix || ""}`;
+  }
+
+  function renderBinderInto(mount, collectionId) {
+    const cards = detailCards.filter((c) => cardBucket(c) === "main");
+    mount.hidden = false;
+    mount.classList.remove("is-stacks", "is-spoiler");
+    if (binderCtl && binderCtl.el === mount && binderCtl.collectionId === collectionId) {
+      binderCtl.setCards(cards);
+      return;
+    }
+    destroyBinder();
+    mount.innerHTML = "";
+    binderCtl = window.SpellTagBinder.mount(mount, {
+      cards,
+      collectionId,
+      editable: detailIsOwner,
+      isMatch: (c) => cardMatchesQuery(c, detailQuery),
+      onOpenCard: (id) => openCardDetail(id, detailIsOwner ? collectionId : null),
+      fetchOrder: async (key) => {
+        const data = await api(
+          `/api/me/collections/${encodeURIComponent(collectionId)}?sort=${encodeURIComponent(key)}`
+        );
+        const ids = (data?.cards || []).filter((c) => cardBucket(c) === "main").map((c) => c.id);
+        return key === "saved" ? ids.reverse() : ids;
+      },
+      save: (body, { keepalive } = {}) =>
+        api(binderApiPath(collectionId), { method: "PUT", body: JSON.stringify(body), keepalive }),
+      listSnapshots: () => api(binderApiPath(collectionId, "/snapshots")),
+      saveSnapshot: (label) =>
+        api(binderApiPath(collectionId, "/snapshots"), {
+          method: "POST",
+          body: JSON.stringify({ label }),
+        }),
+      restoreSnapshot: (id) =>
+        api(binderApiPath(collectionId, `/snapshots/${encodeURIComponent(id)}/restore`), {
+          method: "POST",
+        }),
+      deleteSnapshot: (id) =>
+        api(binderApiPath(collectionId, `/snapshots/${encodeURIComponent(id)}`), { method: "DELETE" }),
+      onSaveError: () => {
+        setTimeout(() => {
+          if (detailRef) renderDetail(detailRef).catch(() => {});
+        }, 1500);
+      },
+    });
+  }
+
   function renderDetailGrid(collectionId) {
     const mainMount = document.getElementById("collectionGridMount");
     const consideringMount = document.getElementById("consideringGridMount");
@@ -1050,6 +1117,9 @@
     const countEl = document.getElementById("collectionSearchCount");
     const emptyEl = document.getElementById("collectionGridEmpty");
     if (!mainMount) return;
+    const isBinder = detailView === "binder";
+    document.querySelector(".sp-collection-body")?.classList.toggle("is-binder", isBinder);
+    if (!isBinder || (binderCtl && binderCtl.el !== mainMount)) destroyBinder();
 
     const mainCards = filteredMainCards();
     const consideringCards = filteredConsideringCards();
@@ -1078,6 +1148,30 @@
       countEl.title = value > 0 ? "TCGplayer market value (cheapest variant), refreshed weekly" : "";
     }
 
+    const renderConsidering = () => {
+      if (!consideringSection || !consideringMount) return;
+      if (consideringCards.length) {
+        consideringSection.hidden = false;
+        const consideringCountEl = document.getElementById("consideringCount");
+        if (consideringCountEl) {
+          consideringCountEl.textContent = String(consideringCards.length);
+        }
+        renderCardsIntoMount(consideringMount, consideringCards, collectionId);
+      } else {
+        consideringSection.hidden = true;
+        consideringMount.innerHTML = "";
+        consideringMount.hidden = true;
+      }
+    };
+
+    if (isBinder) {
+      renderBinderInto(mainMount, collectionId);
+      if (mainEmptyEl) mainEmptyEl.hidden = true;
+      renderConsidering();
+      if (emptyEl) emptyEl.hidden = true;
+      return;
+    }
+
     if (visibleTotal) {
       renderCardsIntoMount(mainMount, mainCards, collectionId);
       if (mainEmptyEl) {
@@ -1086,20 +1180,7 @@
           ? "No main cards match your search."
           : "No cards in the main collection yet.";
       }
-      if (consideringSection && consideringMount) {
-        if (consideringCards.length) {
-          consideringSection.hidden = false;
-          const consideringCountEl = document.getElementById("consideringCount");
-          if (consideringCountEl) {
-            consideringCountEl.textContent = String(consideringCards.length);
-          }
-          renderCardsIntoMount(consideringMount, consideringCards, collectionId);
-        } else {
-          consideringSection.hidden = true;
-          consideringMount.innerHTML = "";
-          consideringMount.hidden = true;
-        }
-      }
+      renderConsidering();
       if (emptyEl) emptyEl.hidden = true;
       updatePreviewPanel(defaultPreviewCard());
     } else {
@@ -1190,8 +1271,9 @@
     detailSort = collectionSortFromUrl() || "saved";
     detailGroup = collectionGroupFromUrl() || "none";
     detailView = collectionViewFromUrl() || "spoiler";
-    if (detailView !== "stacks") detailView = "spoiler";
+    if (!DETAIL_VIEWS.includes(detailView)) detailView = "spoiler";
     detailQuery = collectionSearchFromUrl();
+    detailRef = ref;
 
     const data = await fetchCollectionDetail(ref);
     detailCollectionId = data.collection.id;
@@ -1268,16 +1350,17 @@
             <select id="detailView">
               <option value="spoiler"${detailView === "spoiler" ? " selected" : ""}>Visual Spoiler</option>
               <option value="stacks"${detailView === "stacks" ? " selected" : ""}>Visual Stacks</option>
+              <option value="binder"${detailView === "binder" ? " selected" : ""}>Binder</option>
             </select>
           </label>
-          <label class="sp-collection-control">
+          <label class="sp-collection-control" id="detailGroupWrap"${detailView === "binder" ? " hidden" : ""}>
             <span class="sp-label">Group</span>
             <select id="detailGroup">
               <option value="none"${detailGroup === "none" ? " selected" : ""}>None</option>
               <option value="category"${detailGroup === "category" ? " selected" : ""}>Category</option>
             </select>
           </label>
-          <label class="sp-collection-control">
+          <label class="sp-collection-control" id="detailSortWrap"${detailView === "binder" ? " hidden" : ""}>
             <span class="sp-label">Sort</span>
             <select id="detailSort">
               <option value="saved"${detailSort === "saved" ? " selected" : ""}>Date saved</option>
@@ -1357,7 +1440,9 @@
       await renderDetail(ref);
     });
     document.getElementById("detailView")?.addEventListener("change", (e) => {
-      detailView = e.target.value === "stacks" ? "stacks" : "spoiler";
+      detailView = DETAIL_VIEWS.includes(e.target.value) ? e.target.value : "spoiler";
+      document.getElementById("detailGroupWrap")?.toggleAttribute("hidden", detailView === "binder");
+      document.getElementById("detailSortWrap")?.toggleAttribute("hidden", detailView === "binder");
       writeCollectionDetailToUrl();
       renderDetailGrid(detailCollectionId);
     });
