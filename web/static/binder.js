@@ -2,6 +2,7 @@
 (function () {
   const POCKETS = 9;
   const MAX_SLOT = 9999;
+  const MAX_PAGES = Math.floor((MAX_SLOT + 1) / POCKETS);
   const HISTORY_LIMIT = 200;
   const SAVE_DELAY_MS = 400;
   const DRAG_THRESHOLD_PX = 5;
@@ -89,8 +90,24 @@
     let drag = null;
     let destroyed = false;
     let statusTimer = null;
+    const pagesKey = editable && opts.collectionId ? `spelltag-binder-pages:${opts.collectionId}` : null;
+    let pageTotal = 1;
+    try {
+      if (pagesKey) pageTotal = Math.max(1, parseInt(localStorage.getItem(pagesKey), 10) || 1);
+    } catch {
+      /* storage unavailable */
+    }
 
     // ---------- state ----------
+
+    function setPageTotal(n) {
+      pageTotal = Math.max(1, Math.min(MAX_PAGES, n));
+      try {
+        if (pagesKey) localStorage.setItem(pagesKey, String(pageTotal));
+      } catch {
+        /* storage unavailable */
+      }
+    }
 
     function setPos(id, p) {
       const old = pos.get(id);
@@ -168,14 +185,17 @@
       if (queue) scheduleSave();
     }
 
-    function commit(changes, label) {
+    function commit(changes, label, pagesAfter) {
       const real = changes.filter((c) => !samePos(c.before, c.after));
-      if (!real.length) return false;
+      const pagesBefore = pageTotal;
+      const pagesChanged = pagesAfter != null && pagesAfter !== pagesBefore;
+      if (!real.length && !pagesChanged) return false;
       applyChanges(real, "after");
-      undoStack.push({ label, changes: real });
+      if (pagesChanged) setPageTotal(pagesAfter);
+      undoStack.push({ label, changes: real, pagesBefore, pagesAfter: pageTotal });
       if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
       redoStack.length = 0;
-      pendingUserEdit = true;
+      if (real.length) pendingUserEdit = true;
       render();
       return true;
     }
@@ -185,6 +205,7 @@
       const action = undoStack.pop();
       if (!action) return;
       applyChanges(action.changes, "before");
+      if (action.pagesBefore != null) setPageTotal(action.pagesBefore);
       redoStack.push(action);
       pendingUserEdit = true;
       render();
@@ -196,6 +217,7 @@
       const action = redoStack.pop();
       if (!action) return;
       applyChanges(action.changes, "after");
+      if (action.pagesAfter != null) setPageTotal(action.pagesAfter);
       undoStack.push(action);
       pendingUserEdit = true;
       render();
@@ -256,16 +278,19 @@
       return preview ? preview.slotMap : slotMap;
     }
 
+    function usedPages(map) {
+      return Math.floor(maxSlot(map) / POCKETS) + 1;
+    }
+
     function pageCount() {
-      const used = Math.floor(maxSlot(displaySlots()) / POCKETS) + 1;
-      return Math.ceil(used / 2) * 2 + 2;
+      const used = usedPages(displaySlots());
+      return Math.max(1, used, preview ? 0 : pageTotal);
     }
 
     function clampPage() {
       const step = pagesPerView();
-      const count = pageCount();
+      page = Math.max(0, Math.min(page, pageCount() - 1));
       if (step === 2) page -= page % 2;
-      page = Math.max(0, Math.min(page, count - step));
     }
 
     function cardHtml(card, style) {
@@ -281,6 +306,13 @@
     }
 
     function pageHtml(p) {
+      if (p >= pageCount()) {
+        return `<div class="sb-page is-blank">${
+          editable && !preview
+            ? `<button type="button" class="sb-btn sb-btn-small" data-act="add-page">+ Add page</button>`
+            : ""
+        }</div>`;
+      }
       const slots = displaySlots();
       let pockets = "";
       for (let i = 0; i < POCKETS; i++) {
@@ -313,7 +345,9 @@
       el.querySelector(".sb-flip-prev").disabled = page <= 0;
       el.querySelector(".sb-flip-next").disabled = page + step >= count;
       el.querySelector(".sb-pager").textContent =
-        step === 1 ? `Page ${page + 1} of ${count}` : `Pages ${page + 1}–${page + 2} of ${count}`;
+        step === 1 || page + 1 >= count
+          ? `Page ${page + 1} of ${count}`
+          : `Pages ${page + 1}–${page + 2} of ${count}`;
     }
 
     function renderTable() {
@@ -348,6 +382,8 @@
       });
       el.querySelector('[data-act="undo"]').disabled = !undoStack.length || !!preview;
       el.querySelector('[data-act="redo"]').disabled = !redoStack.length || !!preview;
+      el.querySelector('.sb-toolbar [data-act="add-page"]').disabled = !!preview || pageCount() >= MAX_PAGES;
+      el.querySelector('[data-act="remove-all"]').disabled = !!preview || !slotMap.size;
       el.querySelector(".sb-mode-hint").textContent = preview
         ? "Previewing only: moving cards is off until you go back to your arrangement."
         : MODE_HINTS[mode];
@@ -408,6 +444,8 @@
         return;
       }
       const changes = [];
+      const countBefore = pageCount();
+      let pagesAfter;
       if (dir > 0) {
         let end = slot;
         while (slotMap.has(end)) end++;
@@ -418,6 +456,7 @@
         for (let s = end - 1; s >= slot; s--) {
           changes.push({ id: slotMap.get(s), before: { slot: s }, after: { slot: s + 1 } });
         }
+        pagesAfter = Math.max(countBefore, Math.floor(end / POCKETS) + 1);
       } else {
         let end = slot;
         while (end >= 0 && slotMap.has(end)) end--;
@@ -428,8 +467,88 @@
         for (let s = end + 1; s <= slot; s++) {
           changes.push({ id: slotMap.get(s), before: { slot: s }, after: { slot: s - 1 } });
         }
+        // Only the last page can be dropped, and only once the nudge leaves it with no cards.
+        const lastBefore = maxSlot(slotMap);
+        const after = new Set(slotMap.keys());
+        after.delete(slot);
+        after.add(end);
+        let lastAfter = -1;
+        for (const s of after) if (s > lastAfter) lastAfter = s;
+        const lastPage = Math.floor(lastBefore / POCKETS);
+        pagesAfter = countBefore;
+        if (lastPage === countBefore - 1 && Math.floor(lastAfter / POCKETS) < lastPage) {
+          pagesAfter = countBefore - 1;
+        }
       }
-      commit(changes, dir > 0 ? "Nudge right" : "Nudge left");
+      if (commit(changes, dir > 0 ? "Nudge right" : "Nudge left", pagesAfter)) {
+        if (pagesAfter > countBefore) flashStatus(`Added page ${pagesAfter}`);
+        else if (pagesAfter < countBefore) flashStatus(`Removed empty page ${countBefore}`);
+      }
+    }
+
+    function addPage() {
+      if (!editable || preview || drag) return;
+      const count = pageCount();
+      if (count >= MAX_PAGES) {
+        flashStatus("The binder is full");
+        return;
+      }
+      commit([], "Add page", count + 1);
+      page = count;
+      renderSpread(1);
+      flashStatus(`Added page ${count + 1}`);
+    }
+
+    function pileOnTable(n) {
+      const rect = el.querySelector(".sb-table").getBoundingClientRect();
+      const cw = tableCardWidth();
+      const ch = cw * CARD_RATIO;
+      const w = Math.max(rect.width, cw);
+      const h = Math.max(rect.height, ch);
+      const cols = Math.max(1, Math.min(n, Math.round(Math.sqrt((n * w * ch) / (h * cw)))));
+      const rows = Math.ceil(n / cols);
+      const round = (v) => Math.round(v * 10000) / 10000;
+      const spots = [];
+      for (let i = 0; i < n; i++) {
+        const c = i % cols;
+        const r = Math.floor(i / cols);
+        spots.push({
+          x: round(cols > 1 ? c / (cols - 1) : 0.5),
+          y: round(rows > 1 ? r / (rows - 1) : 0.5),
+        });
+      }
+      return spots;
+    }
+
+    async function removeAll() {
+      if (!editable || preview || drag) return;
+      const inPockets = [...slotMap.entries()].sort((a, b) => a[0] - b[0]);
+      if (!inPockets.length) {
+        flashStatus("The binder is already empty");
+        return;
+      }
+      const n = inPockets.length;
+      const ok = window.confirm(
+        `Take all ${n} card${n === 1 ? "" : "s"} out of the binder and put ${
+          n === 1 ? "it" : "them"
+        } on the table?\n\nYour current layout is saved to Layout history first, and you can undo this.`
+      );
+      if (!ok) return;
+      await flush();
+      const spots = pileOnTable(n);
+      const top = maxZ() + n;
+      // Earlier cards sit on top so each card's name strip stays visible in the pile.
+      const changes = inPockets.map(([slot, id], i) => ({
+        id,
+        before: { slot },
+        after: { x: spots[i].x, y: spots[i].y, z: top - i },
+      }));
+      nextSnapshot = { snapshot: "before-arrange", snapshot_label: "Before emptying the binder" };
+      if (!commit(changes, "Remove all", pageCount())) {
+        nextSnapshot = null;
+        return;
+      }
+      await flush();
     }
 
     // ---------- drag and drop ----------
@@ -466,34 +585,44 @@
       drag.edgeTimer = setTimeout(tick, EDGE_FLIP_MS);
     }
 
+    function sizeGhost(w, h) {
+      if (drag.w === w && drag.h === h) return;
+      drag.w = w;
+      drag.h = h;
+      drag.ghost.style.width = `${w}px`;
+      drag.ghost.style.height = `${h}px`;
+      drag.ghost.style.transformOrigin = `${drag.fx * w}px ${drag.fy * h}px`;
+    }
+
     function startDrag() {
       const src = press.cardEl;
       const r = src.getBoundingClientRect();
-      const ghost = src.cloneNode(true);
-      ghost.className = "sb-card sb-ghost";
-      ghost.removeAttribute("style");
-      ghost.style.width = `${r.width}px`;
-      ghost.style.height = `${r.height}px`;
+      const ghost = document.createElement("div");
+      ghost.className = "sb-ghost";
+      ghost.setAttribute("aria-hidden", "true");
+      const img = src.querySelector("img");
+      if (img) ghost.appendChild(img.cloneNode(false));
       document.body.appendChild(ghost);
       drag = {
         id: press.id,
         from: { ...pos.get(press.id) },
-        offX: press.x0 - r.left,
-        offY: press.y0 - r.top,
-        w: r.width,
-        h: r.height,
+        fx: clamp01((press.x0 - r.left) / Math.max(1, r.width)),
+        fy: clamp01((press.y0 - r.top) / Math.max(1, r.height)),
+        baseW: r.width,
+        baseH: r.height,
+        w: 0,
+        h: 0,
         ghost,
         target: null,
         edgeDir: 0,
         edgeTimer: null,
       };
+      sizeGhost(r.width, r.height);
       src.classList.add("is-drag-source");
       el.classList.add("is-dragging");
     }
 
     function moveDrag(e) {
-      drag.ghost.style.left = `${e.clientX - drag.offX}px`;
-      drag.ghost.style.top = `${e.clientY - drag.offY}px`;
       const hit = document.elementFromPoint(e.clientX, e.clientY);
       const flipBtn = hit?.closest?.(".sb-flip");
       const pocket = hit?.closest?.(".sb-pocket");
@@ -511,6 +640,17 @@
       drag.target = target;
       drag.lastX = e.clientX;
       drag.lastY = e.clientY;
+      if (target?.type === "table") {
+        const cw = tableCardWidth();
+        sizeGhost(cw, cw * CARD_RATIO);
+      } else if (target?.type === "pocket") {
+        const r = pocket.getBoundingClientRect();
+        sizeGhost(r.width, r.height);
+      } else {
+        sizeGhost(drag.baseW, drag.baseH);
+      }
+      drag.ghost.style.left = `${e.clientX - drag.fx * drag.w}px`;
+      drag.ghost.style.top = `${e.clientY - drag.fy * drag.h}px`;
       if (changed) markDropTarget();
     }
 
@@ -539,10 +679,10 @@
         const rect = el.querySelector(".sb-table").getBoundingClientRect();
         const cw = tableCardWidth();
         const ch = cw * CARD_RATIO;
-        const centerX = drag.lastX - drag.offX + drag.w / 2;
-        const centerY = drag.lastY - drag.offY + drag.h / 2;
-        const x = clamp01((centerX - rect.left - cw / 2) / Math.max(1, rect.width - cw));
-        const y = clamp01((centerY - rect.top - ch / 2) / Math.max(1, rect.height - ch));
+        const left = drag.lastX - drag.fx * cw - rect.left;
+        const top = drag.lastY - drag.fy * ch - rect.top;
+        const x = clamp01(left / Math.max(1, rect.width - cw));
+        const y = clamp01(top / Math.max(1, rect.height - ch));
         const round = (n) => Math.round(n * 10000) / 10000;
         changes = [{ id, before: from, after: { x: round(x), y: round(y), z: maxZ() + 1 } }];
       }
@@ -810,6 +950,8 @@
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (act === "undo") undo();
       else if (act === "redo") redo();
+      else if (act === "add-page") addPage();
+      else if (act === "remove-all") removeAll();
       else if (act === "exit-preview") exitPreview();
       else if (act === "apply-preview") applyPreview();
       else if (act === "layouts") {
@@ -898,6 +1040,10 @@
             <button type="button" class="sb-btn" data-act="undo" title="Undo (Ctrl+Z)">Undo</button>
             <button type="button" class="sb-btn" data-act="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
           </div>
+          <div class="sb-history-btns">
+            <button type="button" class="sb-btn" data-act="add-page" title="Add an empty page at the end of the binder">+ Add page</button>
+            <button type="button" class="sb-btn sb-btn-danger" data-act="remove-all" title="Move every card out of the binder onto the table">Remove all…</button>
+          </div>
           <label class="sb-arrange">
             <span class="sr-only">Arrange by</span>
             <select>
@@ -944,8 +1090,12 @@
       loadCardPos(card);
     }
     autoPlace(editable);
+    if (editable) setPageTotal(Math.max(pageTotal, usedPages(slotMap)));
 
     el.querySelector(".sb-flip-prev").addEventListener("click", () => flip(-1));
+    el.querySelector(".sb-spread").addEventListener("click", (e) => {
+      if (e.target.closest('[data-act="add-page"]')) addPage();
+    });
     el.querySelector(".sb-flip-next").addEventListener("click", () => flip(1));
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("keydown", onCardKey);

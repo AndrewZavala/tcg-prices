@@ -2197,6 +2197,15 @@
   gap: 0.35rem;
 }
 
+.st-body .sb-btn-danger {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.st-body .sb-btn-danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.14);
+}
+
 .st-body .sb-status {
   margin-left: auto;
   font-size: 0.82rem;
@@ -2427,6 +2436,15 @@
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.st-body .sb-page.is-blank {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  padding: 10px;
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
 .st-body .sb-pockets {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2519,6 +2537,9 @@
 
 .sb-ghost {
   position: fixed;
+  left: 0;
+  top: 0;
+  margin: 0;
   z-index: 10000;
   pointer-events: none;
   border-radius: 6px;
