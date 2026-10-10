@@ -34,6 +34,7 @@
   let modalNavBusy = false;
   let detailRef = null;
   let binderCtl = null;
+  let detailBinderCover = null;
   const DETAIL_VIEWS = ["spoiler", "stacks", "binder"];
 
   function esc(s) {
@@ -1070,6 +1071,7 @@
     mount.classList.remove("is-stacks", "is-spoiler");
     if (binderCtl && binderCtl.el === mount && binderCtl.collectionId === collectionId) {
       binderCtl.setCards(cards);
+      binderCtl.setCover(detailBinderCover);
       return;
     }
     destroyBinder();
@@ -1077,7 +1079,23 @@
     binderCtl = window.SpellTagBinder.mount(mount, {
       cards,
       collectionId,
+      cover: detailBinderCover,
       editable: detailIsOwner,
+      onCoverChange: (cover) => {
+        detailBinderCover = cover;
+      },
+      setCoverCard: (cardId) =>
+        api(binderApiPath(collectionId, "/cover"), {
+          method: "PUT",
+          body: JSON.stringify({ card_id: cardId }),
+        }),
+      uploadCover: (blob) =>
+        api(binderApiPath(collectionId, "/cover/image"), {
+          method: "POST",
+          body: blob,
+          headers: { "Content-Type": blob.type || "image/jpeg" },
+        }),
+      clearCover: () => api(binderApiPath(collectionId, "/cover"), { method: "DELETE" }),
       isMatch: (c) => cardMatchesQuery(c, detailQuery),
       onOpenCard: (id) => openCardDetail(id, detailIsOwner ? collectionId : null),
       fetchOrder: async (key) => {
@@ -1281,6 +1299,7 @@
     detailCards = data.cards || [];
     detailKnownTags = data.card_tags || [];
     detailIsOwner = data.is_owner !== false;
+    detailBinderCover = data.binder_cover || null;
     if (data.sort) detailSort = data.sort;
     if (data.group) detailGroup = data.group;
 

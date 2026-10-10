@@ -10,6 +10,9 @@
   const EDGE_FLIP_MS = 550;
   const EDGE_REPEAT_MS = 850;
   const CARD_RATIO = 88 / 63;
+  const COVER_PAGE = -1;
+  const COVER_MAX_W = 1000;
+  const COVER_MAX_H = 1400;
   const FALLBACK_IMG = "/static/empty-pokeball.png";
   const ARRANGE_OPTIONS = [
     ["set", "Set"],
@@ -79,7 +82,8 @@
     const narrowMq = window.matchMedia("(max-width: 700px)");
 
     let mode = "move";
-    let page = 0;
+    let page = COVER_PAGE;
+    let cover = opts.cover || null;
     let preview = null;
     let saveTimer = null;
     let saveChain = Promise.resolve();
@@ -288,9 +292,27 @@
     }
 
     function clampPage() {
-      const step = pagesPerView();
-      page = Math.max(0, Math.min(page, pageCount() - 1));
-      if (step === 2) page -= page % 2;
+      if (page < 0) {
+        page = COVER_PAGE;
+        return;
+      }
+      page = Math.min(page, pageCount() - 1);
+      if (pagesPerView() === 2) page -= page % 2;
+    }
+
+    function coverHtml() {
+      const img = cover?.image_url
+        ? `<img class="sb-cover-img" src="${esc(cover.image_url)}" alt="" decoding="async" draggable="false"
+            onerror="this.remove()" />`
+        : "";
+      const btn = editable
+        ? `<button type="button" class="sb-btn sb-btn-small sb-cover-btn" data-act="cover">${
+            cover ? "Change cover" : "Choose a cover"
+          }</button>`
+        : "";
+      return `<div class="sb-cover${cover ? "" : " is-blank"}" role="img" aria-label="Binder cover${
+        cover?.name ? `: ${esc(cover.name)}` : ""
+      }">${img}${btn}</div>`;
     }
 
     function cardHtml(card, style) {
@@ -333,19 +355,25 @@
       const step = pagesPerView();
       const count = pageCount();
       const spread = el.querySelector(".sb-spread");
+      const onCover = page === COVER_PAGE;
       let html = "";
-      for (let p = page; p < page + step; p++) html += pageHtml(p);
+      if (onCover) html = coverHtml();
+      else for (let p = page; p < page + step; p++) html += pageHtml(p);
       spread.innerHTML = html;
       spread.classList.toggle("is-single", step === 1);
+      spread.classList.toggle("is-cover", onCover);
       spread.classList.remove("is-turn-next", "is-turn-prev");
       if (turn) {
         void spread.offsetWidth;
         spread.classList.add(turn > 0 ? "is-turn-next" : "is-turn-prev");
       }
-      el.querySelector(".sb-flip-prev").disabled = page <= 0;
-      el.querySelector(".sb-flip-next").disabled = page + step >= count;
-      el.querySelector(".sb-pager").textContent =
-        step === 1 || page + 1 >= count
+      el.querySelector(".sb-flip-prev").disabled = onCover;
+      el.querySelector(".sb-flip-prev").setAttribute("aria-label", page === 0 ? "Close binder" : "Previous pages");
+      el.querySelector(".sb-flip-next").disabled = !onCover && page + step >= count;
+      el.querySelector(".sb-flip-next").setAttribute("aria-label", onCover ? "Open binder" : "Next pages");
+      el.querySelector(".sb-pager").textContent = onCover
+        ? `Cover · ${count} page${count === 1 ? "" : "s"}`
+        : step === 1 || page + 1 >= count
           ? `Page ${page + 1} of ${count}`
           : `Pages ${page + 1}–${page + 2} of ${count}`;
     }
@@ -415,7 +443,8 @@
 
     function flip(dir) {
       const before = page;
-      page += dir * pagesPerView();
+      if (page === COVER_PAGE) page = dir > 0 ? 0 : COVER_PAGE;
+      else page = Math.max(COVER_PAGE, page + dir * pagesPerView());
       clampPage();
       if (page !== before) {
         renderSpread(dir);
@@ -938,6 +967,145 @@
       flashStatus("Layout restored");
     }
 
+    // ---------- cover ----------
+
+    function coverDialog() {
+      return el.querySelector(".sb-cover-dialog");
+    }
+
+    function coverOptionsHtml(query) {
+      const q = query.trim().toLowerCase();
+      const ordered = [...cardsById.values()].sort((a, b) => {
+        const pa = pos.get(a.id);
+        const pb = pos.get(b.id);
+        const sa = pa?.slot ?? MAX_SLOT + 1 + (pa?.z || 0);
+        const sb = pb?.slot ?? MAX_SLOT + 1 + (pb?.z || 0);
+        return sa - sb;
+      });
+      const shown = q
+        ? ordered.filter((c) => `${c.name} ${c.set_name} ${c.local_id}`.toLowerCase().includes(q))
+        : ordered;
+      if (!shown.length) {
+        return `<p class="sb-layouts-note">${q ? "No cards match." : "Add cards to this collection to use one as the cover."}</p>`;
+      }
+      return shown
+        .map(
+          (c) => `<button type="button" class="sb-cover-option${
+            cover?.type === "card" && cover.card_id === c.id ? " is-current" : ""
+          }" data-cover-card="${esc(c.id)}" title="${esc(`${c.name} — ${c.set_name} #${c.local_id}`)}">
+            <img src="${esc(c.image_url || FALLBACK_IMG)}" alt="${esc(c.name)}" loading="lazy" decoding="async"
+              onerror="this.onerror=null;this.src='${FALLBACK_IMG}'" />
+          </button>`
+        )
+        .join("");
+    }
+
+    function openCoverPicker() {
+      if (!editable) return;
+      const dialog = coverDialog();
+      const search = dialog.querySelector(".sb-cover-search");
+      search.value = "";
+      dialog.querySelector(".sb-cover-grid").innerHTML = coverOptionsHtml("");
+      dialog.querySelector('[data-cover-act="clear"]').hidden = !cover;
+      dialog.querySelector(".sb-cover-msg").textContent = "";
+      dialog.showModal();
+    }
+
+    function applyCover(next, message) {
+      cover = next || null;
+      opts.onCoverChange?.(cover);
+      if (coverDialog()?.open) coverDialog().close();
+      page = COVER_PAGE;
+      renderSpread();
+      flashStatus(message);
+    }
+
+    async function pickCoverCard(cardId) {
+      const msg = coverDialog().querySelector(".sb-cover-msg");
+      msg.textContent = "Saving…";
+      try {
+        const data = await opts.setCoverCard(cardId);
+        applyCover(data?.binder_cover, "Cover updated");
+      } catch (err) {
+        msg.textContent = err.message || "Couldn't set the cover";
+      }
+    }
+
+    async function shrinkCoverImage(file) {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        const scale = Math.min(1, COVER_MAX_W / img.naturalWidth, COVER_MAX_H / img.naturalHeight);
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#17151c";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        return await new Promise((resolve, reject) =>
+          canvas.toBlob(
+            (blob) => (blob ? resolve(blob) : reject(new Error("Couldn't read that image"))),
+            "image/jpeg",
+            0.86
+          )
+        );
+      } catch (err) {
+        throw new Error(err?.message?.startsWith("Couldn't") ? err.message : "Couldn't read that image");
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    async function uploadCover(file) {
+      if (!file) return;
+      const msg = coverDialog().querySelector(".sb-cover-msg");
+      if (!file.type.startsWith("image/")) {
+        msg.textContent = "Choose an image file";
+        return;
+      }
+      msg.textContent = "Uploading…";
+      try {
+        const blob = await shrinkCoverImage(file);
+        const data = await opts.uploadCover(blob);
+        applyCover(data?.binder_cover, "Cover updated");
+      } catch (err) {
+        msg.textContent = err.message || "Couldn't upload that image";
+      }
+    }
+
+    async function clearCover() {
+      const msg = coverDialog().querySelector(".sb-cover-msg");
+      msg.textContent = "Removing…";
+      try {
+        await opts.clearCover();
+        applyCover(null, "Cover removed");
+      } catch (err) {
+        msg.textContent = err.message || "Couldn't remove the cover";
+      }
+    }
+
+    function onCoverDialogClick(e) {
+      const dialog = coverDialog();
+      if (e.target === dialog) {
+        dialog.close();
+        return;
+      }
+      const option = e.target.closest("[data-cover-card]");
+      if (option) {
+        pickCoverCard(option.dataset.coverCard);
+        return;
+      }
+      const act = e.target.closest("[data-cover-act]")?.dataset.coverAct;
+      if (act === "close") dialog.close();
+      else if (act === "upload") dialog.querySelector(".sb-cover-file").click();
+      else if (act === "clear") clearCover();
+    }
+
     // ---------- events ----------
 
     function onToolbarClick(e) {
@@ -1083,7 +1251,27 @@
         <div class="sb-table-wrap">
           <div class="sb-table" aria-label="Table"></div>
         </div>
-      </div>`;
+      </div>
+      ${
+        editable
+          ? `<dialog class="sb-cover-dialog" aria-label="Binder cover">
+              <div class="sb-cover-panel">
+                <div class="sb-layouts-head">
+                  <strong>Binder cover</strong>
+                  <button type="button" class="sb-btn sb-btn-small sb-btn-quiet" data-cover-act="close" aria-label="Close">×</button>
+                </div>
+                <div class="sb-cover-actions">
+                  <button type="button" class="sb-btn sb-btn-small" data-cover-act="upload">Upload image…</button>
+                  <button type="button" class="sb-btn sb-btn-small sb-btn-danger" data-cover-act="clear">Remove cover</button>
+                  <input type="file" class="sb-cover-file" accept="image/*" hidden />
+                  <span class="sb-cover-msg" aria-live="polite"></span>
+                </div>
+                <input type="search" class="sb-cover-search" placeholder="Or pick a card from this collection…" autocomplete="off" spellcheck="false" />
+                <div class="sb-cover-grid"></div>
+              </div>
+            </dialog>`
+          : ""
+      }`;
 
     for (const card of opts.cards || []) {
       cardsById.set(card.id, card);
@@ -1095,7 +1283,19 @@
     el.querySelector(".sb-flip-prev").addEventListener("click", () => flip(-1));
     el.querySelector(".sb-spread").addEventListener("click", (e) => {
       if (e.target.closest('[data-act="add-page"]')) addPage();
+      else if (e.target.closest('[data-act="cover"]')) openCoverPicker();
     });
+    if (editable) {
+      const dialog = coverDialog();
+      dialog.addEventListener("click", onCoverDialogClick);
+      dialog.querySelector(".sb-cover-search").addEventListener("input", (e) => {
+        dialog.querySelector(".sb-cover-grid").innerHTML = coverOptionsHtml(e.target.value);
+      });
+      dialog.querySelector(".sb-cover-file").addEventListener("change", (e) => {
+        uploadCover(e.target.files?.[0]);
+        e.target.value = "";
+      });
+    }
     el.querySelector(".sb-flip-next").addEventListener("click", () => flip(1));
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("keydown", onCardKey);
@@ -1121,6 +1321,10 @@
       el,
       collectionId: opts.collectionId,
       refreshDim,
+      setCover(next) {
+        cover = next || null;
+        if (page === COVER_PAGE) renderSpread();
+      },
       setCards(cards) {
         const next = new Map((cards || []).map((c) => [c.id, c]));
         let added = false;
@@ -1166,6 +1370,7 @@
         destroyed = true;
         cancelPress();
         endDrag();
+        if (coverDialog()?.open) coverDialog().close();
         document.removeEventListener("keydown", onKeyDown);
         document.removeEventListener("pointerdown", onDocPointerDown);
         document.removeEventListener("touchmove", onTouchMove);

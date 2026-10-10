@@ -17,12 +17,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fastapi import HTTPException  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy.exc import IntegrityError  # noqa: E402
 
 import spelltag_collections as sc  # noqa: E402
 from spelltag_collections import (  # noqa: E402
     BinderMove,
     _binder_layout,
     _daily_snapshot_label,
+    _load_binder_cover,
+    _sniff_cover_mime,
     _restore_binder_snapshot,
     _store_binder_snapshot,
     _take_requested_snapshot,
@@ -228,6 +231,53 @@ def test_db_restore_handles_added_and_removed_cards() -> None:
         assert {layout[d]["slot"], layout[e]["slot"]} == {6, 7}
         assert result["backup_snapshot_id"]
         _expect_http(404, _restore_binder_snapshot, conn, cid, str(uuid.uuid4()))
+
+
+def test_sniff_cover_mime() -> None:
+    assert _sniff_cover_mime(b"\xff\xd8\xff\xe0rest") == "image/jpeg"
+    assert _sniff_cover_mime(b"\x89PNG\r\n\x1a\nrest") == "image/png"
+    assert _sniff_cover_mime(b"RIFF\x00\x00\x00\x00WEBPVP8 ") == "image/webp"
+    assert _sniff_cover_mime(b"<svg xmlns='http://www.w3.org/2000/svg'/>") is None
+    assert _sniff_cover_mime(b"GIF89a") is None
+
+
+def test_db_cover_card_image_and_removed_card() -> None:
+    with _sandbox(card_count=2) as (conn, cid, cards):
+        a, b = cards
+        assert _load_binder_cover(conn, cid) is None
+        conn.execute(
+            text("INSERT INTO collection_binder_covers (collection_id, card_id) VALUES (CAST(:cid AS uuid), :c)"),
+            {"cid": cid, "c": a},
+        )
+        cover = _load_binder_cover(conn, cid)
+        assert cover["type"] == "card" and cover["card_id"] == a and cover["image_url"]
+        conn.execute(
+            text("DELETE FROM collection_items WHERE collection_id = CAST(:cid AS uuid) AND card_id = :c"),
+            {"cid": cid, "c": a},
+        )
+        assert _load_binder_cover(conn, cid) is None
+        conn.execute(
+            text(
+                """
+                UPDATE collection_binder_covers
+                SET card_id = NULL, image = :img, image_mime = 'image/jpeg'
+                WHERE collection_id = CAST(:cid AS uuid)
+                """
+            ),
+            {"cid": cid, "img": b"\xff\xd8\xff\xe0"},
+        )
+        cover = _load_binder_cover(conn, cid)
+        assert cover["type"] == "image"
+        assert cover["image_url"].startswith(f"/api/collections/{cid}/binder/cover?v=")
+        nested = conn.begin_nested()
+        try:
+            conn.execute(
+                text("UPDATE collection_binder_covers SET card_id = :c WHERE collection_id = CAST(:cid AS uuid)"),
+                {"cid": cid, "c": b},
+            )
+            raise AssertionError("expected the one-source check to fail")
+        except IntegrityError:
+            nested.rollback()
 
 
 if __name__ == "__main__":

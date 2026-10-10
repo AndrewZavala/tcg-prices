@@ -8,8 +8,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
@@ -67,6 +68,7 @@ class UpdateCollectionBody(BaseModel):
 BINDER_MAX_SLOT = 9999
 BINDER_AUTO_SNAPSHOT_KEEP = 15
 BINDER_NAMED_SNAPSHOT_LIMIT = 20
+BINDER_COVER_MAX_BYTES = 2 * 1024 * 1024
 _BINDER_SNAPSHOT_LABELS = {
     "auto-daily": None,
     "before-arrange": "Before arranging",
@@ -91,6 +93,10 @@ class BinderMovesBody(BaseModel):
 
 class BinderSnapshotBody(BaseModel):
     label: str = Field(min_length=1, max_length=80)
+
+
+class BinderCoverBody(BaseModel):
+    card_id: str = Field(min_length=1, max_length=200)
 
 
 _TAG_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -818,8 +824,10 @@ def get_collection(
             main_only=False,
             split_buckets=coll.get("kind") != "favorites",
         )
+        binder_cover = _load_binder_cover(conn, collection_id)
     return {
         "collection": coll,
+        "binder_cover": binder_cover,
         "cards": cards,
         "total": len(cards),
         "sort": sort_key,
@@ -886,9 +894,11 @@ def get_shared_collection(
             main_only=not is_owner or coll.get("kind") == "favorites",
             split_buckets=False,
         )
+        binder_cover = _load_binder_cover(conn, str(coll["id"]))
 
     return {
         "collection": public_coll,
+        "binder_cover": binder_cover,
         "cards": cards,
         "total": len(cards),
         "sort": sort_key,
@@ -1332,6 +1342,181 @@ def delete_binder_snapshot(request: Request, collection_id: str, snapshot_id: st
     if not deleted:
         raise HTTPException(status_code=404, detail="Snapshot not found")
     return {"ok": True}
+
+
+def _sniff_cover_mime(data: bytes) -> str | None:
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _load_binder_cover(conn, collection_id: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        text(
+            """
+            SELECT b.card_id, (b.image IS NOT NULL) AS has_image,
+                   EXTRACT(EPOCH FROM b.updated_at)::bigint AS version,
+                   pc.name, pc.local_id, pc.image_url, pc.image_local
+            FROM collection_binder_covers b
+            LEFT JOIN collection_items ci
+                ON ci.collection_id = b.collection_id AND ci.card_id = b.card_id
+            LEFT JOIN pokemon_cards pc ON pc.id = ci.card_id
+            WHERE b.collection_id = CAST(:cid AS uuid)
+            """
+        ),
+        {"cid": collection_id},
+    ).mappings().first()
+    if not row:
+        return None
+    if row["has_image"]:
+        return {
+            "type": "image",
+            "image_url": f"/api/collections/{collection_id}/binder/cover?v={row['version']}",
+        }
+    if row["name"] is None:
+        return None
+    return {
+        "type": "card",
+        "card_id": row["card_id"],
+        "name": row["name"],
+        "image_url": _image_url(
+            row["image_url"],
+            card_id=row["card_id"],
+            local_id=row["local_id"],
+            image_local=bool(row["image_local"]),
+            size="high",
+        ),
+    }
+
+
+@router.put("/api/me/collections/{collection_id}/binder/cover")
+def set_binder_cover_card(request: Request, collection_id: str, body: BinderCoverBody):
+    user = require_user(request)
+    card_id = body.card_id.strip()
+    assert _engine is not None
+    with _engine.begin() as conn:
+        _owned_collection_or_404(conn, user["id"], collection_id)
+        in_collection = conn.execute(
+            text(
+                """
+                SELECT 1 FROM collection_items
+                WHERE collection_id = CAST(:cid AS uuid) AND card_id = :card_id
+                """
+            ),
+            {"cid": collection_id, "card_id": card_id},
+        ).first()
+        if not in_collection:
+            raise HTTPException(status_code=400, detail="Pick a card from this collection")
+        conn.execute(
+            text(
+                """
+                INSERT INTO collection_binder_covers (collection_id, card_id, updated_at)
+                VALUES (CAST(:cid AS uuid), :card_id, NOW())
+                ON CONFLICT (collection_id) DO UPDATE
+                SET card_id = EXCLUDED.card_id, image = NULL, image_mime = NULL, updated_at = NOW()
+                """
+            ),
+            {"cid": collection_id, "card_id": card_id},
+        )
+        cover = _load_binder_cover(conn, collection_id)
+    return {"ok": True, "binder_cover": cover}
+
+
+def _store_binder_cover_image(user_id: str, collection_id: str, data: bytes, mime: str) -> dict[str, Any] | None:
+    assert _engine is not None
+    with _engine.begin() as conn:
+        _owned_collection_or_404(conn, user_id, collection_id)
+        conn.execute(
+            text(
+                """
+                INSERT INTO collection_binder_covers (collection_id, image, image_mime, updated_at)
+                VALUES (CAST(:cid AS uuid), :image, :mime, NOW())
+                ON CONFLICT (collection_id) DO UPDATE
+                SET card_id = NULL, image = EXCLUDED.image, image_mime = EXCLUDED.image_mime, updated_at = NOW()
+                """
+            ),
+            {"cid": collection_id, "image": data, "mime": mime},
+        )
+        return _load_binder_cover(conn, collection_id)
+
+
+@router.post("/api/me/collections/{collection_id}/binder/cover/image")
+async def upload_binder_cover_image(request: Request, collection_id: str):
+    user = require_user(request)
+    too_big = HTTPException(status_code=413, detail="That image is too large (2 MB max)")
+    try:
+        declared = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        declared = 0
+    if declared > BINDER_COVER_MAX_BYTES:
+        raise too_big
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > BINDER_COVER_MAX_BYTES:
+            raise too_big
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    mime = _sniff_cover_mime(data)
+    if not mime:
+        raise HTTPException(status_code=400, detail="Upload a JPEG, PNG or WebP image")
+    cover = await run_in_threadpool(_store_binder_cover_image, user["id"], collection_id, data, mime)
+    return {"ok": True, "binder_cover": cover}
+
+
+@router.delete("/api/me/collections/{collection_id}/binder/cover")
+def clear_binder_cover(request: Request, collection_id: str):
+    user = require_user(request)
+    assert _engine is not None
+    with _engine.begin() as conn:
+        _owned_collection_or_404(conn, user["id"], collection_id)
+        conn.execute(
+            text("DELETE FROM collection_binder_covers WHERE collection_id = CAST(:cid AS uuid)"),
+            {"cid": collection_id},
+        )
+    return {"ok": True, "binder_cover": None}
+
+
+@router.get("/api/collections/{collection_id}/binder/cover")
+def get_binder_cover_image(request: Request, collection_id: str):
+    try:
+        UUID(collection_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Cover not found") from None
+    viewer = current_user(request)
+    assert _engine is not None
+    with _engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT c.user_id::text AS user_id, c.visibility, b.image, b.image_mime
+                FROM collection_binder_covers b
+                INNER JOIN collections c ON c.id = b.collection_id
+                WHERE b.collection_id = CAST(:cid AS uuid) AND b.image IS NOT NULL
+                """
+            ),
+            {"cid": collection_id},
+        ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Cover not found")
+    is_owner = bool(viewer and str(viewer["id"]) == row["user_id"])
+    is_private = str(row["visibility"] or "private") == "private"
+    if is_private and not is_owner:
+        raise HTTPException(status_code=404, detail="Cover not found")
+    return Response(
+        content=bytes(row["image"]),
+        media_type=row["image_mime"],
+        headers={
+            "Cache-Control": f"{'private' if is_private else 'public'}, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'",
+        },
+    )
 
 
 @router.get("/api/me/cards/{card_id:path}/memberships")

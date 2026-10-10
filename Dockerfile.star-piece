@@ -40,6 +40,7 @@ COPY migrations/025_pokemon_catalog.sql \
      migrations/035_art_tags.sql \
      migrations/036_tag_hierarchy.sql \
      migrations/055_collection_binder.sql \
+     migrations/056_binder_cover.sql \
      ./migrations/
 
 ENV PYTHONPATH=/app/web
